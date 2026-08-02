@@ -1,5 +1,6 @@
 #SingleInstance Force
 #NoEnv
+#Utf8
 SetWorkingDir %A_ScriptDir%
 CoordMode, Mouse, Screen
 CoordMode, Pixel, Screen
