@@ -1,4 +1,4 @@
-﻿#SingleInstance Force
+#SingleInstance Force
 #NoEnv
 SetWorkingDir %A_ScriptDir%
 CoordMode, Mouse, Screen
