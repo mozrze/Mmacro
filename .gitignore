@@ -1,5 +1,68 @@
 ```
-# Auto-generated based on file changes
-# No build artifacts, dependencies, or temp files detected in changes
-# Only AHK source files were modified
+# AutoHotkey compiled files
+*.exe
+*.bin
+
+# Backup and temporary files
+*.bak
+*.tmp
+*~
+.swp
+
+# Environment and cache
+.env
+.env.local
+*.env.*
+
+# Logs
+*.log
+
+# Editor/IDE files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Dependencies and build artifacts
+node_modules/
+dist/
+build/
+target/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.class
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.dll
+*.dylib
+*.jar
+*.war
+*.zip
+*.tar.gz
+*.tgz
+*.rar
+*.7z
+
+# Test and coverage
+.coverage
+coverage/
+htmlcov/
+.nyc_output/
+istanbul/
+.jest/
+
+# System files
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Icon?
+*.DS_Store
+._*
+.Spotlight-V100
+.Trashes
 ```
