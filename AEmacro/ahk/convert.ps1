@@ -1,8 +1,14 @@
 Add-Type -AssemblyName System.Drawing
-$dir = "c:\Users\Miver\OneDrive\Рабочий стол\Папки\AEmacro\images"
+$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$dir = Join-Path $scriptDir "..\images"
+$dir = (Resolve-Path $dir).Path
 $imgs = @("StartGame.png", "Start.png")
 foreach ($name in $imgs) {
     $path = Join-Path $dir $name
+    if (!(Test-Path $path)) {
+        Write-Host ("Файл не найден: {0}" -f $path)
+        continue
+    }
     $bmpPath = $path -replace "\.png$", ".bmp"
     $img = [System.Drawing.Image]::FromFile($path)
     $bmp = New-Object System.Drawing.Bitmap($img)
