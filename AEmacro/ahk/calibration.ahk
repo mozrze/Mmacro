@@ -36,6 +36,7 @@ TempShot     := A_ScriptDir "\..\_preview.bmp"
 MarkMode     := ""
 MarkList     := []
 MarkGuiHwnd  := 0
+Embedded     := false
 
 ; ---- переменные для GUI ----
 PresetName := ""
@@ -106,6 +107,7 @@ StatusText() {
 
 ; =================================================================
 BtnEmbed:
+   global Embedded, GameHwnd, OrigStyle, OrigExStyle, OrigParent
    if (!WinExist(WinTitle)) {
       GuiControl,, WindowStatus, Статус: игра не найдена
       return
@@ -124,13 +126,14 @@ BtnEmbed:
 return
 
 UnembedGameWindow() {
-   global GameHwnd, OrigStyle, OrigExStyle, OrigParent
+   global GameHwnd, OrigStyle, OrigExStyle, OrigParent, Embedded
    if (!GameHwnd || !WinExist("ahk_id " . GameHwnd))
       return
    DllCall("SetParent", "ptr", GameHwnd, "ptr", OrigParent)
    WinSet, Style, %OrigStyle%, ahk_id %GameHwnd%
    WinSet, ExStyle, %OrigExStyle%, ahk_id %GameHwnd%
    WinMove, ahk_id %GameHwnd%,, 100, 100, 1280, 720
+   Embedded := false
    GuiControl,, WindowStatus, Статус: возвращено в обычный режим
 }
 
@@ -456,35 +459,24 @@ BtnRefreshPresets:
 return
 
 LoadPresetsList() {
-   global PresetList
+   global PresetList, PresetsIni
    GuiControl,, PresetList, |
-   Loop {
-      IniRead, name, %PresetsIni%, Presets, %A_Index%, 0
-      if (name = 0 || ErrorLevel) {
-         IniRead, raw, %PresetsIni%, Presets, %A_Index%, 0
-         if (raw = 0 || ErrorLevel)
-            break
-      }
-      ; читаем список имен секций вместо хранения в Presets
-      break
-   }
-   ; читаем все секции из presets.ini
-   sections := ""
-   Loop {
-      IniRead, raw, %PresetsIni%, Presets, %A_Index%, 0
-      ; альтернативный способ: перебираем секции через IniRead массивом не поддерживается
-      break
-   }
-   ; простейший обход: читаем содержимое файла
+   
    if (!FileExist(PresetsIni))
       return
+   
+   ; Читаем все секции из presets.ini, игнорируя [Presets]
    FileRead, content, %PresetsIni%
+   if (ErrorLevel)
+      return
+   
    Loop, Parse, content, `n, `r {
       line := A_LoopField
-      if (SubStr(line, 1, 1) = "[" && SubStr(line, 0, 1) = "]") {
-         name := Trim(SubStr(line, 2, -1))
-         if (name != "Presets") {
-            GuiControl, , PresetList, %name%
+      ; Проверяем, является ли строка заголовком секции [SectionName]
+      if (RegExMatch(line, "^\s*\[([^\]]+)\]\s*$", match)) {
+         name := Trim(match1)
+         if (name != "Presets" && name != "") {
+            GuiControl, ChooseString, PresetList, %name%
          }
       }
    }
