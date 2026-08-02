@@ -12,7 +12,6 @@
 
 #SingleInstance Force
 #NoEnv
-#Utf8
 SetWorkingDir, %A_ScriptDir%\..   ; <- корень проекта (родитель ahk)
 
 ; ---- пути ----
