@@ -56,6 +56,7 @@ GameHwnd := 0
 OrigStyle := 0
 OrigExStyle := 0
 OrigParent := 0
+AutoNextStage := false
 
 ; ---- состояние окна разметки/калибровки ----
 MarkMode := ""

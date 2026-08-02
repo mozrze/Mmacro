@@ -36,6 +36,7 @@ TempShot     := A_ScriptDir "\..\_preview.bmp"
 MarkMode     := ""
 MarkList     := []
 MarkGuiHwnd  := 0
+Embedded     := false
 
 ; ---- переменные для GUI ----
 PresetName := ""
@@ -106,6 +107,7 @@ StatusText() {
 
 ; =================================================================
 BtnEmbed:
+   global Embedded, GameHwnd, OrigStyle, OrigExStyle, OrigParent
    if (!WinExist(WinTitle)) {
       GuiControl,, WindowStatus, Статус: игра не найдена
       return
@@ -124,13 +126,14 @@ BtnEmbed:
 return
 
 UnembedGameWindow() {
-   global GameHwnd, OrigStyle, OrigExStyle, OrigParent
+   global GameHwnd, OrigStyle, OrigExStyle, OrigParent, Embedded
    if (!GameHwnd || !WinExist("ahk_id " . GameHwnd))
       return
    DllCall("SetParent", "ptr", GameHwnd, "ptr", OrigParent)
    WinSet, Style, %OrigStyle%, ahk_id %GameHwnd%
    WinSet, ExStyle, %OrigExStyle%, ahk_id %GameHwnd%
    WinMove, ahk_id %GameHwnd%,, 100, 100, 1280, 720
+   Embedded := false
    GuiControl,, WindowStatus, Статус: возвращено в обычный режим
 }
 
