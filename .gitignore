@@ -1,1 +1,83 @@
-Nothing should be ignored based on the provided file changes. The modified file 'AEmacro/TDMacro_GUI.ahk' is a source code file (.ahk - AutoHotkey script) and does not fall under any of the categories that should be ignored according to the rules.
+# AutoHotkey compiled files
+*.exe
+*.bin
+*.out
+
+# Backup files
+*.bak
+*.backup
+*.old
+
+# Temp files
+*.tmp
+*.temp
+*.~*
+
+# Logs
+*.log
+
+# Environment
+.env
+.env.local
+*.env.*
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Dependencies (if any)
+node_modules/
+venv/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Build artifacts
+build/
+dist/
+target/
+*.dll
+*.so
+*.a
+*.lib
+
+# OS specific
+.DS_Store
+Thumbs.db
+*.DS_Store*
+ehthumbs.db
+Icon?
+.ipynb_checkpoints/
+
+# Coverage reports
+coverage/
+htmlcov/
+*.coverage
+
+# Compression files
+*.zip
+*.gz
+*.tar
+*.tgz
+*.bz2
+*.xz
+*.7z
+*.rar
+*.zst
+*.lz4
+*.lzh
+*.cab
+*.arj
+*.rpm
+*.deb
+*.Z
+*.lz
+*.lzo
+*.tar.gz
+*.tar.bz2
+*.tar.xz
+*.tar.zst
