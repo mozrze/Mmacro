@@ -806,7 +806,7 @@ OpenCalibrationGui() {
     Gui, Calib:Color, 0x1E1E1E, 0x252526
     Gui, Calib:Font, s10 cE0E0E0, Segoe UI
 
-    Gui, Calib:Add, Text, x14 y14 w520 h24 bold c00CCFF, Калибровка координат кнопок TD
+    Gui, Calib:Add, Text, x14 y14 w520 h24 c00CCFF bold, Калибровка координат кнопок TD
     Gui, Calib:Add, Text, x14 y44 w520 h20 vCalibStatus c808080, % CalibStatusText()
 
     ; ---- группа: калибровка кнопок ----
