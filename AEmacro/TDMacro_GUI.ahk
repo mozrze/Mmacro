@@ -801,13 +801,16 @@ BtnOpenCalibration:
 return
 
 OpenCalibrationGui() {
-    global CalibGuiHwnd, PresetsIni
+    global CalibGuiHwnd, PresetsIni, CalibStatus   ; <-- добавили CalibStatus
     Gui, Calib:New, +HwndCalibGuiHwnd, Калибровка координат
     Gui, Calib:Color, 0x1E1E1E, 0x252526
     Gui, Calib:Font, s10 cE0E0E0, Segoe UI
 
-    Gui, Calib:Add, Text, x14 y14 w520 h24 c00CCFF sBold, Калибровка координат кнопок TD
-    Gui, Calib:Add, Text, x14 y44 w520 h20 vCalibStatus c808080, % CalibStatusText()
+    Gui, Calib:Font, s10 c00CCFF Bold, Segoe UI
+    Gui, Calib:Add, Text, x14 y14 w520 h24, Калибровка координат кнопок TD
+    Gui, Calib:Font, s10 cE0E0E0, Segoe UI
+
+    Gui, Calib:Add, Text, x14 y44 w520 h20 vCalibStatus, % CalibStatusText()   ; обернули в %
 
     ; ---- группа: калибровка кнопок ----
     Gui, Calib:Add, GroupBox, x14 y74 w640 h140, Калибровка кнопок
@@ -845,6 +848,7 @@ CalibStatusText() {
 }
 
 UpdateCalibStatus() {
+    global CalibStatus   ; <-- добавили
     if (CalibGuiHwnd && DllCall("IsWindow", "ptr", CalibGuiHwnd))
         GuiControl, Calib:, CalibStatus, % CalibStatusText()
 }
