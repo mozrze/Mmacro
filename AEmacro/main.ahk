@@ -126,47 +126,121 @@ Gui, Add, Text, x0 y%GameAreaH% w%GameAreaW% h40 c808080 Center 0x201, Обла�
 
 SbX := GameAreaW + 12
 
-Gui, Font, s12 cFFFFFF Bold, Segoe UI
-Gui, Add, Text, x%SbX% y12 w%SidebarW%, TD MACRO
+; ---- Принудительный IE11-режим для WebBrowser ----
+RegWrite, REG_DWORD, HKCU, Software\Microsoft\Internet Explorer\Main\FeatureControl\FEATURE_BROWSER_EMULATION, AutoHotkey.exe, 11001
+RegWrite, REG_DWORD, HKCU, Software\Microsoft\Internet Explorer\Main\FeatureControl\FEATURE_BROWSER_EMULATION, AutoHotkeyU32.exe, 11001
+RegWrite, REG_DWORD, HKCU, Software\Microsoft\Internet Explorer\Main\FeatureControl\FEATURE_BROWSER_EMULATION, AutoHotkeyU64.exe, 11001
+RegWrite, REG_DWORD, HKCU, Software\Microsoft\Internet Explorer\Main\FeatureControl\FEATURE_BROWSER_EMULATION, AutoHotkeyA32.exe, 11001
 
-Gui, Font, s9 cE0E0E0 Norm, Segoe UI
-Gui, Add, Text, x%SbX% y44 w280 c00CCFF, ОКНО ИГРЫ
-Gui, Add, Button, x%SbX% y64 w280 h30 gBtnEmbed vEmbedBtn, Встроить Roblox сюда
-Gui, Add, Text, x%SbX% y100 w280 h20 vWindowStatus c808080, Статус: не проверено
-
-Gui, Add, Text, x%SbX% y128 w280 c00CCFF, КАРТА И РАЗМЕТКА
-Gui, Add, DropDownList, x%SbX% y148 w280 vSelectedMapCtl gMapChanged, % (MapList.Length() > 0 ? JoinArr(MapList, "|") : "|")
-Gui, Add, Button, x%SbX% y184 w280 h26 gBtnCaptureMap, Сделать снимок карты
-Gui, Add, Button, x%SbX% y214 w280 h26 gBtnMarkSlots, Разметить слоты карты
-   Gui, Add, Button, x%SbX% y244 w280 h26 gBtnClearMap, Очистить разметку карты
-   Gui, Add, Text, x%SbX% y274 w280 h16 vOffsetStatus c808080, % "Up(" UpgradeX "," UpgradeY ") Auto(" AutoX "," AutoY ") Start(" StartGameX "," StartGameY ") Repeat(" RepeatStageX "," RepeatStageY ")"
-
-Gui, Add, Text, x%SbX% y296 w280 c00CCFF, ФАРМ
-Gui, Add, Button, x%SbX% y316 w280 h34 gBtnStartStop vStartStopBtn, Старт (F9)
-Gui, Add, CheckBox, x%SbX% y356 w200 h20 vAutoUpgradeEnabled gAutoUpgradeToggle cE0E0E0, Автопрокачка юнитов
-Gui, Add, Button, xp+210 y354 w70 h22 gBtnOpenAutoUpgradeSettings, Настройка
-Gui, Add, Text, x%SbX% y382 w280 h20 vFarmStatus c808080, Статус: остановлен
-
-Gui, Add, Text, x%SbX% y412 w280 c00CCFF, ЛОГ
-Gui, Add, Edit, x%SbX% y432 w280 h230 vLogBox ReadOnly -WantReturn Background151515 cB0B0B0,
-SbBtnW := 90
-SbBtnGap := 5
-SbBtn2X := SbX + SbBtnW + SbBtnGap
-SbBtn3X := SbBtn2X + SbBtnW + SbBtnGap
-Gui, Add, Button, x%SbX%    y696 w%SbBtnW% h24 gBtnSettings, Настройки
-Gui, Add, Button, x%SbBtn2X% y696 w%SbBtnW% h24 gBtnOpenPresets, Пресеты
-Gui, Add, Button, x%SbBtn3X% y696 w%SbBtnW% h24 gBtnOpenCalibration, Калибровка
+; ---- WebBrowser (боковая панель — загружает UI/index.html) ----
+Gui, Add, ActiveX, x%SbX% y0 w%SidebarW% h%TotalH% vWb, Shell.Explorer
+uiHtml := A_ScriptDir . "\..\UI\index.html"
+Loop, Files, %uiHtml%, F
+    uiReal := A_LoopFileLongPath
+if (uiReal = "")
+    uiReal := uiHtml
+uiUrl := "file:///" . StrReplace(uiReal, "\", "/")
+Wb.Navigate(uiUrl)
+ComObjConnect(Wb, "Wb_")
 
 Gui, Show, w%TotalW% h%TotalH%, TD Macro Control
 return
 
-; ===================== ЛОГ =====================
+; ===================== МОСТ JS -> AHK =====================
+Wb_BeforeNavigate2(pDisp, url, flags, targetFrame, postData, headers, cancel) {
+    global SelectedMapCtl, AutoUpgradeEnabled, Running
+    if (!InStr(url, "ahk://"))
+        return
+    try cancel[] := -1
+    rest := SubStr(url, 8)
+    slashPos := InStr(rest, "/")
+    if (!slashPos)
+        return
+    action := SubStr(rest, 1, slashPos - 1)
+    payload := SubStr(rest, slashPos + 1)
+    
+    if (action = "embed")
+        GoSub, BtnEmbed
+    else if (action = "start")
+        GoSub, BtnStartStop
+    else if (action = "captureMap")
+        GoSub, BtnCaptureMap
+    else if (action = "markSlots")
+        GoSub, BtnMarkSlots
+    else if (action = "clearMap")
+        GoSub, BtnClearMap
+    else if (action = "openAutoUpgradeSettings")
+        GoSub, BtnOpenAutoUpgradeSettings
+    else if (action = "openSettings")
+        GoSub, BtnSettings
+    else if (action = "openPresets")
+        GoSub, BtnOpenPresets
+    else if (action = "openCalibration")
+        GoSub, BtnOpenCalibration
+    else if (action = "selectMap")
+    {
+        name := ExtractJsonStr(payload, "name")
+        if (name != "")
+            SelectedMapCtl := name
+    }
+    else if (action = "autoUpgradeToggle")
+    {
+        AutoUpgradeEnabled := (InStr(payload, "true") ? true : false)
+    }
+}
+
+ExtractJsonStr(json, key) {
+    pos := InStr(json, """" key """:""")
+    if (!pos)
+        return ""
+    pos += StrLen(key) + 4
+    end := InStr(json, """", false, pos)
+    if (!end)
+        return ""
+    return SubStr(json, pos, end - pos)
+}
+
+; ===================== МОСТ AHK -> JS =====================
+WbSend(action, data := "") {
+    global Wb
+    try {
+        js := "window.uiBridge('" action "', " (data = "" ? "{}" : data) ")"
+        Wb.Document.parentWindow.execScript(js)
+    }
+}
+WbUi(key, value) {
+    global Wb
+    try Wb.Document.parentWindow.execScript("window.uiBridge('setUi',{key:'" EscapeJs(key) "',value:'" EscapeJs(value) "'})")
+}
+WbMaps() {
+    global Wb, MapList
+    json := "["
+    for i, m in MapList
+        json .= (i>1 ? "," : "") . "'" . EscapeJs(m) . "'"
+    json .= "]"
+    try Wb.Document.parentWindow.execScript("window.uiBridge('setMaps',{maps:" json ",select:'" EscapeJs(MapList.Length()>0 ? MapList[1] : "") "'})")
+}
+Wb_DocumentComplete(pDisp, url) {
+    global Wb
+    WbMaps()
+    WbUi("windowStatus", "не проверено")
+    WbUi("offsetStatus", "Up(0,0) Auto(0,0) Start(0,0) Repeat(0,0)")
+}
+EscapeJs(s) {
+    s := StrReplace(s, "\", "\\")
+    s := StrReplace(s, """", "\""")
+    s := StrReplace(s, "'", "\'")
+    s := StrReplace(s, "`r`n", "\n")
+    s := StrReplace(s, "`r", "\n")
+    s := StrReplace(s, "`n", "\n")
+    return s
+}
+
+; ===================== ЛОГ (перенаправлен в JS) =====================
 AddLog(msg) {
-    Gui, 1:Default
-    GuiControlGet, cur,, LogBox
     FormatTime, ts,, HH:mm:ss
-    new := "[" ts "] " msg "`r`n" cur
-    GuiControl,, LogBox, %new%
+    line := "[" ts "] " msg
+    try Wb.Document.parentWindow.execScript("window.uiBridge('log',{msg:'" EscapeJs(line) "'})")
 }
 
 ; ===================== КОНФИГ (координаты кнопок) =====================

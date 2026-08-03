@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TD Macro Control</title>
+    <link rel="stylesheet" href="assets/styles.css">
+</head>
+<body>
+    <div class="app">
+
+        <!-- ========== Область встраивания игры ========== -->
+        <main class="stage">
+            <div class="stage__viewport" id="gameArea">
+                <!-- Сюда встраивается окно Roblox -->
+                <div class="stage__placeholder" id="stagePlaceholder">
+                    <svg class="stage__placeholder-icon" width="56" height="56" aria-hidden="true">
+                        <use href="assets/icons.svg#icon-window"></use>
+                    </svg>
+                    <p class="stage__placeholder-title">Область встраивания Roblox</p>
+                    <p class="stage__placeholder-hint">Нажми «Встроить» справа</p>
+                </div>
+            </div>
+
+            <div class="stage__statusbar">
+                <span class="dot" id="winStatusDot" data-state="unknown"></span>
+                <span class="stage__status-text" id="windowStatus">Статус: не проверено</span>
+            </div>
+        </main>
+
+        <!-- ========== Боковая панель управления ========== -->
+        <aside class="sidebar">
+
+            <header class="sidebar__header">
+                <span class="sidebar__brand">TD MACRO</span>
+            </header>
+
+            <!-- ---------- ОКНО ИГРЫ ---------- -->
+            <section class="panel">
+                <h2 class="panel__title">
+                    <svg class="panel__icon" aria-hidden="true"><use href="assets/icons.svg#icon-window"></use></svg>
+                    Окно игры
+                </h2>
+                <button class="btn btn--block" id="btnEmbed" type="button">
+                    <svg class="btn__icon" aria-hidden="true"><use href="assets/icons.svg#icon-embed"></use></svg>
+                    Встроить Roblox сюда
+                </button>
+            </section>
+
+            <!-- ---------- КАРТА И РАЗМЕТКА ---------- -->
+            <section class="panel">
+                <h2 class="panel__title">
+                    <svg class="panel__icon" aria-hidden="true"><use href="assets/icons.svg#icon-map"></use></svg>
+                    Карта и разметка
+                </h2>
+
+                <div class="select" id="mapSelect" data-open="false">
+                    <button class="select__trigger" id="mapSelectTrigger" type="button">
+                        <span class="select__value" id="mapSelectValue">Карта не выбрана</span>
+                        <svg class="select__chevron" aria-hidden="true"><use href="assets/icons.svg#icon-chevron"></use></svg>
+                    </button>
+                    <ul class="select__list" id="mapSelectList" role="listbox" hidden></ul>
+                </div>
+
+                <button class="btn btn--block" id="btnCapture" type="button">
+                    <svg class="btn__icon" aria-hidden="true"><use href="assets/icons.svg#icon-camera"></use></svg>
+                    Сделать снимок карты
+                </button>
+                <button class="btn btn--block" id="btnMark" type="button">
+                    <svg class="btn__icon" aria-hidden="true"><use href="assets/icons.svg#icon-target"></use></svg>
+                    Разметить слоты карты
+                </button>
+                <button class="btn btn--block btn--ghost" id="btnClear" type="button">
+                    <svg class="btn__icon" aria-hidden="true"><use href="assets/icons.svg#icon-trash"></use></svg>
+                    Очистить разметку карты
+                </button>
+
+                <p class="panel__status" id="offsetStatus">Up(0,0) Auto(0,0) Start(0,0) Repeat(0,0)</p>
+            </section>
+
+            <!-- ---------- ФАРМ ---------- -->
+            <section class="panel">
+                <h2 class="panel__title">
+                    <svg class="panel__icon" aria-hidden="true"><use href="assets/icons.svg#icon-play"></use></svg>
+                    Фарм
+                </h2>
+
+                <button class="btn btn--primary btn--block btn--lg" id="btnStartStop" type="button">
+                    <svg class="btn__icon" aria-hidden="true"><use href="assets/icons.svg#icon-play"></use></svg>
+                    <span id="startStopLabel">Старт (F9)</span>
+                </button>
+
+                <label class="toggle">
+                    <input type="checkbox" id="autoUpgradeEnabled">
+                    <span class="toggle__track"><span class="toggle__thumb"></span></span>
+                    <span class="toggle__label">Автопрокачка юнитов</span>
+                </label>
+
+                <button class="btn btn--compact btn--block" id="btnAutoUpgradeSettings" type="button">
+                    <svg class="btn__icon" aria-hidden="true"><use href="assets/icons.svg#icon-sliders"></use></svg>
+                    Настройка автопрокачки
+                </button>
+
+                <p class="panel__status" id="farmStatus">Статус: остановлен</p>
+            </section>
+
+            <!-- ---------- ЛОГ ---------- -->
+            <section class="panel panel--log">
+                <h2 class="panel__title">
+                    <svg class="panel__icon" aria-hidden="true"><use href="assets/icons.svg#icon-terminal"></use></svg>
+                    Лог
+                </h2>
+                <div class="log" id="logBox" tabindex="0"></div>
+            </section>
+
+            <!-- ---------- Нижние кнопки ---------- -->
+            <footer class="sidebar__footer">
+                <button class="btn btn--compact btn--flex" id="btnSettings" type="button">
+                    <svg class="btn__icon" aria-hidden="true"><use href="assets/icons.svg#icon-settings"></use></svg>
+                    Настройки
+                </button>
+                <button class="btn btn--compact btn--flex" id="btnPresets" type="button">
+                    <svg class="btn__icon" aria-hidden="true"><use href="assets/icons.svg#icon-layers"></use></svg>
+                    Пресеты
+                </button>
+                <button class="btn btn--compact btn--flex" id="btnCalibration" type="button">
+                    <svg class="btn__icon" aria-hidden="true"><use href="assets/icons.svg#icon-crosshair"></use></svg>
+                    Калибровка
+                </button>
+            </footer>
+
+        </aside>
+    </div>
+
+    <script src="assets/app.js"></script>
+</body>
+</html>
