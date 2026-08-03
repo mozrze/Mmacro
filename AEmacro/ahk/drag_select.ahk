@@ -33,12 +33,25 @@ HideDragRect() {
 
 OnTemplateLButtonDown(wParam, lParam, msg, hwnd) {
     global MarkMode, MarkGuiHwnd, DragActive, DragStartSX, DragStartSY, DragCurSX, DragCurSY, DragPrevRect
-    global MainGuiHwnd, TitleBarBgHwnd, TitleBarTextHwnd
+    global MainGuiHwnd, TitleBarBgHwnd, TitleBarTextHwnd, TitleBarMinHwnd, TitleBarCloseHwnd
     ; ---- Перетаскивание окна за кастомную тёмную шапку (нет системной Caption) ----
     if (hwnd = TitleBarBgHwnd || hwnd = TitleBarTextHwnd) {
         DllCall("ReleaseCapture")
         PostMessage, 0xA1, 2, 0,, ahk_id %MainGuiHwnd%   ; WM_NCLBUTTONDOWN, HTCAPTION
         return
+    }
+    ; ---- Кнопки свернуть/закрыть в шапке ----
+    ; Раньше расчёт был на то, что клик "проваливается" через этот же глобальный
+    ; хук WM_LBUTTONDOWN и штатно доходит до g-меток TitleBarMin/TitleBarClose —
+    ; ненадёжно (тот же хук перехватывает WM_LBUTTONDOWN для ВСЕХ окон скрипта).
+    ; Обрабатываем клик по этим кнопкам напрямую, не полагаясь на "авось долетит".
+    if (hwnd = TitleBarMinHwnd) {
+        Gui, Minimize
+        return 1
+    }
+    if (hwnd = TitleBarCloseHwnd) {
+        Gosub, GuiClose
+        return 1
     }
     if (MarkMode != "template" || !MarkGuiHwnd)
         return

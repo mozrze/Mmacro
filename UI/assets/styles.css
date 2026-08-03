@@ -10,18 +10,6 @@ html, body {
     background: #1E1E1E; color: #E0E0E0;
     font: 13px/1.45 "Segoe UI", Arial, sans-serif;
     user-select: none;
-    /* IE11 (Trident) не понимает ::-webkit-scrollbar — без этого
-       любой скроллящийся блок показывает светло-серый системный
-       скроллбар поверх тёмной темы. Эти свойства — старый, но
-       рабочий в Trident способ его перекрасить. */
-    scrollbar-base-color: #1E1E1E;
-    scrollbar-face-color: #3A3A3A;
-    scrollbar-3dlight-color: #1E1E1E;
-    scrollbar-highlight-color: #1E1E1E;
-    scrollbar-track-color: #1E1E1E;
-    scrollbar-arrow-color: #9A9A9A;
-    scrollbar-shadow-color: #1E1E1E;
-    scrollbar-darkshadow-color: #1E1E1E;
 }
 button { font: inherit; cursor: pointer; }
 svg { display: block; }
@@ -74,17 +62,14 @@ ul { margin: 0; padding: 0; list-style: none; }
     width: 320px; background: #1E1E1E;
     border-left: 1px solid #2E2E2E;
     overflow-y: auto; overflow-x: hidden;
-    scrollbar-base-color: #1E1E1E;
-    scrollbar-face-color: #3A3A3A;
-    scrollbar-3dlight-color: #1E1E1E;
-    scrollbar-highlight-color: #1E1E1E;
-    scrollbar-track-color: #1E1E1E;
-    scrollbar-arrow-color: #9A9A9A;
-    scrollbar-shadow-color: #1E1E1E;
-    scrollbar-darkshadow-color: #1E1E1E;
+    /* Скролл остаётся рабочим (колесо мыши/жест), но полоса не рисуется —
+       старые scrollbar-face-color и т.п. это IE5.5-10 quirks-only свойства
+       и в IE11 (режим 11001, см. main.ahk) НЕ работают, поэтому светлый
+       системный скроллбар был виден поверх тёмной темы. */
+    -ms-overflow-style: none;   /* IE11 / старый Edge */
+    scrollbar-width: none;      /* Firefox */
 }
-.sidebar::-webkit-scrollbar { width: 6px; }
-.sidebar::-webkit-scrollbar-thumb { background: #3A3A3A; border-radius: 3px; }
+.sidebar::-webkit-scrollbar { width: 0; height: 0; display: none; }
 .sidebar__header {
     padding: 14px 16px 10px;
     border-bottom: 1px solid #2E2E2E;
@@ -148,13 +133,16 @@ ul { margin: 0; padding: 0; list-style: none; }
 }
 .sidebar__footer {
     padding: 10px 16px 14px; border-top: 1px solid #2E2E2E;
-    display: flex; gap: 6px;
+    display: flex;
+    /* gap на flex-контейнере не поддерживается в IE11 вообще (кнопки
+       вплотную друг к другу) — отступ делаем через margin у самих кнопок. */
 }
 .sidebar__footer .btn {
-    flex: 1 1 0; width: auto; margin: 0;
+    flex: 1 1 0; width: auto; margin: 0 0 0 6px;
     padding: 0 4px; font-size: 12px;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+.sidebar__footer .btn:first-child { margin-left: 0; }
 /* Иконка в узкой кнопке футера не оставляет места под текст ("Настрой...",
    "Пресе...") — в футере показываем только текст, иконка тут не нужна. */
 .sidebar__footer .btn__icon { display: none; }
@@ -184,15 +172,10 @@ ul { margin: 0; padding: 0; list-style: none; }
     position: absolute; top: 38px; left: 0; right: 0; z-index: 50;
     background: #2A2A2A; border: 1px solid #3A3A3A; border-radius: 6px;
     max-height: 200px; overflow-y: auto;
-    scrollbar-base-color: #2A2A2A;
-    scrollbar-face-color: #3A3A3A;
-    scrollbar-3dlight-color: #2A2A2A;
-    scrollbar-highlight-color: #2A2A2A;
-    scrollbar-track-color: #2A2A2A;
-    scrollbar-arrow-color: #9A9A9A;
-    scrollbar-shadow-color: #2A2A2A;
-    scrollbar-darkshadow-color: #2A2A2A;
+    -ms-overflow-style: none;
+    scrollbar-width: none;
 }
+.select__list::-webkit-scrollbar { width: 0; height: 0; display: none; }
 .select__list li {
     padding: 7px 10px; font-size: 13px;
     color: #E0E0E0; cursor: pointer;
@@ -232,15 +215,10 @@ ul { margin: 0; padding: 0; list-style: none; }
     padding: 8px 10px; background: #111111; border: 1px solid #2E2E2E;
     border-radius: 6px; font: 11.5px/1.5 "Consolas", monospace;
     color: #B0B0B0;
-    scrollbar-base-color: #111111;
-    scrollbar-face-color: #3A3A3A;
-    scrollbar-3dlight-color: #111111;
-    scrollbar-highlight-color: #111111;
-    scrollbar-track-color: #111111;
-    scrollbar-arrow-color: #9A9A9A;
-    scrollbar-shadow-color: #111111;
-    scrollbar-darkshadow-color: #111111;
+    -ms-overflow-style: none;
+    scrollbar-width: none;
 }
+.log::-webkit-scrollbar { width: 0; height: 0; display: none; }
 .log__line { padding: 1px 0; word-break: break-word; }
 .log__time { color: #6E6E6E; margin-right: 6px; }
 .log__line--error { color: #FF5252; }

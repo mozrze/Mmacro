@@ -221,24 +221,33 @@ Wb_BeforeNavigate2(pDisp, url, flags, targetFrame, postData, headers, cancel) {
     ; видно вообще ничего, кнопка в сайдбаре просто "не сработает" без следа.
     ; Теперь любая такая ошибка попадёт в лог.
     try {
+        ; ВАЖНО: GoSub напрямую здесь работал ненадёжно для меток, которые
+        ; создают НОВОЕ Gui-окно (Settings/Preset/Calib/Mark/AutoUpgrade) —
+        ; они выполнялись синхронно ВНУТРИ COM-события BeforeNavigate2
+        ; ActiveX-браузера. AutoHotkey в этой ситуации может "создать" окно,
+        ; но не прорисовать его и не дать ему фокус — выглядит так, будто
+        ; клик вообще ничего не сделал, хотя ошибки нет и в лог нечего писать.
+        ; SetTimer с отрицательной задержкой откладывает выполнение метки на
+        ; 10мс — уже ПОСЛЕ выхода из COM-колбэка, там создание окна работает
+        ; штатно. Задержка не заметна на глаз, но чинит открытие всех окон.
         if (action = "embed")
-            GoSub, BtnEmbed
+            SetTimer, BtnEmbed, -10
         else if (action = "start")
-            GoSub, BtnStartStop
+            SetTimer, BtnStartStop, -10
         else if (action = "captureMap")
-            GoSub, BtnCaptureMap
+            SetTimer, BtnCaptureMap, -10
         else if (action = "markSlots")
-            GoSub, BtnMarkSlots
+            SetTimer, BtnMarkSlots, -10
         else if (action = "clearMap")
-            GoSub, BtnClearMap
+            SetTimer, BtnClearMap, -10
         else if (action = "openAutoUpgradeSettings")
-            GoSub, BtnOpenAutoUpgradeSettings
+            SetTimer, BtnOpenAutoUpgradeSettings, -10
         else if (action = "openSettings")
-            GoSub, BtnSettings
+            SetTimer, BtnSettings, -10
         else if (action = "openPresets")
-            GoSub, BtnOpenPresets
+            SetTimer, BtnOpenPresets, -10
         else if (action = "openCalibration")
-            GoSub, BtnOpenCalibration
+            SetTimer, BtnOpenCalibration, -10
         else if (action = "selectMap")
         {
             name := ExtractJsonStr(payload, "name")

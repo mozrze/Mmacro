@@ -65,7 +65,9 @@
         if (!mapSelect.contains(e.target)) closeSelect();
     });
     document.addEventListener("keydown", function (e) {
-        if (e.key === "Escape") closeSelect();
+        // IE11 отдаёт "Esc", а не "Escape" (у e.key нестандартные значения) —
+        // без проверки обоих вариантов Esc не закрывал меню в этом браузере.
+        if (e.key === "Escape" || e.key === "Esc" || e.keyCode === 27) closeSelect();
     });
 
     function renderMapList() {
@@ -99,7 +101,17 @@
         mapValue.classList.remove("is-placeholder");
         var items = $$(".select__list li");
         for (var i = 0; i < items.length; i++) {
-            items[i].classList.toggle("is-selected", items[i].dataset.value === name);
+            // classList.toggle(token, force) — второй аргумент (force) НЕ
+            // поддерживается в IE11: он просто переключает класс туда-обратно
+            // при каждом вызове, игнорируя условие. Из-за этого при добавлении
+            // карт по одной (addMap -> selectMap) класс "is-selected" рано или
+            // поздно навешивался на ВСЕ пункты одновременно. Явный add/remove
+            // работает в IE11 корректно.
+            if (items[i].dataset.value === name) {
+                items[i].classList.add("is-selected");
+            } else {
+                items[i].classList.remove("is-selected");
+            }
         }
         onMapChanged(name);
     }
