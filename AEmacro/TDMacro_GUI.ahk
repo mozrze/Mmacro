@@ -1,10 +1,33 @@
-﻿#SingleInstance Force
+﻿#SingleInstance Off
 #NoEnv
+#Include %A_ScriptDir%\ahk\drag_select.ahk
 SetWorkingDir %A_ScriptDir%
 CoordMode, Mouse, Screen
 CoordMode, Pixel, Screen
 DetectHiddenWindows, On
 SendMode, Input
+
+; ---- Автоперезапуск: если старый экземпляр уже запущен — убиваем его ----
+; #SingleInstance Force не перезагружает код, а лишь показывает старое окно.
+; Поэтому вручную ищем старый процесс этого же скрипта и завершаем его,
+; чтобы каждый запуск гарантированно загружал свежий код с диска.
+DetectHiddenWindows, On
+WinGet, thisHwnd, ID, ahk_class AutoHotkey
+; Ищем другие окна AHK с тем же именем скрипта (A_ScriptName)
+WinGet, id, List, ahk_class AutoHotkey
+Loop, %id% {
+    hwnd := id%A_Index%
+    if (hwnd = thisHwnd)
+        continue
+    WinGetTitle, t, ahk_id %hwnd%
+    if (t = A_ScriptName) {
+        WinGet, otherPid, PID, ahk_id %hwnd%
+        if (otherPid > 0) {
+            Process, Close, %otherPid%
+            Sleep, 300
+        }
+    }
+}
 
 ; ===================== НАСТРОЙКИ =====================
 WinTitle := "ahk_exe RobloxPlayerBeta.exe"
@@ -23,7 +46,7 @@ IfNotExist, %MapsDir%
 IfNotExist, %ImagesDir%
     FileCreateDir, %ImagesDir%
 
-MapList := ["Flower Forest", "Fairy King Forest", "King's Tomb", "Rose Kingdom", "School Grounds"]
+MapList := []      ; Список карт: имена формируются из снимков в maps\*.bmp
 MapCoords := {}   ; MapCoords[map] := [{num,x,y}, ...]
 
 ; Координаты кнопок (калибруются кликом по скриншоту)
@@ -43,6 +66,8 @@ UpgradeClickDelay := 150
 AutoClickDelay := 120
 UnitSleepDelay := 200
 StartGameDelay := 500
+HoverDelay := 200   ; КД после наведения на место перед выбором юнита
+MouseSpeed := 70    ; скорость движения мыши (0-100, выше = быстрее)
 ImgVariation := 30
 StartGameColor := 0x4ECD0C
 StartGameColorVar := 30
@@ -56,13 +81,31 @@ GameHwnd := 0
 OrigStyle := 0
 OrigExStyle := 0
 OrigParent := 0
-AutoNextStage := false
+; Автопрокачка юнитов: приоритет = сколько раз кликнуть по кнопке AutoUpgrade
+AutoUpgradeEnabled := false
+AutoUpgradePriority := {1: 1, 2: 1, 3: 1, 4: 1, 5: 1, 6: 1}
+AutoUpgradeUnitOffsetY := 20   ; смещение вверх при клике по юниту
+AutoUpgradeGuiHwnd := 0
 
 ; ---- состояние окна разметки/калибровки ----
 MarkMode := ""
 MarkList := []
+TemplateName := ""   ; заранее заданное имя шаблона (например "StartGame") или "" = спрашивать
 MarkGuiHwnd := 0
 CalibGuiHwnd := 0
+PresetGuiHwnd := 0
+
+; ---- drag-select для захвата шаблонов ----
+DragActive := false
+DragStartSX := 0, DragStartSY := 0
+DragCurSX := 0, DragCurSY := 0
+DragPrevRect := ""
+DragOverlayHwnd := 0
+
+; Обработчики мыши: только для MarkMode = "template" (drag-select области)
+OnMessage(0x201, "OnTemplateLButtonDown")   ; WM_LBUTTONDOWN
+OnMessage(0x200, "OnTemplateMouseMove")       ; WM_MOUSEMOVE
+OnMessage(0x202, "OnTemplateLButtonUp")       ; WM_LBUTTONUP
 ; =======================================================
 
 TotalW := GameAreaW + SidebarW
@@ -70,6 +113,7 @@ TotalH := GameAreaH + 40
 
 LoadConfig()
 LoadSettings()
+ReloadMapList()
 LoadAllMapCoords()
 
 ; ===================== GUI (тёмная тема) =====================
@@ -81,7 +125,6 @@ Gui, Add, Text, x0 y0 w%GameAreaW% h%GameAreaH% vGameArea 0x201 Border Backgroun
 Gui, Add, Text, x0 y%GameAreaH% w%GameAreaW% h40 c808080 Center 0x201, Область встраивания Roblox — нажми "Встроить" справа
 
 SbX := GameAreaW + 12
-SbX2 := SbX + 143
 
 Gui, Font, s12 cFFFFFF Bold, Segoe UI
 Gui, Add, Text, x%SbX% y12 w%SidebarW%, TD MACRO
@@ -92,7 +135,7 @@ Gui, Add, Button, x%SbX% y64 w280 h30 gBtnEmbed vEmbedBtn, Встроить Robl
 Gui, Add, Text, x%SbX% y100 w280 h20 vWindowStatus c808080, Статус: не проверено
 
 Gui, Add, Text, x%SbX% y128 w280 c00CCFF, КАРТА И РАЗМЕТКА
-Gui, Add, DropDownList, x%SbX% y148 w280 vSelectedMapCtl gMapChanged, % JoinArr(MapList, "|")
+Gui, Add, DropDownList, x%SbX% y148 w280 vSelectedMapCtl gMapChanged, % (MapList.Length() > 0 ? JoinArr(MapList, "|") : "|")
 Gui, Add, Button, x%SbX% y184 w280 h26 gBtnCaptureMap, Сделать снимок карты
 Gui, Add, Button, x%SbX% y214 w280 h26 gBtnMarkSlots, Разметить слоты карты
    Gui, Add, Button, x%SbX% y244 w280 h26 gBtnClearMap, Очистить разметку карты
@@ -100,13 +143,19 @@ Gui, Add, Button, x%SbX% y214 w280 h26 gBtnMarkSlots, Разметить сло�
 
 Gui, Add, Text, x%SbX% y296 w280 c00CCFF, ФАРМ
 Gui, Add, Button, x%SbX% y316 w280 h34 gBtnStartStop vStartStopBtn, Старт (F9)
-Gui, Add, CheckBox, x%SbX% y356 w280 h20 vAutoNextStage cE0E0E0, Авто-следующая волна
+Gui, Add, CheckBox, x%SbX% y356 w200 h20 vAutoUpgradeEnabled gAutoUpgradeToggle cE0E0E0, Автопрокачка юнитов
+Gui, Add, Button, xp+210 y354 w70 h22 gBtnOpenAutoUpgradeSettings, Настройка
 Gui, Add, Text, x%SbX% y382 w280 h20 vFarmStatus c808080, Статус: остановлен
 
 Gui, Add, Text, x%SbX% y412 w280 c00CCFF, ЛОГ
 Gui, Add, Edit, x%SbX% y432 w280 h230 vLogBox ReadOnly -WantReturn Background151515 cB0B0B0,
-Gui, Add, Button, x%SbX% y696 w137 h24 gBtnSettings, Настройки
-Gui, Add, Button, x%SbX2% y696 w137 h24 gBtnOpenCalibration, Калибровка
+SbBtnW := 90
+SbBtnGap := 5
+SbBtn2X := SbX + SbBtnW + SbBtnGap
+SbBtn3X := SbBtn2X + SbBtnW + SbBtnGap
+Gui, Add, Button, x%SbX%    y696 w%SbBtnW% h24 gBtnSettings, Настройки
+Gui, Add, Button, x%SbBtn2X% y696 w%SbBtnW% h24 gBtnOpenPresets, Пресеты
+Gui, Add, Button, x%SbBtn3X% y696 w%SbBtnW% h24 gBtnOpenCalibration, Калибровка
 
 Gui, Show, w%TotalW% h%TotalH%, TD Macro Control
 return
@@ -158,7 +207,7 @@ SaveConfig() {
 ; ===================== НАСТРОЙКИ (ahk/settings.ini) =====================
 LoadSettings() {
     global SettingsFile, ClickDelay, SlotClickDelay, UpgradeClickDelay
-    global AutoClickDelay, UnitSleepDelay, StartGameDelay, ImgVariation
+    global AutoClickDelay, UnitSleepDelay, StartGameDelay, HoverDelay, MouseSpeed, ImgVariation
     global StartGameColor, StartGameColorVar, StartGameCenterX, StartGameCenterY, StartGameRadius
     if !FileExist(SettingsFile)
         return
@@ -174,6 +223,10 @@ LoadSettings() {
     UnitSleepDelay := v
     IniRead, v, %SettingsFile%, Delays, StartGameDelay, %StartGameDelay%
     StartGameDelay := v
+    IniRead, v, %SettingsFile%, Delays, HoverDelay, %HoverDelay%
+    HoverDelay := v
+    IniRead, v, %SettingsFile%, Delays, MouseSpeed, %MouseSpeed%
+    MouseSpeed := v
     IniRead, v, %SettingsFile%, ImageSearch, Variation, %ImgVariation%
     ImgVariation := v
     IniRead, v, %SettingsFile%, PixelSearch, StartGameColor, %StartGameColor%
@@ -190,7 +243,7 @@ LoadSettings() {
 
 SaveSettings() {
     global SettingsFile, ClickDelay, SlotClickDelay, UpgradeClickDelay
-    global AutoClickDelay, UnitSleepDelay, StartGameDelay, ImgVariation
+    global AutoClickDelay, UnitSleepDelay, StartGameDelay, HoverDelay, MouseSpeed, ImgVariation
     global StartGameColor, StartGameColorVar, StartGameCenterX, StartGameCenterY, StartGameRadius
     IniWrite, %ClickDelay%, %SettingsFile%, Delays, ClickDelay
     IniWrite, %SlotClickDelay%, %SettingsFile%, Delays, SlotClickDelay
@@ -198,6 +251,8 @@ SaveSettings() {
     IniWrite, %AutoClickDelay%, %SettingsFile%, Delays, AutoClickDelay
     IniWrite, %UnitSleepDelay%, %SettingsFile%, Delays, UnitSleepDelay
     IniWrite, %StartGameDelay%, %SettingsFile%, Delays, StartGameDelay
+    IniWrite, %HoverDelay%, %SettingsFile%, Delays, HoverDelay
+    IniWrite, %MouseSpeed%, %SettingsFile%, Delays, MouseSpeed
     IniWrite, %ImgVariation%, %SettingsFile%, ImageSearch, Variation
     IniWrite, %StartGameColor%, %SettingsFile%, PixelSearch, StartGameColor
     IniWrite, %StartGameColorVar%, %SettingsFile%, PixelSearch, StartGameColorVar
@@ -223,6 +278,46 @@ LoadAllMapCoords() {
     global MapList
     for i, m in MapList
         LoadMapCoordsOne(m)
+}
+
+; Сбор списка карт из сохранённых снимков (maps\*.bmp).
+; Имя карты = имя файла без расширения.
+ReloadMapList() {
+    global MapList, MapsDir
+    MapList := []
+    Loop, Files, %MapsDir%\*.bmp
+    {
+        name := A_LoopFileName
+        StringGetPos, dotPos, name, .
+        if (dotPos >= 0)
+            name := SubStr(name, 1, dotPos)
+        MapList.Push(name)
+    }
+}
+
+; Перестроение выпадающего списка карт в GUI (с сохранением выбора).
+RefreshMapDropdown() {
+    global MapList, SelectedMapCtl
+    if (MapList.Length() > 0) {
+        listStr := JoinArr(MapList, "|")
+        found := false
+        for i, m in MapList {
+            if (m = SelectedMapCtl) {
+                found := true
+                break
+            }
+        }
+        GuiControl, , SelectedMapCtl, %listStr%
+        if (found)
+            GuiControl, ChooseString, SelectedMapCtl, %SelectedMapCtl%
+        else
+            GuiControl, Choose, SelectedMapCtl, 1
+        Gui, Submit, NoHide
+    } else {
+        ; Список пуст — в DropDownList нельзя ставить пустую строку, ставим заглушку
+        GuiControl, , SelectedMapCtl, |
+        SelectedMapCtl := ""
+    }
 }
 
 LoadMapCoordsOne(mapName) {
@@ -327,8 +422,7 @@ ClickGameButton(imageFile, delayAfter := 0) {
     full := ImagesDir . "\" . imageFile
     if FileExist(full) {
         if (FindGameButton(full, btnX, btnY)) {
-            MouseMove, % btnX, % btnY, 0
-            Click
+            SmoothClick(btnX, btnY, 150)
             if (delayAfter > 0)
                 Sleep, %delayAfter%
             return true
@@ -336,8 +430,7 @@ ClickGameButton(imageFile, delayAfter := 0) {
     }
     if (StartGameColor != 0 && StartGameColor != "0x000000" && StartGameColor != "") {
         if (FindGameButtonByColor(StartGameColor, StartGameColorVar, btnX, btnY)) {
-            MouseMove, % btnX, % btnY, 0
-            Click
+            SmoothClick(btnX, btnY, 150)
             if (delayAfter > 0)
                 Sleep, %delayAfter%
             return true
@@ -454,6 +547,12 @@ SnapConfirm:
     FinalPath := MapsDir . "\" . ShotName . ".bmp"
     FileCopy, %TempShot%, %FinalPath%, 1
     AddLog("Снимок карты сохранён: maps\" . ShotName . ".bmp")
+    ; Появляется в списке карт сразу после сохранения снимка
+    ReloadMapList()
+    SelectedMapCtl := ShotName
+    Gui, 1:Default
+    RefreshMapDropdown()
+    AddLog("Карта """ . ShotName . """ добавлена в список")
 return
 
 SnapCancel:
@@ -463,15 +562,104 @@ return
 
 ; ===================== СКРИНШОТ ОБЛАСТИ ИГРЫ =====================
 CaptureGameArea(filepath) {
-    global MainGuiHwnd
-    GuiControlGet, AreaPos, Pos, GameArea
+    global MainGuiHwnd, GameAreaW, GameAreaH
+    ; GameArea всегда в левом верхнем углу главного окна (x0 y0),
+    ; размер GameAreaW x GameAreaH. GuiControlGet здесь НЕ использовать:
+    ; при вызове из окна калибровки он ищет GameArea в чужом окне
+    ; и возвращает нулевые размеры → битый файл → чёрный экран.
     VarSetCapacity(pt, 8, 0)
-    NumPut(AreaPosX, pt, 0, "Int")
-    NumPut(AreaPosY, pt, 4, "Int")
     DllCall("ClientToScreen", "ptr", MainGuiHwnd, "ptr", &pt)
     ScreenX := NumGet(pt, 0, "Int")
     ScreenY := NumGet(pt, 4, "Int")
-    CaptureScreenshot(ScreenX, ScreenY, AreaPosW, AreaPosH, filepath)
+    CaptureScreenshot(ScreenX, ScreenY, GameAreaW, GameAreaH, filepath)
+    ; Если кадр вышел почти чёрным (игра свёрнута/не видна на экране) —
+    ; пробуем PrintWindow по HWND игры
+    if (IsMostlyBlack(filepath)) {
+        AddLog("Захват экрана дал чёрный кадр, пробую PrintWindow...")
+        if (CaptureGameWindow(filepath))
+            return
+        AddLog("PrintWindow тоже не дал кадр. Убедись, что Roblox встроен и виден на экране.")
+    }
+}
+
+; ---- Захват окна игры через PrintWindow (запасной вариант) ----
+CaptureGameWindow(filepath) {
+    global GameHwnd, GameAreaW, GameAreaH
+    if (!GameHwnd || !WinExist("ahk_id " . GameHwnd))
+        return false
+    hdcWin := DllCall("GetDC", "ptr", GameHwnd, "ptr")
+    if (!hdcWin)
+        return false
+    hdcMem := DllCall("CreateCompatibleDC", "ptr", hdcWin, "ptr")
+    hBmp   := DllCall("CreateCompatibleBitmap", "ptr", hdcWin, "int", GameAreaW, "int", GameAreaH, "ptr")
+    hOld   := DllCall("SelectObject", "ptr", hdcMem, "ptr", hBmp, "ptr")
+    ; PW_RENDERFULLCONTENT (0x2) — захват DirectX-контента
+    ok := DllCall("PrintWindow", "ptr", GameHwnd, "ptr", hdcMem, "uint", 0x2)
+    DllCall("SelectObject", "ptr", hdcMem, "ptr", hOld)
+    DllCall("DeleteDC", "ptr", hdcMem)
+    DllCall("ReleaseDC", "ptr", GameHwnd, "ptr", hdcWin)
+    if (!ok) {
+        DllCall("DeleteObject", "ptr", hBmp)
+        return false
+    }
+    SaveHBITMAPToBMP(hBmp, filepath, GameAreaW, GameAreaH)
+    DllCall("DeleteObject", "ptr", hBmp)
+    return !IsMostlyBlack(filepath)
+}
+
+; ---- Проверка: не является ли кадр почти чёрным (сетка 5x5 точек) ----
+IsMostlyBlack(filepath) {
+    if !FileExist(filepath)
+        return true
+    file := FileOpen(filepath, "r")
+    if !file
+        return true
+    w := 1280
+    h := 720
+    stride := ((w*3+3)//4)*4
+    total := 0, n := 0
+    Loop 5 {
+        px := w//5 * A_Index - w//10
+        Loop 5 {
+            py := h//5 * A_Index - h//10
+            file.Seek(54 + py*stride + px*3)
+            b := file.ReadUChar()
+            g := file.ReadUChar()
+            r := file.ReadUChar()
+            total += r + g + b
+            n++
+        }
+    }
+    file.Close()
+    ; средний канал < 10 → почти чёрный
+    return (total < n*30)
+}
+
+; ---- Захват с временным скрытием плавающих окон ----
+; Прячет все дочерние окна (калибровка, настройки, пресеты),
+; чтобы они не заслоняли GameArea при BitBlt, затем захватывает
+; и возвращает окна обратно.
+CaptureForMarking(filepath) {
+    global CalibGuiHwnd, PresetGuiHwnd
+    hidden := []
+
+    ; Прячем окна калибровки / пресетов / настроек если открыты
+    if (CalibGuiHwnd && DllCall("IsWindow", "ptr", CalibGuiHwnd)) {
+        DllCall("ShowWindow", "ptr", CalibGuiHwnd, "int", 0)
+        hidden.Push(CalibGuiHwnd)
+    }
+    if (PresetGuiHwnd && DllCall("IsWindow", "ptr", PresetGuiHwnd)) {
+        DllCall("ShowWindow", "ptr", PresetGuiHwnd, "int", 0)
+        hidden.Push(PresetGuiHwnd)
+    }
+    ; WinWaitActive / Sleep чтобы DWM успел перерисовать без этих окон
+    Sleep, 150
+
+    CaptureGameArea(filepath)
+
+    ; Возвращаем окна обратно
+    for i, hwnd in hidden
+        DllCall("ShowWindow", "ptr", hwnd, "int", 1)
 }
 
 CaptureScreenshot(x, y, w, h, filepath) {
@@ -508,8 +696,8 @@ SaveHBITMAPToBMP(hBitmap, filepath, w, h) {
     fileSize := 14 + 40 + imageSize
     NumPut(fileSize, fh, 2, "UInt")
     NumPut(14 + 40, fh, 10, "UInt")
-    if FileExist(filepath)
-        FileDelete, %filepath%
+    ; FileOpen "w" сам перезапишет файл; FileDelete перед этим опасен:
+    ; если между удалением и созданием произойдёт сбой, файл пропадёт.
     file := FileOpen(filepath, "w")
     file.RawWrite(&fh, 14)
     file.RawWrite(&bi, 40)
@@ -528,10 +716,24 @@ BtnMarkSlots:
         AddLog("Игра не найдена — сначала встрой Roblox")
         return
     }
-    CaptureGameArea(TempShot)
+    CaptureForMarking(TempShot)
     MarkMode := "slots"
-    MarkList := []
+    ; Загружаем существующие слоты, если карта уже была размечена ранее
+    if (MapCoords.HasKey(SelectedMapCtl)) {
+        ; Клонируем чтобы не испортить оригинал при редактировании
+        src := MapCoords[SelectedMapCtl]
+        MarkList := []
+        for i, v in src
+            MarkList.Push({num: v.num, x: v.x, y: v.y})
+    } else {
+        MarkList := []
+    }
     OpenMarkGui("Кликай по местам постановки юнитов (номер юнита спросит после каждого клика)")
+    ; Показываем уже существующие слоты в списке
+    Loop, % MarkList.Length() {
+        s := MarkList[A_Index]
+        GuiControl, Mark:, MarkListBox, % "Слот " A_Index ": юнит " s.num " -> (" s.x "," s.y ")"
+    }
 return
 
 ; ===================== КАЛИБРОВКА UPGRADE =====================
@@ -540,20 +742,9 @@ BtnCalibrateUpgrade:
         AddLog("Игра не найдена — сначала встрой Roblox")
         return
     }
-    CaptureGameArea(TempShot)
+    CaptureForMarking(TempShot)
     MarkMode := "abs_upgrade"
     OpenMarkGui("Кликни на кнопку Upgrade")
-return
-
-; ===================== КАЛИБРОВКА AUTOUPGRADE =====================
-BtnCalibrateAuto:
-    if !WinExist(WinTitle) {
-        AddLog("Игра не найдена — сначала встрой Roblox")
-        return
-    }
-    CaptureGameArea(TempShot)
-    MarkMode := "abs_auto"
-    OpenMarkGui("Кликни на кнопку AutoUpgrade")
 return
 
 ; ===================== КАЛИБРОВКА START GAME =====================
@@ -562,7 +753,7 @@ BtnCalibrateStartGame:
         AddLog("Игра не найдена — сначала встрой Roblox")
         return
     }
-    CaptureGameArea(TempShot)
+    CaptureForMarking(TempShot)
     MarkMode := "abs_startgame"
     OpenMarkGui("Кликни на кнопку Start Game")
 return
@@ -573,10 +764,130 @@ BtnCalibrateRepeatStage:
         AddLog("Игра не найдена — сначала встрой Roblox")
         return
     }
-    CaptureGameArea(TempShot)
+    CaptureForMarking(TempShot)
     MarkMode := "abs_repeatstage"
     OpenMarkGui("Кликни на кнопку Repeat Stage")
 return
+
+; ===================== СНЯТИЕ ШАБЛОНА (Defeat/Victory) =====================
+; Захватывает кадр, пользователь обводит 2 кликами небольшую область,
+; макрос вырезает её в images\<имя>.png для ImageSearch-детекта.
+BtnCaptureTemplate:
+    if !WinExist(WinTitle) {
+        AddLog("Игра не найдена — сначала встрой Roblox")
+        return
+    }
+    CaptureForMarking(TempShot)
+    MarkMode := "template"
+    TemplateName := ""
+    MarkList := []
+    OpenMarkGui("Зажми кнопку мыши и обведи область (например слово VICTORY). Отпусти — шаблон сохранится.")
+return
+
+; ===================== СНЯТИЕ ШАБЛОНА КНОПКИ START GAME =====================
+; То же самое, что Defeat/Victory, но имя шаблона задано заранее (StartGame) —
+; без запроса имени. Потом этот шаблон ищет ClickStartGameRetry.
+BtnCaptureStartGame:
+    if !WinExist(WinTitle) {
+        AddLog("Игра не найдена — сначала встрой Roblox")
+        return
+    }
+    CaptureForMarking(TempShot)
+    MarkMode := "template"
+    TemplateName := "StartGame"
+    MarkList := []
+    OpenMarkGui("Зажми кнопку мыши и обведи часть кнопки Start Game (слово START или иконку, БЕЗ рамки и краёв). Отпусти — шаблон сохранится как StartGame.bmp.")
+return
+
+SaveTemplateRegion(x1, y1, x2, y2) {
+    global TempShot, ImagesDir, TemplateName
+    ; Нормализуем углы
+    if (x1 > x2) {
+        t := x1, x1 := x2, x2 := t
+    }
+    if (y1 > y2) {
+        t := y1, y1 := y2, y2 := t
+    }
+    w := x2 - x1 + 1
+    h := y2 - y1 + 1
+    if (w < 8 || h < 8) {
+        AddLog("Область слишком маленькая (" w "x" h "), шаблон не сохранён")
+        return
+    }
+    ; Имя: либо задано заранее (Start Game), либо спрашиваем у пользователя (Defeat/Victory)
+    if (TemplateName != "") {
+        TplName := TemplateName
+        TemplateName := ""
+    } else {
+        InputBox, TplName, Имя шаблона, Введи имя для шаблона (например: Victory или Defeat), , 320, 140
+        if (ErrorLevel || TplName = "") {
+            AddLog("Сохранение шаблона отменено")
+            return
+        }
+    }
+    ; Сохраняем как BMP (ImageSearch отлично работает с BMP, GDI+ не нужен)
+    out := ImagesDir . "\" . TplName . ".bmp"
+    if !CropBMP(TempShot, x1, y1, w, h, out) {
+        AddLog("Не удалось вырезать шаблон")
+        return
+    }
+    AddLog("Шаблон сохранён: images\" TplName ".bmp (" w "x" h ")")
+    ; Сразу проверяем, что шаблон реально находится на экране
+    if (FindGameButton(out, fx, fy))
+        AddLog("Проверка: шаблон найден на экране в (" fx "," fy ") — детект будет работать!")
+    else
+        AddLog("ВНИМАНИЕ: шаблон НЕ найден на текущем экране. Проверь, что игра не изменилась после снятия кадра.")
+}
+
+; ---- Вырезает прямоугольную область из 24-бит BMP (src 1280x720) в новый BMP ----
+CropBMP(srcBmp, x, y, w, h, dstBmp) {
+    global GameAreaW, GameAreaH
+    if !FileExist(srcBmp)
+        return false
+    src := FileOpen(srcBmp, "r")
+    if !src
+        return false
+    ; 24-бит BMP, отрицательная высота = сверху вниз (как у нас в SaveHBITMAPToBMP)
+    srcStride := ((GameAreaW*3+3)//4)*4
+    dstStride := ((w*3+3)//4)*4
+    ; Читаем строки y..y+h-1 из исходника, пишем в новый файл
+    dst := FileOpen(dstBmp, "w")
+    if !dst {
+        src.Close()
+        return false
+    }
+    ; Заголовок нового BMP
+    VarSetCapacity(bi, 40, 0)
+    NumPut(40, bi, 0, "UInt")
+    NumPut(w, bi, 4, "Int")
+    NumPut(-h, bi, 8, "Int")   ; top-down
+    NumPut(1, bi, 12, "UShort")
+    NumPut(24, bi, 14, "UShort")
+    VarSetCapacity(fh, 14, 0)
+    NumPut(0x4D42, fh, 0, "UShort")
+    NumPut(14 + 40 + dstStride*h, fh, 2, "UInt")
+    NumPut(14 + 40, fh, 10, "UInt")
+    dst.RawWrite(&fh, 14)
+    dst.RawWrite(&bi, 40)
+    ; Копируем пиксели построчно
+    VarSetCapacity(rowBuf, srcStride, 0)
+    Loop, %h% {
+        row := y + A_Index - 1
+        src.Seek(54 + row*srcStride + x*3)
+        src.RawRead(&rowBuf, w*3)
+        ; Дополняем строку нулями до dstStride
+        if (dstStride > w*3) {
+            VarSetCapacity(pad, dstStride - w*3, 0)
+            dst.RawWrite(&rowBuf, w*3)
+            dst.RawWrite(&pad, dstStride - w*3)
+        } else {
+            dst.RawWrite(&rowBuf, w*3)
+        }
+    }
+    src.Close()
+    dst.Close()
+    return FileExist(dstBmp)
+}
 
 OpenMarkGui(promptText) {
     global TempShot, MarkPrompt, MarkPic, MarkListBox, MarkGuiHwnd
@@ -629,12 +940,6 @@ MarkClick:
         GuiControl, Mark:, MarkListBox, % "Upgrade: (" px "," py ")"
         GuiControl, Mark:, MarkPrompt, Готово — нажми "Готово / Сохранить"
     }
-    else if (MarkMode = "abs_auto") {
-        AutoX := px
-        AutoY := py
-        GuiControl, Mark:, MarkListBox, % "AutoUpgrade: (" px "," py ")"
-        GuiControl, Mark:, MarkPrompt, Готово — нажми "Готово / Сохранить"
-    }
     else if (MarkMode = "abs_startgame") {
         StartGameX := px
         StartGameY := py
@@ -647,6 +952,8 @@ MarkClick:
         GuiControl, Mark:, MarkListBox, % "RepeatStage: (" px "," py ")"
         GuiControl, Mark:, MarkPrompt, Готово — нажми "Готово / Сохранить"
     }
+    ; Примечание: template-режим (drag-select) обрабатывается через OnMessage-обработчики,
+    ; а не через этот g-label. См. OnTemplateLButtonUp.
 return
 
 MarkUndo:
@@ -660,9 +967,6 @@ MarkUndo:
     } else if (MarkMode = "abs_upgrade") {
         GuiControl, Mark:, MarkListBox, |
         GuiControl, Mark:, MarkPrompt, Кликни на кнопку Upgrade
-    } else if (MarkMode = "abs_auto") {
-        GuiControl, Mark:, MarkListBox, |
-        GuiControl, Mark:, MarkPrompt, Кликни на кнопку AutoUpgrade
     } else if (MarkMode = "abs_startgame") {
         GuiControl, Mark:, MarkListBox, |
         GuiControl, Mark:, MarkPrompt, Кликни на кнопку Start Game
@@ -670,6 +974,7 @@ MarkUndo:
         GuiControl, Mark:, MarkListBox, |
         GuiControl, Mark:, MarkPrompt, Кликни на кнопку Repeat Stage
     }
+    ; template — нет отмены (drag-select целиком обрабатывается в OnTemplateLButtonUp)
 return
 
 MarkDone:
@@ -686,10 +991,6 @@ MarkDone:
         SaveConfig()
         GuiControl,, OffsetStatus, % "Up(" UpgradeX "," UpgradeY ") Auto(" AutoX "," AutoY ") Start(" StartGameX "," StartGameY ")"
         AddLog("Калибровка Upgrade сохранена: (" UpgradeX "," UpgradeY ")")
-    } else if (MarkMode = "abs_auto") {
-        SaveConfig()
-        GuiControl,, OffsetStatus, % "Up(" UpgradeX "," UpgradeY ") Auto(" AutoX "," AutoY ") Start(" StartGameX "," StartGameY ")"
-        AddLog("Калибровка AutoUpgrade сохранена: (" AutoX "," AutoY ")")
     } else if (MarkMode = "abs_startgame") {
         SaveConfig()
         GuiControl,, OffsetStatus, % "Up(" UpgradeX "," UpgradeY ") Auto(" AutoX "," AutoY ") Start(" StartGameX "," StartGameY ") Repeat(" RepeatStageX "," RepeatStageY ")"
@@ -698,14 +999,24 @@ MarkDone:
         SaveConfig()
         GuiControl,, OffsetStatus, % "Up(" UpgradeX "," UpgradeY ") Auto(" AutoX "," AutoY ") Start(" StartGameX "," StartGameY ") Repeat(" RepeatStageX "," RepeatStageY ")"
         AddLog("Калибровка RepeatStage сохранена: (" RepeatStageX "," RepeatStageY ")")
+    } else if (MarkMode = "template") {
+        AddLog("Снятие шаблона закрыто без сохранения")
+        TemplateName := ""
+        ; Подчищаем drag-состояние (если пользователь нажал Готово не отпуская мышь)
+        DragCleanup()
     }
     MarkMode := ""
     Gui, Mark:Destroy
+    ; Восстанавливаем видимость окна калибровки
+    if (CalibGuiHwnd && DllCall("IsWindow", "ptr", CalibGuiHwnd))
+        DllCall("ShowWindow", "ptr", CalibGuiHwnd, "int", 1)
     UpdateCalibStatus()
 return
 
 MarkCancel:
     MarkMode := ""
+    TemplateName := ""
+    DragCleanup()
     AddLog("Разметка/калибровка отменена пользователем")
     Gui, Mark:Destroy
 return
@@ -717,7 +1028,7 @@ return
 
 OpenSettingsGui() {
     global ClickDelay, SlotClickDelay, UpgradeClickDelay
-    global AutoClickDelay, UnitSleepDelay, StartGameDelay, ImgVariation
+    global AutoClickDelay, UnitSleepDelay, StartGameDelay, HoverDelay, MouseSpeed, ImgVariation
     global StartGameColor, StartGameColorVar, StartGameCenterX, StartGameCenterY, StartGameRadius
     Gui, Settings:New, , Настройки
     Gui, Settings:Color, 0x1E1E1E
@@ -743,28 +1054,34 @@ OpenSettingsGui() {
     Gui, Settings:Add, Text, x10 y190 w280, КД после Start Game:
     Gui, Settings:Add, Edit, x300 y190 w80 vSetStartGameDelay, %StartGameDelay%
 
-    Gui, Settings:Add, Text, x10 y220 w280, Допуск цвета (ImageSearch, 0-255):
-    Gui, Settings:Add, Edit, x300 y220 w80 vSetImgVariation, %ImgVariation%
+    Gui, Settings:Add, Text, x10 y220 w280, КД после наведения (перед выбором юнита):
+    Gui, Settings:Add, Edit, x300 y220 w80 vSetHoverDelay, %HoverDelay%
 
-    Gui, Settings:Add, Text, x10 y250 w280, Цвет Start Game (0xRRGGBB):
-    Gui, Settings:Add, Edit, x300 y250 w80 vSetStartGameColor, %StartGameColor%
+    Gui, Settings:Add, Text, x10 y250 w280, Скорость мыши (0-100):
+    Gui, Settings:Add, Edit, x300 y250 w80 vSetMouseSpeed, %MouseSpeed%
 
-    Gui, Settings:Add, Text, x10 y280 w280, Допуск PixelSearch (0-255):
-    Gui, Settings:Add, Edit, x300 y280 w80 vSetStartGameColorVar, %StartGameColorVar%
+    Gui, Settings:Add, Text, x10 y280 w280, Допуск цвета (ImageSearch, 0-255):
+    Gui, Settings:Add, Edit, x300 y280 w80 vSetImgVariation, %ImgVariation%
 
-    Gui, Settings:Add, Text, x10 y310 w280, Центр X (0-1280):
-    Gui, Settings:Add, Edit, x300 y310 w80 vSetStartGameCenterX, %StartGameCenterX%
+    Gui, Settings:Add, Text, x10 y310 w280, Цвет Start Game (0xRRGGBB):
+    Gui, Settings:Add, Edit, x300 y310 w80 vSetStartGameColor, %StartGameColor%
 
-    Gui, Settings:Add, Text, x10 y340 w280, Центр Y (0-720):
-    Gui, Settings:Add, Edit, x300 y340 w80 vSetStartGameCenterY, %StartGameCenterY%
+    Gui, Settings:Add, Text, x10 y340 w280, Допуск PixelSearch (0-255):
+    Gui, Settings:Add, Edit, x300 y340 w80 vSetStartGameColorVar, %StartGameColorVar%
 
-    Gui, Settings:Add, Text, x10 y370 w280, Радиус поиска (пиксели):
-    Gui, Settings:Add, Edit, x300 y370 w80 vSetStartGameRadius, %StartGameRadius%
+    Gui, Settings:Add, Text, x10 y370 w280, Центр X (0-1280):
+    Gui, Settings:Add, Edit, x300 y370 w80 vSetStartGameCenterX, %StartGameCenterX%
 
-    Gui, Settings:Add, Button, x10 y410 w180 h30 gSettingsSave, Сохранить
-    Gui, Settings:Add, Button, x200 y410 w180 h30 gSettingsCancel, Отмена
+    Gui, Settings:Add, Text, x10 y400 w280, Центр Y (0-720):
+    Gui, Settings:Add, Edit, x300 y400 w80 vSetStartGameCenterY, %StartGameCenterY%
 
-    Gui, Settings:Show, w400 h450, Настройки
+    Gui, Settings:Add, Text, x10 y430 w280, Радиус поиска (пиксели):
+    Gui, Settings:Add, Edit, x300 y430 w80 vSetStartGameRadius, %StartGameRadius%
+
+    Gui, Settings:Add, Button, x10 y470 w180 h30 gSettingsSave, Сохранить
+    Gui, Settings:Add, Button, x200 y470 w180 h30 gSettingsCancel, Отмена
+
+    Gui, Settings:Show, w400 h510, Настройки
 }
 
 SettingsSave:
@@ -776,6 +1093,8 @@ SettingsSave:
     AutoClickDelay := SetAutoClickDelay
     UnitSleepDelay := SetUnitSleepDelay
     StartGameDelay := SetStartGameDelay
+    HoverDelay := SetHoverDelay
+    MouseSpeed := SetMouseSpeed
     ImgVariation := SetImgVariation
     StartGameColor := SetStartGameColor
     StartGameColorVar := SetStartGameColorVar
@@ -791,7 +1110,49 @@ SettingsCancel:
     Gui, Settings:Destroy
 return
 
-; ===================== КАЛИБРОВКА (отдельное окно с пресетами) =====================
+; ===================== ПРЕСЕТЫ (отдельное окно) =====================
+BtnOpenPresets:
+    if (PresetGuiHwnd && DllCall("IsWindow", "ptr", PresetGuiHwnd)) {
+        Gui, Preset:Show
+        return
+    }
+    OpenPresetsGui()
+return
+
+OpenPresetsGui() {
+    global PresetGuiHwnd
+    Gui, Preset:New, +HwndPresetGuiHwnd, Пресеты
+    Gui, Preset:Color, 0x1E1E1E, 0x252526
+    Gui, Preset:Font, s10 cE0E0E0, Segoe UI
+
+    Gui, Preset:Font, s10 c00CCFF Bold, Segoe UI
+    Gui, Preset:Add, Text, x14 y14 w620 h24, Пресеты — полная конфигурация
+    Gui, Preset:Font, s10 cE0E0E0, Segoe UI
+
+    ; ---- имя пресета + действия ----
+    Gui, Preset:Add, Text, x14 y54 w260, Имя пресета:
+    Gui, Preset:Add, Edit, x204 y50 w260 h22 vPresetName,
+    Gui, Preset:Add, Button, x484 y50 w160 h26 gBtnPresetSave, Сохранить пресет
+
+    ; ---- список пресетов ----
+    Gui, Preset:Add, Text, x14 y90 w260, Список пресетов:
+    Gui, Preset:Add, ListBox, x204 y86 w260 h150 vPresetList gPresetSelect,
+    Gui, Preset:Add, Button, x484 y86 w160 h26 gBtnPresetLoad, Загрузить пресет
+    Gui, Preset:Add, Button, x484 y120 w160 h26 gBtnPresetDelete, Удалить пресет
+    Gui, Preset:Add, Button, x484 y154 w160 h26 gBtnPresetRefresh, Обновить список
+
+    ; ---- подсказка о составе ----
+    Gui, Preset:Font, s8 c808080 Italic, Segoe UI
+    Gui, Preset:Add, Text, x14 y252 w620 h40, Пресет включает ВСЁ: координаты кнопок (Upgrade/Auto/StartGame/RepeatStage), задержки, параметры ImageSearch/PixelSearch и слоты всех карт (расположение юнитов). При загрузке пресет сразу применяется и записывается в config.ini, settings.ini и maps\*_slots.ini.
+    Gui, Preset:Font, s10 cE0E0E0 Norm, Segoe UI
+
+    Gui, Preset:Add, Button, x484 y300 w160 h28 gBtnPresetClose, Закрыть
+
+    Gui, Preset:Show, w668 h344, Пресеты
+    LoadPresetsList()
+}
+
+; ===================== КАЛИБРОВКА (отдельное окно) =====================
 BtnOpenCalibration:
     if (CalibGuiHwnd && DllCall("IsWindow", "ptr", CalibGuiHwnd)) {
         Gui, Calib:Show
@@ -801,7 +1162,7 @@ BtnOpenCalibration:
 return
 
 OpenCalibrationGui() {
-    global CalibGuiHwnd, PresetsIni, CalibStatus   ; <-- добавили CalibStatus
+    global CalibGuiHwnd, CalibStatus
     Gui, Calib:New, +HwndCalibGuiHwnd, Калибровка координат
     Gui, Calib:Color, 0x1E1E1E, 0x252526
     Gui, Calib:Font, s10 cE0E0E0, Segoe UI
@@ -810,37 +1171,71 @@ OpenCalibrationGui() {
     Gui, Calib:Add, Text, x14 y14 w520 h24, Калибровка координат кнопок TD
     Gui, Calib:Font, s10 cE0E0E0, Segoe UI
 
-    Gui, Calib:Add, Text, x14 y44 w520 h20 vCalibStatus, % CalibStatusText()   ; обернули в %
+    Gui, Calib:Add, Text, x14 y44 w520 h20 vCalibStatus, % CalibStatusText()
 
     ; ---- группа: калибровка кнопок ----
     Gui, Calib:Add, GroupBox, x14 y74 w640 h140, Калибровка кнопок
     Gui, Calib:Add, Button, x34 y104 w160 h28 gBtnCalibrateUpgrade, Калибровать Upgrade
-    Gui, Calib:Add, Button, x204 y104 w160 h28 gBtnCalibrateAuto, Калибровать AutoUpgrade
-    Gui, Calib:Add, Button, x374 y104 w160 h28 gBtnCalibrateStartGame, Калибровать Start Game
-    Gui, Calib:Add, Button, x34 y138 w160 h28 gBtnCalibrateRepeatStage, Калибровать Repeat Stage
-    Gui, Calib:Add, Text, x204 y146 w330 h20 c808080, Клик по скриншоту разметит кнопку
+    Gui, Calib:Add, Button, x204 y104 w160 h28 gBtnCalibrateStartGame, Калибровать Start Game
+    Gui, Calib:Add, Button, x374 y104 w160 h28 gBtnCalibrateRepeatStage, Калибровать Repeat Stage
+    Gui, Calib:Add, Text, x204 y146 w330 h20 c808080, Клик по скриншоту разметит кнопку. AutoUpgrade — в меню Автопрокачки.
 
-    ; ---- группа: экспорт / импорт ----
-    Gui, Calib:Add, GroupBox, x14 y224 w640 h80, Конфигурация
-    Gui, Calib:Add, Button, x34 y250 w140 h28 gBtnCalibSaveConfig, Сохранить в config.ini
-    Gui, Calib:Add, Button, x184 y250 w140 h28 gBtnCalibLoadConfig, Загрузить из config.ini
+    ; ---- группа: шаблоны для детекта победы/поражения ----
+    Gui, Calib:Add, GroupBox, x14 y224 w640 h96, Шаблоны детекта Defeat / Victory
+    Gui, Calib:Add, Button, x34 y250 w180 h28 gBtnCaptureTemplate, Снять шаблон с экрана
+    Gui, Calib:Add, Button, x34 y284 w180 h28 gBtnTestDetection, Проверить детект сейчас
+    Gui, Calib:Add, Text, x224 y256 w410 h40 c808080, Обведи мышью НЕБОЛЬШУЮ область (например слово "VICTORY" или "DEFEAT"). Большие шаблоны ImageSearch не находит!
+    Gui, Calib:Add, Text, x224 y278 w410 h20 c00CCFF, Имя сохранится как images\*.bmp
 
-    ; ---- группа: пресеты ----
-    Gui, Calib:Add, GroupBox, x14 y314 w640 h170, Пресеты координат
-    Gui, Calib:Add, Text, x34 y336 w260, Имя пресета:
-    Gui, Calib:Add, Edit, x304 y336 w180 h20 vCalibPresetName,
-    Gui, Calib:Add, Button, x494 y336 w140 h26 gBtnCalibSavePreset, Сохранить пресет
-    Gui, Calib:Add, Button, x494 y366 w140 h26 gBtnCalibLoadPreset, Загрузить пресет
-    Gui, Calib:Add, Button, x494 y396 w140 h26 gBtnCalibDeletePreset, Удалить пресет
-    Gui, Calib:Add, Text, x34 y366 w260, Список пресетов:
-    Gui, Calib:Add, ListBox, x304 y362 w180 h110 vCalibPresetList gCalibPresetSelect,
-    Gui, Calib:Add, Button, x34 y396 w140 h26 gBtnCalibRefreshPresets, Обновить список
+    ; ---- группа: шаблон детекта кнопки Start Game ----
+    Gui, Calib:Add, GroupBox, x14 y330 w640 h96, Шаблон детекта Start Game
+    Gui, Calib:Add, Button, x34 y356 w180 h28 gBtnCaptureStartGame, Снять шаблон Start Game
+    Gui, Calib:Add, Button, x34 y390 w180 h28 gBtnTestStartGame, Проверить детект старта
+    Gui, Calib:Add, Text, x224 y362 w410 h40 c808080, Обведи ЧАСТЬ кнопки Start (например слово "START" — без рамки и краёв). Макрос будет искать и кликать по нему.
+    Gui, Calib:Add, Text, x224 y384 w410 h20 c00CCFF, Сохранится как images\StartGame.bmp (без запроса имени)
 
-    Gui, Calib:Add, Button, x494 y444 w140 h28 gBtnCalibClose, Закрыть
+    Gui, Calib:Add, Button, x494 y442 w140 h28 gBtnCalibClose, Закрыть
 
-    Gui, Calib:Show, w668 h484, Калибровка координат
-    LoadPresetsList()
+    Gui, Calib:Show, w668 h486, Калибровка координат
 }
+
+; ---- Проверка детекта победы/поражения на текущем экране ----
+BtnTestDetection:
+    global ImagesDir
+    if (DetectVictory())
+        AddLog("Проверка: VICTORY обнаружен на экране!")
+    else if (DetectDefeat())
+        AddLog("Проверка: DEFEAT обнаружен на экране!")
+    else {
+        AddLog("Проверка: ни VICTORY, ни DEFEAT не найдены на текущем экране.")
+        if (!FileExist(ImagesDir . "\Victory.bmp") && !FileExist(ImagesDir . "\Victory.png"))
+            AddLog("Victory-шаблон отсутствует в images\ — сначала сними его кнопкой «Снять шаблон».")
+        if (!FileExist(ImagesDir . "\Defeat.bmp") && !FileExist(ImagesDir . "\Defeat.png"))
+            AddLog("Defeat-шаблон отсутствует в images\ — сначала сними его кнопкой «Снять шаблон».")
+        AddLog("Совет: открой экран победы в игре и нажми «Снять шаблон» ещё раз, обведя слово VICTORY.")
+    }
+return
+
+; ---- Проверка детекта кнопки Start Game на текущем экране ----
+BtnTestStartGame:
+    global ImagesDir
+    full := ImagesDir . "\StartGame.bmp"
+    if !FileExist(full)
+        full := ImagesDir . "\StartGame.png"
+    if !FileExist(full) {
+        AddLog("Проверка: StartGame-шаблон отсутствует в images\ — сначала сними его кнопкой «Снять шаблон Start Game».")
+        AddLog("Совет: открой в игре экран с кнопкой Start Game и сними шаблон, обведя ЧАСТЬ кнопки (слово START).")
+        return
+    }
+    if (IsTemplateTooBig(full)) {
+        AddLog("Проверка: StartGame-шаблон слишком большой — ImageSearch его не найдёт. Сними шаблон поменьше (обведи только слово START).")
+        return
+    }
+    if (FindGameButton(full, bx, by))
+        AddLog("Проверка: Start Game найден на экране в (" bx "," by ") — детект будет работать!")
+    else
+        AddLog("Проверка: Start Game НЕ найден на текущем экране. Открой экран с кнопкой Start Game и нажми проверку ещё раз.")
+return
 
 CalibStatusText() {
     global UpgradeX, UpgradeY, AutoX, AutoY, StartGameX, StartGameY, RepeatStageX, RepeatStageY
@@ -848,109 +1243,197 @@ CalibStatusText() {
 }
 
 UpdateCalibStatus() {
-    global CalibStatus   ; <-- добавили
+    global CalibStatus
     if (CalibGuiHwnd && DllCall("IsWindow", "ptr", CalibGuiHwnd))
         GuiControl, Calib:, CalibStatus, % CalibStatusText()
 }
 
-BtnCalibSaveConfig:
-    SaveConfig()
-    AddLog("Координаты сохранены в config.ini")
-    UpdateCalibStatus()
+; ---------- пресеты (окно Preset) ----------
+PresetSelect:
+    Gui, Preset:Submit, NoHide
+    GuiControl, Preset:, PresetName, % PresetList
 return
 
-BtnCalibLoadConfig:
-    LoadConfig()
-    GuiControl, 1:, OffsetStatus, % "Up(" UpgradeX "," UpgradeY ") Auto(" AutoX "," AutoY ") Start(" StartGameX "," StartGameY ") Repeat(" RepeatStageX "," RepeatStageY ")"
-    UpdateCalibStatus()
-    AddLog("Координаты загружены из config.ini")
-return
-
-; ---------- пресеты ----------
-CalibPresetSelect:
-    Gui, Calib:Submit, NoHide
-    GuiControl, Calib:, CalibPresetName, % CalibPresetList
-return
-
-BtnCalibSavePreset:
-    Gui, Calib:Submit, NoHide
-    if (CalibPresetName = "") {
+BtnPresetSave:
+    Gui, Preset:Submit, NoHide
+    if (PresetName = "") {
         MsgBox, 48, Ошибка, Введи имя пресета.
         return
     }
-    IniWrite, %UpgradeX%,    %PresetsIni%, %CalibPresetName%, UpgradeX
-    IniWrite, %UpgradeY%,    %PresetsIni%, %CalibPresetName%, UpgradeY
-    IniWrite, %AutoX%,       %PresetsIni%, %CalibPresetName%, AutoX
-    IniWrite, %AutoY%,       %PresetsIni%, %CalibPresetName%, AutoY
-    IniWrite, %StartGameX%,  %PresetsIni%, %CalibPresetName%, StartGameX
-    IniWrite, %StartGameY%,  %PresetsIni%, %CalibPresetName%, StartGameY
-    IniWrite, %RepeatStageX%, %PresetsIni%, %CalibPresetName%, RepeatStageX
-    IniWrite, %RepeatStageY%, %PresetsIni%, %CalibPresetName%, RepeatStageY
-    AddLog("Пресет """ CalibPresetName """ сохранён")
+    ; ---- 1. Координаты кнопок (калибровка) ----
+    IniWrite, %UpgradeX%,     %PresetsIni%, %PresetName%, UpgradeX
+    IniWrite, %UpgradeY%,     %PresetsIni%, %PresetName%, UpgradeY
+    IniWrite, %AutoX%,        %PresetsIni%, %PresetName%, AutoX
+    IniWrite, %AutoY%,        %PresetsIni%, %PresetName%, AutoY
+    IniWrite, %StartGameX%,   %PresetsIni%, %PresetName%, StartGameX
+    IniWrite, %StartGameY%,   %PresetsIni%, %PresetName%, StartGameY
+    IniWrite, %RepeatStageX%, %PresetsIni%, %PresetName%, RepeatStageX
+    IniWrite, %RepeatStageY%, %PresetsIni%, %PresetName%, RepeatStageY
+    ; ---- 2. Задержки (Delays) ----
+    IniWrite, %ClickDelay%,        %PresetsIni%, %PresetName%, ClickDelay
+    IniWrite, %SlotClickDelay%,    %PresetsIni%, %PresetName%, SlotClickDelay
+    IniWrite, %UpgradeClickDelay%, %PresetsIni%, %PresetName%, UpgradeClickDelay
+    IniWrite, %AutoClickDelay%,    %PresetsIni%, %PresetName%, AutoClickDelay
+    IniWrite, %UnitSleepDelay%,    %PresetsIni%, %PresetName%, UnitSleepDelay
+    IniWrite, %StartGameDelay%,    %PresetsIni%, %PresetName%, StartGameDelay
+    IniWrite, %HoverDelay%,        %PresetsIni%, %PresetName%, HoverDelay
+    IniWrite, %MouseSpeed%,        %PresetsIni%, %PresetName%, MouseSpeed
+    ; ---- 3. Поиск изображений (ImageSearch) ----
+    IniWrite, %ImgVariation%, %PresetsIni%, %PresetName%, ImgVariation
+    ; ---- 4. Поиск пикселя (PixelSearch) ----
+    IniWrite, %StartGameColor%,    %PresetsIni%, %PresetName%, StartGameColor
+    IniWrite, %StartGameColorVar%, %PresetsIni%, %PresetName%, StartGameColorVar
+    IniWrite, %StartGameCenterX%,  %PresetsIni%, %PresetName%, StartGameCenterX
+    IniWrite, %StartGameCenterY%,  %PresetsIni%, %PresetName%, StartGameCenterY
+    IniWrite, %StartGameRadius%,   %PresetsIni%, %PresetName%, StartGameRadius
+    ; ---- 5. Слоты всех карт (расположение юнитов) ----
+    IniWrite, % MapList.Length(), %PresetsIni%, %PresetName%, MapCount
+    for idx, mapName in MapList {
+        nameKey := "Map_" idx "_Name"
+        IniWrite, %mapName%, %PresetsIni%, %PresetName%, %nameKey%
+        if (MapCoords.HasKey(mapName)) {
+            slots := MapCoords[mapName]
+            slotCount := slots.Length()
+        } else {
+            slotCount := 0
+        }
+        cntKey := "Map_" idx "_SlotCount"
+        IniWrite, %slotCount%, %PresetsIni%, %PresetName%, %cntKey%
+        Loop, %slotCount% {
+            s := slots[A_Index]
+            slotKey := "Map_" idx "_Slot_" A_Index
+            line := s.num . "," . s.x . "," . s.y
+            IniWrite, %line%, %PresetsIni%, %PresetName%, %slotKey%
+        }
+    }
+    AddLog("Пресет """ PresetName """ сохранён (координаты + настройки + слоты всех карт)")
     LoadPresetsList()
 return
 
-BtnCalibLoadPreset:
-    Gui, Calib:Submit, NoHide
-    Gui, Calib:Default
-    if (CalibPresetName = "") {
-        GuiControlGet, sel, , CalibPresetList
+BtnPresetLoad:
+    Gui, Preset:Submit, NoHide
+    Gui, Preset:Default
+    if (PresetName = "") {
+        GuiControlGet, sel, , PresetList
         if (sel = "") {
             MsgBox, 48, Ошибка, Выбери пресет из списка или введи имя.
             return
         }
-        CalibPresetName := sel
+        PresetName := sel
     }
-    IniRead, v, %PresetsIni%, %CalibPresetName%, UpgradeX, __NONE__
+    IniRead, v, %PresetsIni%, %PresetName%, UpgradeX, __NONE__
     if (v = "__NONE__") {
-        MsgBox, 48, Ошибка, Пресет """ CalibPresetName """ не найден.
+        MsgBox, 48, Ошибка, Пресет """ PresetName """ не найден.
         return
     }
-    IniRead, v, %PresetsIni%, %CalibPresetName%, UpgradeX, 0
+    ; ---- 1. Координаты кнопок ----
+    IniRead, v, %PresetsIni%, %PresetName%, UpgradeX, 0
     UpgradeX := v
-    IniRead, v, %PresetsIni%, %CalibPresetName%, UpgradeY, 0
+    IniRead, v, %PresetsIni%, %PresetName%, UpgradeY, 0
     UpgradeY := v
-    IniRead, v, %PresetsIni%, %CalibPresetName%, AutoX, 0
+    IniRead, v, %PresetsIni%, %PresetName%, AutoX, 0
     AutoX := v
-    IniRead, v, %PresetsIni%, %CalibPresetName%, AutoY, 0
+    IniRead, v, %PresetsIni%, %PresetName%, AutoY, 0
     AutoY := v
-    IniRead, v, %PresetsIni%, %CalibPresetName%, StartGameX, 0
+    IniRead, v, %PresetsIni%, %PresetName%, StartGameX, 0
     StartGameX := v
-    IniRead, v, %PresetsIni%, %CalibPresetName%, StartGameY, 0
+    IniRead, v, %PresetsIni%, %PresetName%, StartGameY, 0
     StartGameY := v
-    IniRead, v, %PresetsIni%, %CalibPresetName%, RepeatStageX, 0
+    IniRead, v, %PresetsIni%, %PresetName%, RepeatStageX, 0
     RepeatStageX := v
-    IniRead, v, %PresetsIni%, %CalibPresetName%, RepeatStageY, 0
+    IniRead, v, %PresetsIni%, %PresetName%, RepeatStageY, 0
     RepeatStageY := v
+    ; ---- 2. Задержки ----
+    IniRead, v, %PresetsIni%, %PresetName%, ClickDelay, %ClickDelay%
+    ClickDelay := v
+    IniRead, v, %PresetsIni%, %PresetName%, SlotClickDelay, %SlotClickDelay%
+    SlotClickDelay := v
+    IniRead, v, %PresetsIni%, %PresetName%, UpgradeClickDelay, %UpgradeClickDelay%
+    UpgradeClickDelay := v
+    IniRead, v, %PresetsIni%, %PresetName%, AutoClickDelay, %AutoClickDelay%
+    AutoClickDelay := v
+    IniRead, v, %PresetsIni%, %PresetName%, UnitSleepDelay, %UnitSleepDelay%
+    UnitSleepDelay := v
+    IniRead, v, %PresetsIni%, %PresetName%, StartGameDelay, %StartGameDelay%
+    StartGameDelay := v
+    IniRead, v, %PresetsIni%, %PresetName%, HoverDelay, %HoverDelay%
+    HoverDelay := v
+    IniRead, v, %PresetsIni%, %PresetName%, MouseSpeed, %MouseSpeed%
+    MouseSpeed := v
+    ; ---- 3. ImageSearch ----
+    IniRead, v, %PresetsIni%, %PresetName%, ImgVariation, %ImgVariation%
+    ImgVariation := v
+    ; ---- 4. PixelSearch ----
+    IniRead, v, %PresetsIni%, %PresetName%, StartGameColor, %StartGameColor%
+    StartGameColor := v
+    IniRead, v, %PresetsIni%, %PresetName%, StartGameColorVar, %StartGameColorVar%
+    StartGameColorVar := v
+    IniRead, v, %PresetsIni%, %PresetName%, StartGameCenterX, %StartGameCenterX%
+    StartGameCenterX := v
+    IniRead, v, %PresetsIni%, %PresetName%, StartGameCenterY, %StartGameCenterY%
+    StartGameCenterY := v
+    IniRead, v, %PresetsIni%, %PresetName%, StartGameRadius, %StartGameRadius%
+    StartGameRadius := v
+    ; ---- 5. Сохраняем загруженные значения в config.ini и settings.ini ----
+    SaveConfig()
+    SaveSettings()
+    ; ---- 6. Слоты всех карт ----
+    IniRead, mapCount, %PresetsIni%, %PresetName%, MapCount, 0
+    Loop, %mapCount% {
+        idx := A_Index
+        nameKey := "Map_" idx "_Name"
+        IniRead, mapName, %PresetsIni%, %PresetName%, %nameKey%, __NONE__
+        if (mapName = "" || mapName = "ERROR" || mapName = "__NONE__")
+            continue
+        cntKey := "Map_" idx "_SlotCount"
+        IniRead, slotCount, %PresetsIni%, %PresetName%, %cntKey%, 0
+        slotList := []
+        Loop, %slotCount% {
+            slotKey := "Map_" idx "_Slot_" A_Index
+            IniRead, slotLine, %PresetsIni%, %PresetName%, %slotKey%, __NONE__
+            if (slotLine = "" || slotLine = "ERROR" || slotLine = "__NONE__")
+                continue
+            StringSplit, p, slotLine, `,
+            slotList.Push({num: p1, x: p2, y: p3})
+        }
+        ; Записываем слоты в файл карты и обновляем MapCoords
+        SaveMapSlots(mapName, slotList)
+        LoadMapCoordsOne(mapName)
+    }
+    ; ---- 7. Обновляем UI ----
+    ReloadMapList()
+    LoadAllMapCoords()
+    Gui, 1:Default
+    RefreshMapDropdown()
     GuiControl, 1:, OffsetStatus, % "Up(" UpgradeX "," UpgradeY ") Auto(" AutoX "," AutoY ") Start(" StartGameX "," StartGameY ") Repeat(" RepeatStageX "," RepeatStageY ")"
     UpdateCalibStatus()
-    AddLog("Пресет """ CalibPresetName """ загружен")
+    AddLog("Пресет """ PresetName """ загружен (координаты + настройки + слоты карт применены и записаны на диск)")
 return
 
-BtnCalibDeletePreset:
-    Gui, Calib:Submit, NoHide
-    Gui, Calib:Default
-    if (CalibPresetName = "") {
-        GuiControlGet, sel, , CalibPresetList
+BtnPresetDelete:
+    Gui, Preset:Submit, NoHide
+    Gui, Preset:Default
+    if (PresetName = "") {
+        GuiControlGet, sel, , PresetList
         if (sel = "") {
             MsgBox, 48, Ошибка, Введи или выбери имя пресета для удаления.
             return
         }
-        CalibPresetName := sel
+        PresetName := sel
     }
-    IniDelete, %PresetsIni%, %CalibPresetName%
-    GuiControl, Calib:, CalibPresetName,
-    AddLog("Пресет """ CalibPresetName """ удалён")
+    IniDelete, %PresetsIni%, %PresetName%
+    GuiControl, Preset:, PresetName,
+    AddLog("Пресет """ PresetName """ удалён")
     LoadPresetsList()
 return
 
-BtnCalibRefreshPresets:
+BtnPresetRefresh:
     LoadPresetsList()
 return
 
 LoadPresetsList() {
     global PresetsIni
-    GuiControl, Calib:, CalibPresetList, |
+    GuiControl, Preset:, PresetList, |
     if (!FileExist(PresetsIni))
         return
     FileRead, content, %PresetsIni%
@@ -959,10 +1442,127 @@ LoadPresetsList() {
         line := A_LoopField
         if (SubStr(line, 1, 1) = "[" && SubStr(line, 0, 1) = "]") {
             name := Trim(SubStr(line, 2, -1))
-            GuiControl, Calib:, CalibPresetList, %name%
+            GuiControl, Preset:, PresetList, %name%
         }
     }
 }
+
+BtnPresetClose:
+PresetGuiClose:
+    Gui, Preset:Destroy
+    PresetGuiHwnd := 0
+return
+
+; ===================== НАСТРОЙКИ АВТОПРОКАЧКИ =====================
+AutoUpgradeToggle:
+    Gui, 1:Submit, NoHide
+    ; Галочка уже обновила AutoUpgradeEnabled, больше ничего не нужно
+return
+
+BtnOpenAutoUpgradeSettings:
+    if (AutoUpgradeGuiHwnd && DllCall("IsWindow", "ptr", AutoUpgradeGuiHwnd)) {
+        Gui, AutoUpgrade:Show
+        return
+    }
+    OpenAutoUpgradeSettingsGui()
+return
+
+OpenAutoUpgradeSettingsGui() {
+    global AutoUpgradeGuiHwnd, AutoUpgradePriority
+    global Priority1, Priority2, Priority3, Priority4, Priority5, Priority6
+    Gui, AutoUpgrade:New, +HwndAutoUpgradeGuiHwnd, Настройки автопрокачки
+    Gui, AutoUpgrade:Color, 0x1E1E1E
+    Gui, AutoUpgrade:Font, s10 cE0E0E0, Segoe UI
+
+    Gui, AutoUpgrade:Font, s10 c00CCFF Bold
+    Gui, AutoUpgrade:Add, Text, x14 y14 w520 h24, Приоритет прокачки по слотам (кликов по AutoUpgrade)
+    Gui, AutoUpgrade:Font, s10 cE0E0E0 Norm
+
+    ; 6 полей для приоритета (1-6)
+    loopX := 14
+    Loop, 6 {
+        Gui, AutoUpgrade:Add, Text, x%loopX% y48 w40 Center, Слот %A_Index%
+        Gui, AutoUpgrade:Add, Edit, x%loopX% y68 w40 h22 Number Center vPriority%A_Index%, % AutoUpgradePriority[A_Index]
+        loopX += 66
+    }
+
+    ; Смещение Y при выборе юнита
+    Gui, AutoUpgrade:Add, Text, x14 y96 w310 h20, Смещение Y выбора юнита (пикс. вверх):
+    Gui, AutoUpgrade:Add, Edit, x330 y94 w50 h22 Number vUnitOffsetY, %AutoUpgradeUnitOffsetY%
+
+    ; Калибровка кнопки AutoUpgrade
+    Gui, AutoUpgrade:Add, GroupBox, x14 y126 w550 h90, Калибровка кнопки AutoUpgrade
+    Gui, AutoUpgrade:Add, Button, x34 y152 w200 h28 gBtnCaptureAutoUpgrade, Снять шаблон AutoUpgrade
+    Gui, AutoUpgrade:Add, Button, x34 y182 w200 h28 gBtnTestAutoUpgrade, Проверить детект сейчас
+    Gui, AutoUpgrade:Add, Text, x244 y158 w310 h40 c808080, Зажми и обведи кнопку AutoUpgrade. Сохранится как images\AutoUpgrade.bmp
+
+    Gui, AutoUpgrade:Add, Button, x284 y230 w120 h28 gBtnAutoUpgradeSave, Сохранить и закрыть
+    Gui, AutoUpgrade:Add, Button, x414 y230 w120 h28 gBtnAutoUpgradeClose, Отмена
+
+    Gui, AutoUpgrade:Show, w580 h272, Настройки автопрокачки
+}
+
+BtnCaptureAutoUpgrade:
+    if !WinExist(WinTitle) {
+        AddLog("Игра не найдена — сначала встрой Roblox")
+        return
+    }
+    CaptureForMarking(TempShot)
+    MarkMode := "template"
+    TemplateName := "AutoUpgrade"
+    MarkList := []
+    OpenMarkGui("Зажми кнопку мыши и обведи кнопку AutoUpgrade. Отпусти — шаблон сохранится как AutoUpgrade.bmp.")
+return
+
+BtnTestAutoUpgrade:
+    global ImagesDir
+    full := ImagesDir . "\AutoUpgrade.bmp"
+    if !FileExist(full)
+        full := ImagesDir . "\AutoUpgrade.png"
+    if !FileExist(full) {
+        AddLog("AutoUpgrade-шаблон отсутствует в images\ — сначала сними его.")
+        return
+    }
+    if (IsTemplateTooBig(full)) {
+        AddLog("AutoUpgrade-шаблон слишком большой — ImageSearch не найдёт. Сними шаблон поменьше.")
+        return
+    }
+    if (FindGameButton(full, bx, by))
+        AddLog("Проверка: AutoUpgrade найден на экране в (" bx "," by ") — детект будет работать!")
+    else
+        AddLog("Проверка: AutoUpgrade НЕ найден. Открой экран где видна кнопка AutoUpgrade.")
+return
+
+BtnAutoUpgradeSave:
+    Gui, AutoUpgrade:Submit, NoHide
+    Loop, 6 {
+        val := Priority%A_Index%
+        if val is integer
+        {
+            if (val < 0)
+                val := 0
+            if (val > 9)
+                val := 9
+        }
+        else
+            val := 1
+        AutoUpgradePriority[A_Index] := val
+    }
+    ; Смещение Y
+    if UnitOffsetY is integer
+        AutoUpgradeUnitOffsetY := UnitOffsetY
+    else
+        AutoUpgradeUnitOffsetY := 20
+    AddLog("Настройки автопрокачки сохранены: " AutoUpgradePriority[1] "-" AutoUpgradePriority[2] "-" AutoUpgradePriority[3] "-" AutoUpgradePriority[4] "-" AutoUpgradePriority[5] "-" AutoUpgradePriority[6] "  offset=" AutoUpgradeUnitOffsetY)
+    Gui, AutoUpgrade:Destroy
+    AutoUpgradeGuiHwnd := 0
+return
+
+BtnAutoUpgradeClose:
+AutoUpgradeGuiClose:
+    Gui, AutoUpgrade:Destroy
+    AutoUpgradeGuiHwnd := 0
+return
 
 BtnCalibClose:
 CalibGuiClose:
@@ -1001,57 +1601,229 @@ F9::
     }
 return
 
+; ---- Плавное наведение мыши (без клика) ----
+; Равномерное движение: 30 мелких шагов, скорость регулируется только
+; паузой между шагами (MouseSpeed 0-100). Без рывков при любой скорости.
+SmoothMove(x, y) {
+    global MouseSpeed
+    MouseGetPos, curX, curY
+    steps := 30
+    ; Пауза между шагами: 30 мс при скорости 10 (медленно),
+    ; 1 мс при скорости 100 (быстро). MouseMove всегда мгновенный (0).
+    stepSleep := 32 - MouseSpeed / 3
+    if (stepSleep < 1)
+        stepSleep := 1
+    Loop, %steps% {
+        t := A_Index / steps
+        tx := curX + (x - curX) * t
+        ty := curY + (y - curY) * t
+        MouseMove, %tx%, %ty%, 0
+        Sleep, %stepSleep%
+    }
+    MouseMove, %x%, %y%, 0
+}
+
+; ---- Плавный клик: наводит мышь и кликает ----
+; Некоторые кнопки в игре не срабатывают при телепортации курсора
+; (Click, X, Y двигает мгновенно). Нужно реальное наведение мыши.
+SmoothClick(x, y, hoverMs := 150) {
+    SmoothMove(x, y)
+    Sleep, %hoverMs%
+    Click
+    Sleep, 20
+}
+
+; ---- Плавный клик с несколькими нажатиями ----
+; Наводится, ждёт, нажимает 2-3 раза с паузой между кликами.
+; Используется для кнопок Start Game / Repeat Stage — надёжнее.
+SmoothClickMulti(x, y, count := 2, hoverMs := 200, betweenMs := 300) {
+    SmoothMove(x, y)
+    Sleep, %hoverMs%
+    Loop, %count% {
+        Click
+        Sleep, %betweenMs%
+    }
+    Sleep, 20
+}
+
+; ---- Проверка: совпадает ли цвет с допуском (по каналам RGB) ----
+IsColorMatch(col, target, var) {
+    r1 := col >> 16 & 0xFF
+    g1 := col >> 8 & 0xFF
+    b1 := col & 0xFF
+    r2 := target >> 16 & 0xFF
+    g2 := target >> 8 & 0xFF
+    b2 := target & 0xFF
+    return (Abs(r1-r2) <= var && Abs(g1-g2) <= var && Abs(b1-b2) <= var)
+}
+
+; ---- Уводит мышь в сторону (сброс hover) ----
+; Перед повторной попыткой клика уводим курсор в нейтральную точку
+; (левый нижний угол GameArea), чтобы кнопка «отпустила» hover.
+MoveMouseAway() {
+    global GameAreaW, GameAreaH
+    ToScreen(30, GameAreaH - 30)
+    MouseMove, % TS_X, % TS_Y, 0
+    Sleep, 400
+}
+
+; ---- Клик Start Game с повторными попытками ----
+; Приоритет: 1) ImageSearch по шаблону StartGame.bmp (как Defeat/Victory);
+; 2) калиброванные координаты + проверка цвета; 3) поиск по цвету (fallback).
+ClickStartGameRetry() {
+    global StartGameX, StartGameY, StartGameColor, StartGameColorVar, TS_X, TS_Y
+    global Running, ImagesDir
+    attempts := 3
+    Loop, %attempts% {
+        if (!Running)
+            return
+        clicked := false
+        ; 1) ImageSearch по шаблону StartGame.bmp / StartGame.png (приоритет)
+        full := ImagesDir . "\StartGame.bmp"
+        if !FileExist(full)
+            full := ImagesDir . "\StartGame.png"
+        if (FileExist(full) && !IsTemplateTooBig(full)) {
+            if (FindGameButton(full, btnX, btnY)) {
+                SmoothClickMulti(btnX, btnY, 2, 200, 500)
+                AddLog("Start Game: клик по шаблону (" btnX "," btnY "), попытка " A_Index "/" attempts)
+                clicked := true
+                Sleep, 1500
+                ; Проверяем: кнопка исчезла? (шаблон больше не на экране)
+                if (FindGameButton(full, bx, by)) {
+                    AddLog("Start Game: кнопка ещё на экране (по шаблону), увожу мышь и повторяю...")
+                } else {
+                    AddLog("Start Game нажата: кнопка исчезла с экрана")
+                    return
+                }
+            }
+        }
+        ; 2) Калиброванные координаты + проверка цвета (если шаблон не найден)
+        if (!clicked && StartGameX > 0 && StartGameY > 0) {
+            ToScreen(StartGameX, StartGameY)
+            SmoothClickMulti(TS_X, TS_Y, 2, 200, 500)
+            AddLog("Start Game: клик по координатам (" StartGameX "," StartGameY ") -> screen(" TS_X "," TS_Y "), попытка " A_Index "/" attempts)
+            clicked := true
+            Sleep, 1500
+            PixelGetColor, col, %TS_X%, %TS_Y%, RGB
+            if (StartGameColor != 0 && StartGameColor != "0x000000" && StartGameColor != "") {
+                if (!IsColorMatch(col, StartGameColor, StartGameColorVar + 30)) {
+                    AddLog("Start Game нажата: кнопка исчезла с экрана")
+                    return
+                }
+                AddLog("Start Game: кнопка ещё на экране (цвет " col "), увожу мышь и повторяю...")
+            } else {
+                ; Цвет не настроен — считаем, что клик прошёл
+                return
+            }
+        }
+        ; 3) Fallback: поиск по цвету (координат и шаблона нет)
+        if (!clicked && StartGameColor != 0 && StartGameColor != "0x000000" && StartGameColor != "") {
+            if (FindGameButtonByColor(StartGameColor, StartGameColorVar, btnX, btnY)) {
+                SmoothClickMulti(btnX, btnY, 2, 200, 500)
+                AddLog("Start Game: клик по цвету (fallback) (" btnX "," btnY "), попытка " A_Index "/" attempts)
+                clicked := true
+                Sleep, 1500
+                ; Цветной fallback без проверки — считаем успешным
+                return
+            }
+        }
+        if (!clicked) {
+            AddLog("Start Game: кнопка не найдена (попытка " A_Index "/" attempts ")")
+            return
+        }
+        ; Не нажалось — уводим мышь в сторону, чтобы сбросить hover
+        MoveMouseAway()
+    }
+    AddLog("ВНИМАНИЕ: Start Game не нажалась за " attempts " попыток — пробую снова")
+}
+
 ; ---- Разовая расстановка всех юнитов по размеченным слотам ----
 RunPlacementSequence:
     slots := MapCoords[SelectedMapCtl]
     AddLog("Слотов загружено: " slots.Length() " для """ SelectedMapCtl """")
     ; Кликаем по центру области игры для фокуса
     ToScreen(640, 360)
-    MouseMove, % TS_X, % TS_Y, 0
-    Click
-    Sleep, 200
+    SmoothClick(TS_X, TS_Y, 200)
     for i, s in slots {
         if (!Running)
             break
-        Send, % s.num
-        Sleep, %ClickDelay%
+        ; Порядок: сначала наводимся на место, ждём КД, потом выбираем юнита, потом ставим
         ToScreen(s.x, s.y)
         AddLog("Слот " i ": юнит " s.num " client(" s.x "," s.y ") -> screen(" TS_X "," TS_Y ")")
-        MouseMove, % TS_X, % TS_Y, 0
+        SmoothMove(TS_X, TS_Y)
+        Sleep, %HoverDelay%
+        Send, % s.num
+        Sleep, %ClickDelay%
         Click
         Sleep, %SlotClickDelay%
-
-        ToScreen(UpgradeX, UpgradeY)
-        MouseMove, % TS_X, % TS_Y, 0
-        Click
-        Sleep, %UpgradeClickDelay%
-
-        ToScreen(AutoX, AutoY)
-        Loop, 6 {
-            MouseMove, % TS_X, % TS_Y, 0
-            Click
-            Sleep, %AutoClickDelay%
-        }
-        AddLog("Юнит " s.num " поставлен и настроена автопрокачка (слот " i ")")
+        AddLog("Юнит " s.num " поставлен (слот " i ")")
         Sleep, %UnitSleepDelay%
+    }
+    ; ---- Автопрокачка: после расстановки, если включена ----
+    if (AutoUpgradeEnabled && Running) {
+        AddLog("Автопрокачка: начинаю прокачку юнитов...")
+        for i, s in slots {
+            if (!Running)
+                break
+            priority := AutoUpgradePriority[s.num]
+            if (priority <= 0)
+                continue
+            ; Кликаем чуть выше юнита чтобы выбрать его
+            ToScreen(s.x, s.y - AutoUpgradeUnitOffsetY)
+            SmoothClick(TS_X, TS_Y, 200)
+            Sleep, 200
+            ; Кликаем по кнопке AutoUpgrade priority раз
+            Loop, %priority% {
+                if (!Running)
+                    break
+                Gosub, DoAutoUpgradeClick
+                Sleep, %AutoClickDelay%
+            }
+            AddLog("Автопрокачка: слот " i " (юнит " s.num ") — " priority " клик(ов)")
+        }
+        AddLog("Автопрокачка завершена")
     }
     if (Running) {
         GuiControl,, FarmStatus, Статус: расстановка завершена, нажимаю Start Game...
         AddLog("Расстановка завершена, нажимаю Start Game...")
-        ; Если Start Game откалиброван — кликаем по координатам
-        if (StartGameX > 0 && StartGameY > 0) {
-            ToScreen(StartGameX, StartGameY)
-            MouseMove, % TS_X, % TS_Y, 0
-            Click
-            Sleep, %StartGameDelay%
-            AddLog("Start Game нажата: (" StartGameX "," StartGameY ") -> screen(" TS_X "," TS_Y ")")
-        } else {
-            ; Fallback: пробуем ImageSearch/PixelSearch
-            AddLog("Start Game не откалиброван, пробую поиск...")
-            ClickGameButton("StartGame.png", StartGameDelay)
-        }
+        ClickStartGameRetry()
         GuiControl,, FarmStatus, Статус: игра запущена, наблюдение
         SetTimer, WatchNextStage, 1000
+    }
+return
+
+; ---- Клик по кнопке AutoUpgrade (вызывается через Gosub) ----
+DoAutoUpgradeClick:
+    fullAU := ImagesDir . "\AutoUpgrade.bmp"
+    if !FileExist(fullAU)
+        fullAU := ImagesDir . "\AutoUpgrade.png"
+    if (FileExist(fullAU) && !IsTemplateTooBig(fullAU)) {
+        if (FindGameButton(fullAU, btnX, btnY)) {
+            ; Клик по ЦЕНТРУ шаблона: читаем размеры BMP
+            FileGetSize, tplSize, %fullAU%
+            tplW := 0, tplH := 0
+            if (tplSize > 26) {
+                tplFile := FileOpen(fullAU, "r")
+                if (tplFile) {
+                    tplFile.Seek(18)
+                    tplW := tplFile.ReadUInt()
+                    tplFile.Seek(22)
+                    tplH := tplFile.ReadUInt()
+                    if (tplH > 0x7FFFFFFF)
+                        tplH := 0x100000000 - tplH
+                    tplFile.Close()
+                }
+            }
+            if (tplW > 0 && tplH > 0)
+                SmoothClick(btnX + tplW//2, btnY + tplH*2//5, 150)
+            else
+                SmoothClick(btnX, btnY, 150)
+            return
+        }
+    }
+    if (AutoX > 0 && AutoY > 0) {
+        ToScreen(AutoX, AutoY)
+        SmoothClick(TS_X, TS_Y, 150)
     }
 return
 
@@ -1065,41 +1837,117 @@ WatchNextStage:
         GuiControl,, StartStopBtn, Старт (F9)
         return
     }
-    ; 1) Проверяем поражение — ищем изображение Defeat.png
+    ; 1) Проверяем поражение/победу — ищем Defeat / Victory
     if (DetectDefeat()) {
         AddLog("Обнаружено поражение! Кликаю Repeat Stage...")
         ClickRepeatStage()
         GuiControl,, FarmStatus, Статус: поражение, перезапуск...
+        Gosub, RestartFarmLoop
         return
     }
-    ; 2) Проверяем окончание волны — Next Stage
-    if (AutoNextStage && DetectNextStage()) {
-        AddLog("Обнаружено 'Next Stage', клик...")
-        ClickNextStage()
+    if (DetectVictory()) {
+        AddLog("Обнаружена победа! Кликаю Repeat Stage...")
+        ClickRepeatStage()
+        GuiControl,, FarmStatus, Статус: победа, перезапуск...
+        Gosub, RestartFarmLoop
+        return
     }
+    ; Next Stage — убран, автопрокачка работает вместо него
 return
 
-; ---- Детект поражения (Defeat) ----
-DetectDefeat() {
-    global Embedded, ImagesDir, ImgVariation
-    if (!Embedded)
+; ---- Бесконечный цикл: после победы/поражения всё заново ----
+; Выключаем наблюдение, ждём перезагрузку этапа, заново расставляем
+; юнитов (RunPlacementSequence сам нажмёт Start Game и включит наблюдение).
+RestartFarmLoop:
+    SetTimer, WatchNextStage, Off
+    if (!Running)
+        return
+    GuiControl,, FarmStatus, Статус: перезапуск этапа...
+    AddLog("Перезапуск этапа: жду загрузку, затем расстановка заново")
+    Sleep, 4000
+    if (Running)
+        SetTimer, RunPlacementSequence, -100
+return
+
+; ---- Проверка: шаблон слишком большой для быстрого ImageSearch ----
+; ImageSearch по шаблону > 300x300 в области 1280x720 занимает секунды
+; и вешает GUI («не отвечает»). Такие шаблоны пропускаем.
+IsTemplateTooBig(imageFile) {
+    if !FileExist(imageFile)
         return false
-    full := ImagesDir . "\Defeat.png"
-    if (FileExist(full)) {
-        if (FindGameButton(full, bx, by))
-            return true
+    ; Читаем размеры из заголовка BMP/PNG
+    file := FileOpen(imageFile, "r")
+    if !file
+        return false
+    ; BMP: 'BM' + ... width @18, height @22
+    file.Seek(0)
+    b0 := file.ReadUChar()
+    b1 := file.ReadUChar()
+    if (b0 = 0x42 && b1 = 0x4D) {   ; 'BM'
+        file.Seek(18)
+        w := file.ReadUInt()
+        file.Seek(22)
+        hRaw := file.ReadUInt()
+        h := hRaw
+        if (h > 0x7FFFFFFF)   ; отрицательная высота = top-down
+            h := 0x100000000 - hRaw
+        file.Close()
+        return (w > 300 || h > 300)
     }
-    ; Fallback: ищем по тексту в окне (если есть)
+    ; PNG: 89 50 4E 47 + width @16 (big-endian), height @20
+    ; (без битовых сдвигов — в AHK v1 << 24 может дать знаковое число)
+    if (b0 = 0x89 && b1 = 0x50) {
+        file.Seek(16)
+        w := file.ReadUChar()*16777216 + file.ReadUChar()*65536 + file.ReadUChar()*256 + file.ReadUChar()
+        file.Seek(20)
+        h := file.ReadUChar()*16777216 + file.ReadUChar()*65536 + file.ReadUChar()*256 + file.ReadUChar()
+        file.Close()
+        return (w > 300 || h > 300)
+    }
+    file.Close()
     return false
 }
 
-; ---- Детект кнопки Next Stage ----
-DetectNextStage() {
-    global Embedded, ImagesDir, ImgVariation
+; ---- Детект поражения (Defeat) — ищет Defeat.png или Defeat.bmp ----
+DetectDefeat() {
+    global Embedded, ImagesDir
     if (!Embedded)
         return false
-    full := ImagesDir . "\NextStage.png"
+    full := ImagesDir . "\Defeat.bmp"
+    if !FileExist(full)
+        full := ImagesDir . "\Defeat.png"
     if (FileExist(full)) {
+        if (IsTemplateTooBig(full)) {
+            static warnedDefeat := false
+            if (!warnedDefeat) {
+                warnedDefeat := true
+                AddLog("Defeat-шаблон слишком большой — ImageSearch вешает макрос. Сними маленький шаблон (Калибровка → Снять шаблон, имя Defeat).")
+            }
+            return false
+        }
+        if (FindGameButton(full, bx, by))
+            return true
+    }
+    return false
+}
+
+; ---- Детект победы (Victory) — ищет Victory.png или Victory.bmp ----
+DetectVictory() {
+    global Embedded, ImagesDir
+    if (!Embedded)
+        return false
+    full := ImagesDir . "\Victory.bmp"
+    if !FileExist(full)
+        full := ImagesDir . "\Victory.png"
+    if (FileExist(full)) {
+        if (IsTemplateTooBig(full)) {
+            static warnedVictory := false
+            if (!warnedVictory) {
+                warnedVictory := true
+                AddLog("Victory-шаблон слишком большой — ImageSearch вешает макрос. Сними маленький шаблон (Калибровка → Снять шаблон, имя Victory).")
+            }
+            return false
+        }
         if (FindGameButton(full, bx, by))
             return true
     }
@@ -1107,56 +1955,60 @@ DetectNextStage() {
 }
 
 ; ---- Клик по кнопке Repeat Stage ----
+; Кликает (координаты → изображение → цвет), ждёт и проверяет, исчез ли
+; экран победы/поражения. Если нет — повторяет (до 3 попыток).
 ClickRepeatStage() {
     global RepeatStageX, RepeatStageY, ImagesDir, ImgVariation, StartGameColor, StartGameColorVar
-    if (RepeatStageX > 0 && RepeatStageY > 0) {
-        ToScreen(RepeatStageX, RepeatStageY)
-        MouseMove, % TS_X, % TS_Y, 0
-        Click
-        Sleep, 500
-        AddLog("Repeat Stage нажата по калиброванным координатам: (" RepeatStageX "," RepeatStageY ")")
-        return
-    }
-    ; Fallback: ImageSearch по RepeatStage.png
-    full := ImagesDir . "\RepeatStage.png"
-    if (FileExist(full)) {
-        if (FindGameButton(full, bx, by)) {
-            MouseMove, % bx, % by, 0
-            Click
-            Sleep, 500
-            AddLog("Repeat Stage нажата по поиску изображения")
+    global MainGuiHwnd, TS_X, TS_Y
+    global Running
+    attempts := 3
+    Loop, %attempts% {
+        if (!Running)
             return
+        clicked := false
+        ; 1) Калиброванные координаты — приоритет (быстро, без ImageSearch)
+        if (RepeatStageX > 0 && RepeatStageY > 0) {
+            ToScreen(RepeatStageX, RepeatStageY)
+            SmoothClickMulti(TS_X, TS_Y, 2, 200, 400)
+            AddLog("Repeat Stage: клик по экрану (" TS_X "," TS_Y "), попытка " A_Index)
+            clicked := true
         }
-    }
-    ; Fallback: ищем по цвету StartGame
-    if (StartGameColor != 0 && StartGameColor != "0x000000" && StartGameColor != "") {
-        full := ImagesDir . "\RepeatStage.png"
-        if (!FileExist(full)) {
-            if (FindGameButtonByColor(StartGameColor, StartGameColorVar, bx, by)) {
-                MouseMove, % bx, % by, 0
-                Click
-                Sleep, 500
-                AddLog("Повторить по цвету StartGame (fallback)")
-                return
+        ; 2) ImageSearch по RepeatStage.bmp / RepeatStage.png
+        if (!clicked) {
+            full := ImagesDir . "\RepeatStage.bmp"
+            if !FileExist(full)
+                full := ImagesDir . "\RepeatStage.png"
+            if (FileExist(full)) {
+                if (FindGameButton(full, bx, by)) {
+                    SmoothClickMulti(bx, by, 2, 200, 400)
+                    AddLog("Repeat Stage нажата по поиску изображения (" bx "," by "), попытка " A_Index)
+                    clicked := true
+                }
             }
         }
-    }
-    AddLog("Repeat Stage: не удалось найти кнопку. Откалибруйте координаты.")
-}
-
-; ---- Клик по кнопке Next Stage ----
-ClickNextStage() {
-    global ImagesDir, ImgVariation
-    full := ImagesDir . "\NextStage.png"
-    if (FileExist(full)) {
-        if (FindGameButton(full, bx, by)) {
-            MouseMove, % bx, % by, 0
-            Click
-            AddLog("Next Stage нажата")
-            return true
+        ; 3) Fallback: ищем по цвету StartGame
+        if (!clicked && StartGameColor != 0 && StartGameColor != "0x000000" && StartGameColor != "") {
+            if (FindGameButtonByColor(StartGameColor, StartGameColorVar, bx, by)) {
+                SmoothClickMulti(bx, by, 2, 200, 400)
+                AddLog("Повторить по цвету StartGame (fallback), попытка " A_Index)
+                clicked := true
+            }
         }
+        if (!clicked) {
+            AddLog("Repeat Stage: кнопка не найдена (попытка " A_Index ")")
+            return
+        }
+        ; Ждём и проверяем: экран победы/поражения исчез?
+        Sleep, 2000
+        if (!DetectVictory() && !DetectDefeat()) {
+            AddLog("Repeat Stage нажата: экран закрыт")
+            return
+        }
+        AddLog("Repeat Stage: экран ещё на месте, увожу мышь и повторяю...")
+        ; Не нажалось — уводим мышь в сторону, чтобы сбросить hover
+        MoveMouseAway()
     }
-    return false
+    AddLog("ВНИМАНИЕ: Repeat Stage не нажалась за " attempts " попыток")
 }
 
 GuiClose:
