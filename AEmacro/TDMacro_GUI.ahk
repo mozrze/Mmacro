@@ -103,16 +103,13 @@ DragPrevRect := ""
 DragOverlayHwnd := 0
 
 ; Обработчики мыши: только для MarkMode = "template" (drag-select области)
-; Также через этот же хук перетаскивается окно за кастомную тёмную шапку
-; (см. TitleBarBgHwnd/TitleBarTextHwnd и OnTitleBarLButtonDown в drag_select.ahk).
 OnMessage(0x201, "OnTemplateLButtonDown")   ; WM_LBUTTONDOWN
 OnMessage(0x200, "OnTemplateMouseMove")       ; WM_MOUSEMOVE
 OnMessage(0x202, "OnTemplateLButtonUp")       ; WM_LBUTTONUP
 ; =======================================================
 
 TotalW := GameAreaW + SidebarW
-TitleBarH := 32
-TotalH := GameAreaH + 40 + TitleBarH
+TotalH := GameAreaH + 40
 
 LoadConfig()
 LoadSettings()
@@ -120,230 +117,56 @@ ReloadMapList()
 LoadAllMapCoords()
 
 ; ===================== GUI (тёмная тема) =====================
-; -Caption убирает системную (белую/светлую) шапку окна — вместо неё
-; ниже рисуется собственная тёмная шапка (TitleBar*), чтобы весь
-; интерфейс, включая рамку окна, был в едином тёмном стиле.
-Gui, +HwndMainGuiHwnd -Caption +Border
+Gui, +HwndMainGuiHwnd
 Gui, Color, 0x1E1E1E, 0x252526
 Gui, Font, s10 cE0E0E0, Segoe UI
 
-; ---- Собственная тёмная шапка окна (замена системной) ----
-; Цвет 0x1E1E1E — тот же фон, что у окна и сайдбара (единый тёмный стиль,
-; а не "накладная" полоска другого оттенка), + тонкая линия-разделитель снизу.
-Gui, Add, Text, x0 y0 w%TotalW% h%TitleBarH% vTitleBarBg gTitleBarDrag Background1E1E1E,
-TitleBarLineY := TitleBarH - 1
-Gui, Add, Text, x0 y%TitleBarLineY% w%TotalW% h1 Background2E2E2E,
-Gui, Font, s10 cE0E0E0 Bold, Segoe UI
-Gui, Add, Text, x14 y0 w300 h%TitleBarH% vTitleBarText gTitleBarDrag BackgroundTrans, TD MACRO CONTROL
-; ---- Кнопки свернуть/закрыть: СВОЙ фон (не Trans!) ----
-; BackgroundTrans в AHK означает WS_EX_TRANSPARENT — контрол становится
-; "прозрачным для кликов", то есть клик проваливается сквозь него на то,
-; что находится ПОД ним (тут — TitleBarBg с gTitleBarDrag). Именно поэтому
-; свернуть/закрыть не работали: клик всегда попадал в обработчик
-; перетаскивания окна, а не в свою метку. Даём кнопкам собственный
-; непрозрачный фон чуть светлее шапки — заодно они выглядят как настоящие
-; кнопки, а не как случайные символы поверх фона.
-Gui, Font, s13 cE0E0E0 Norm, Segoe UI
-TbMinX := TotalW - 84
-TbCloseX := TotalW - 42
-Gui, Add, Text, x%TbMinX% y0 w42 h%TitleBarH% vTitleBarMin gTitleBarMin Center Background2A2A2A, −
-Gui, Add, Text, x%TbCloseX% y0 w42 h%TitleBarH% vTitleBarClose gTitleBarClose Center Background2A2A2A, ×
-Gui, Font, s10 cE0E0E0 Norm, Segoe UI
-GuiControlGet, TitleBarBgHwnd, Hwnd, TitleBarBg
-GuiControlGet, TitleBarTextHwnd, Hwnd, TitleBarText
-GuiControlGet, TitleBarMinHwnd, Hwnd, TitleBarMin
-GuiControlGet, TitleBarCloseHwnd, Hwnd, TitleBarClose
-
-GameAreaY := TitleBarH
-GameAreaBottomY := GameAreaY + GameAreaH
-Gui, Add, Text, x0 y%GameAreaY% w%GameAreaW% h%GameAreaH% vGameArea 0x201 Border BackgroundBlack,
-Gui, Add, Text, x0 y%GameAreaBottomY% w%GameAreaW% h40 c808080 Center 0x201, Область встраивания Roblox — нажми "Встроить" справа
+Gui, Add, Text, x0 y0 w%GameAreaW% h%GameAreaH% vGameArea 0x201 Border BackgroundBlack,
+Gui, Add, Text, x0 y%GameAreaH% w%GameAreaW% h40 c808080 Center 0x201, Область встраивания Roblox — нажми "Встроить" справа
 
 SbX := GameAreaW + 12
 
-; ---- Принудительный IE11-режим для WebBrowser ----
-RegWrite, REG_DWORD, HKCU, Software\Microsoft\Internet Explorer\Main\FeatureControl\FEATURE_BROWSER_EMULATION, AutoHotkey.exe, 11001
-RegWrite, REG_DWORD, HKCU, Software\Microsoft\Internet Explorer\Main\FeatureControl\FEATURE_BROWSER_EMULATION, AutoHotkeyU32.exe, 11001
-RegWrite, REG_DWORD, HKCU, Software\Microsoft\Internet Explorer\Main\FeatureControl\FEATURE_BROWSER_EMULATION, AutoHotkeyU64.exe, 11001
-RegWrite, REG_DWORD, HKCU, Software\Microsoft\Internet Explorer\Main\FeatureControl\FEATURE_BROWSER_EMULATION, AutoHotkeyA32.exe, 11001
+Gui, Font, s12 cFFFFFF Bold, Segoe UI
+Gui, Add, Text, x%SbX% y12 w%SidebarW%, TD MACRO
 
-; ---- WebBrowser (боковая панель — загружает UI/index.html) ----
-SidebarH := TotalH - TitleBarH
-Gui, Add, ActiveX, x%SbX% y%TitleBarH% w%SidebarW% h%SidebarH% vWb, Shell.Explorer
-uiHtml := A_ScriptDir . "\..\UI\index.html"
-Loop, Files, %uiHtml%, F
-    uiReal := A_LoopFileLongPath
-if (uiReal = "")
-    uiReal := uiHtml
-uiUrl := "file:///" . StrReplace(uiReal, "\", "/")
-Wb.Navigate(uiUrl)
-ComObjConnect(Wb, "Wb_")
+Gui, Font, s9 cE0E0E0 Norm, Segoe UI
+Gui, Add, Text, x%SbX% y44 w280 c00CCFF, ОКНО ИГРЫ
+Gui, Add, Button, x%SbX% y64 w280 h30 gBtnEmbed vEmbedBtn, Встроить Roblox сюда
+Gui, Add, Text, x%SbX% y100 w280 h20 vWindowStatus c808080, Статус: не проверено
+
+Gui, Add, Text, x%SbX% y128 w280 c00CCFF, КАРТА И РАЗМЕТКА
+Gui, Add, DropDownList, x%SbX% y148 w280 vSelectedMapCtl gMapChanged, % (MapList.Length() > 0 ? JoinArr(MapList, "|") : "|")
+Gui, Add, Button, x%SbX% y184 w280 h26 gBtnCaptureMap, Сделать снимок карты
+Gui, Add, Button, x%SbX% y214 w280 h26 gBtnMarkSlots, Разметить слоты карты
+   Gui, Add, Button, x%SbX% y244 w280 h26 gBtnClearMap, Очистить разметку карты
+   Gui, Add, Text, x%SbX% y274 w280 h16 vOffsetStatus c808080, % "Up(" UpgradeX "," UpgradeY ") Auto(" AutoX "," AutoY ") Start(" StartGameX "," StartGameY ") Repeat(" RepeatStageX "," RepeatStageY ")"
+
+Gui, Add, Text, x%SbX% y296 w280 c00CCFF, ФАРМ
+Gui, Add, Button, x%SbX% y316 w280 h34 gBtnStartStop vStartStopBtn, Старт (F9)
+Gui, Add, CheckBox, x%SbX% y356 w200 h20 vAutoUpgradeEnabled gAutoUpgradeToggle cE0E0E0, Автопрокачка юнитов
+Gui, Add, Button, xp+210 y354 w70 h22 gBtnOpenAutoUpgradeSettings, Настройка
+Gui, Add, Text, x%SbX% y382 w280 h20 vFarmStatus c808080, Статус: остановлен
+
+Gui, Add, Text, x%SbX% y412 w280 c00CCFF, ЛОГ
+Gui, Add, Edit, x%SbX% y432 w280 h230 vLogBox ReadOnly -WantReturn Background151515 cB0B0B0,
+SbBtnW := 90
+SbBtnGap := 5
+SbBtn2X := SbX + SbBtnW + SbBtnGap
+SbBtn3X := SbBtn2X + SbBtnW + SbBtnGap
+Gui, Add, Button, x%SbX%    y696 w%SbBtnW% h24 gBtnSettings, Настройки
+Gui, Add, Button, x%SbBtn2X% y696 w%SbBtnW% h24 gBtnOpenPresets, Пресеты
+Gui, Add, Button, x%SbBtn3X% y696 w%SbBtnW% h24 gBtnOpenCalibration, Калибровка
 
 Gui, Show, w%TotalW% h%TotalH%, TD Macro Control
 return
 
-; ===================== Тёмная шапка: drag + свернуть/закрыть =====================
-; Пустая метка: реальное перетаскивание окна обрабатывается раньше,
-; через OnMessage(WM_LBUTTONDOWN) в OnTemplateLButtonDown (drag_select.ahk).
-; Но g-label обязана указывать на существующую метку, иначе AHK
-; выдаёт ошибку загрузки скрипта ("Target label does not exist") —
-; именно это и произошло.
-TitleBarDrag:
-return
-
-TitleBarMin:
-    Gui, Minimize
-return
-
-TitleBarClose:
-    Gosub, GuiClose
-return
-
-; ===================== МОСТ JS -> AHK =====================
-Wb_BeforeNavigate2(pDisp, url, flags, targetFrame, postData, headers, cancel) {
-    global SelectedMapCtl, AutoUpgradeEnabled, Running
-    if (!InStr(url, "ahk://"))
-        return
-    try cancel[] := -1
-    rest := SubStr(url, 8)
-    slashPos := InStr(rest, "/")
-    if (!slashPos)
-        return
-    action := SubStr(rest, 1, slashPos - 1)
-    ; JS шлёт payload через encodeURIComponent(JSON.stringify(...)) — обязательно
-    ; декодировать проценты, иначе ExtractJsonStr ищет `"key":"` в строке вида
-    ; %7B%22key%22... и ничего не находит (баг: выбор карты/имя слота не доходили до AHK).
-    payload := UrlDecode(SubStr(rest, slashPos + 1))
-
-    ; Оборачиваем в try/catch: ComObjConnect по умолчанию МОЛЧА глотает
-    ; любую ошибку внутри обработчика события — если в GoSub ниже что-то
-    ; упадёт (например, окно Настроек/Пресетов/Калибровки), снаружи не будет
-    ; видно вообще ничего, кнопка в сайдбаре просто "не сработает" без следа.
-    ; Теперь любая такая ошибка попадёт в лог.
-    try {
-        ; ВАЖНО: GoSub напрямую здесь работал ненадёжно для меток, которые
-        ; создают НОВОЕ Gui-окно (Settings/Preset/Calib/Mark/AutoUpgrade) —
-        ; они выполнялись синхронно ВНУТРИ COM-события BeforeNavigate2
-        ; ActiveX-браузера. AutoHotkey в этой ситуации может "создать" окно,
-        ; но не прорисовать его и не дать ему фокус — выглядит так, будто
-        ; клик вообще ничего не сделал, хотя ошибки нет и в лог нечего писать.
-        ; SetTimer с отрицательной задержкой откладывает выполнение метки на
-        ; 10мс — уже ПОСЛЕ выхода из COM-колбэка, там создание окна работает
-        ; штатно. Задержка не заметна на глаз, но чинит открытие всех окон.
-        if (action = "embed")
-            SetTimer, BtnEmbed, -10
-        else if (action = "start")
-            SetTimer, BtnStartStop, -10
-        else if (action = "captureMap")
-            SetTimer, BtnCaptureMap, -10
-        else if (action = "markSlots")
-            SetTimer, BtnMarkSlots, -10
-        else if (action = "clearMap")
-            SetTimer, BtnClearMap, -10
-        else if (action = "openAutoUpgradeSettings")
-            SetTimer, BtnOpenAutoUpgradeSettings, -10
-        else if (action = "openSettings")
-            SetTimer, BtnSettings, -10
-        else if (action = "openPresets")
-            SetTimer, BtnOpenPresets, -10
-        else if (action = "openCalibration")
-            SetTimer, BtnOpenCalibration, -10
-        else if (action = "selectMap")
-        {
-            name := ExtractJsonStr(payload, "name")
-            if (name != "")
-                SelectedMapCtl := name
-        }
-        else if (action = "autoUpgradeToggle")
-        {
-            AutoUpgradeEnabled := (InStr(payload, "true") ? true : false)
-        }
-    } catch e {
-        errMsg := "ОШИБКА в обработчике '" action "': " (IsObject(e) ? e.Message : e)
-        AddLog(errMsg)
-        try WbSend("log", "{msg:'" EscapeJs(errMsg) "',type:'error'}")
-    }
-}
-
-; ---- Декодирование percent-encoding (encodeURIComponent) ----
-UrlDecode(s) {
-    out := ""
-    i := 1
-    len := StrLen(s)
-    while (i <= len) {
-        c := SubStr(s, i, 1)
-        if (c = "%" && i + 2 <= len) {
-            hex := SubStr(s, i + 1, 2)
-            if hex is xdigit
-            {
-                out .= Chr("0x" . hex)
-                i += 3
-                continue
-            }
-        }
-        if (c = "+") {
-            out .= " "
-            i += 1
-            continue
-        }
-        out .= c
-        i += 1
-    }
-    return out
-}
-
-ExtractJsonStr(json, key) {
-    pos := InStr(json, """" key """:""")
-    if (!pos)
-        return ""
-    pos += StrLen(key) + 4
-    end := InStr(json, """", false, pos)
-    if (!end)
-        return ""
-    return SubStr(json, pos, end - pos)
-}
-
-; ===================== МОСТ AHK -> JS =====================
-WbSend(action, data := "") {
-    global Wb
-    try {
-        js := "window.uiBridge('" action "', " (data = "" ? "{}" : data) ")"
-        Wb.Document.parentWindow.execScript(js)
-    }
-}
-WbUi(key, value) {
-    global Wb
-    try Wb.Document.parentWindow.execScript("window.uiBridge('setUi',{key:'" EscapeJs(key) "',value:'" EscapeJs(value) "'})")
-}
-WbMaps() {
-    global Wb, MapList
-    json := "["
-    for i, m in MapList
-        json .= (i>1 ? "," : "") . "'" . EscapeJs(m) . "'"
-    json .= "]"
-    try Wb.Document.parentWindow.execScript("window.uiBridge('setMaps',{maps:" json ",select:'" EscapeJs(MapList.Length()>0 ? MapList[1] : "") "'})")
-}
-Wb_DocumentComplete(pDisp, url) {
-    global Wb
-    WbMaps()
-    WbUi("windowStatus", "не проверено")
-    WbUi("offsetStatus", "Up(0,0) Auto(0,0) Start(0,0) Repeat(0,0)")
-}
-EscapeJs(s) {
-    s := StrReplace(s, "\", "\\")
-    s := StrReplace(s, """", "\""")
-    s := StrReplace(s, "'", "\'")
-    s := StrReplace(s, "`r`n", "\n")
-    s := StrReplace(s, "`r", "\n")
-    s := StrReplace(s, "`n", "\n")
-    return s
-}
-
-; ===================== ЛОГ (перенаправлен в JS) =====================
+; ===================== ЛОГ =====================
 AddLog(msg) {
+    Gui, 1:Default
+    GuiControlGet, cur,, LogBox
     FormatTime, ts,, HH:mm:ss
-    line := "[" ts "] " msg
-    try Wb.Document.parentWindow.execScript("window.uiBridge('log',{msg:'" EscapeJs(line) "'})")
+    new := "[" ts "] " msg "`r`n" cur
+    GuiControl,, LogBox, %new%
 }
 
 ; ===================== КОНФИГ (координаты кнопок) =====================
@@ -532,11 +355,7 @@ SaveMapSlots(mapName, list) {
 
 ; ===================== ФУНКЦИИ ОКНА / ВСТРАИВАНИЯ =====================
 ToScreen(x, y) {
-    ; x,y приходят как координаты ВНУТРИ игровой области (0,0 = её левый
-    ; верхний угол). Игровая область теперь начинается не с самого верха
-    ; клиентской области окна, а ниже кастомной тёмной шапки — прибавляем
-    ; GameAreaY, чтобы клики по-прежнему попадали в нужное место экрана.
-    global MainGuiHwnd, GameAreaY, TS_X, TS_Y
+    global MainGuiHwnd, TS_X, TS_Y
     if (!MainGuiHwnd || !DllCall("IsWindow", "ptr", MainGuiHwnd)) {
         AddLog("ToScreen: MainGuiHwnd некорректен (" MainGuiHwnd ")")
         TS_X := x
@@ -545,7 +364,7 @@ ToScreen(x, y) {
     }
     VarSetCapacity(pt, 8, 0)
     NumPut(x, pt, 0, "Int")
-    NumPut(y + GameAreaY, pt, 4, "Int")
+    NumPut(y, pt, 4, "Int")
     DllCall("ClientToScreen", "ptr", MainGuiHwnd, "ptr", &pt)
     TS_X := NumGet(pt, 0, "Int")
     TS_Y := NumGet(pt, 4, "Int")
@@ -560,12 +379,12 @@ GetClientSize(hwnd, ByRef cw, ByRef ch) {
 
 ; ===================== ПОИСК ИЗОБРАЖЕНИЙ (fallback) =====================
 FindGameButton(imageFile, ByRef foundX, ByRef foundY) {
-    global MainGuiHwnd, GameAreaW, GameAreaH, GameAreaY, ImgVariation
+    global MainGuiHwnd, GameAreaW, GameAreaH, ImgVariation
     if (!MainGuiHwnd || !DllCall("IsWindow", "ptr", MainGuiHwnd))
         return false
     VarSetCapacity(pt, 8, 0)
     NumPut(0, pt, 0, "Int")
-    NumPut(GameAreaY, pt, 4, "Int")
+    NumPut(0, pt, 4, "Int")
     DllCall("ClientToScreen", "ptr", MainGuiHwnd, "ptr", &pt)
     sx := NumGet(pt, 0, "Int")
     sy := NumGet(pt, 4, "Int")
@@ -581,12 +400,12 @@ FindGameButton(imageFile, ByRef foundX, ByRef foundY) {
 }
 
 FindGameButtonByColor(color, variation, ByRef foundX, ByRef foundY) {
-    global MainGuiHwnd, GameAreaY, StartGameCenterX, StartGameCenterY, StartGameRadius
+    global MainGuiHwnd, StartGameCenterX, StartGameCenterY, StartGameRadius
     if (!MainGuiHwnd || !DllCall("IsWindow", "ptr", MainGuiHwnd))
         return false
     VarSetCapacity(pt, 8, 0)
     NumPut(StartGameCenterX, pt, 0, "Int")
-    NumPut(StartGameCenterY + GameAreaY, pt, 4, "Int")
+    NumPut(StartGameCenterY, pt, 4, "Int")
     DllCall("ClientToScreen", "ptr", MainGuiHwnd, "ptr", &pt)
     cx := NumGet(pt, 0, "Int")
     cy := NumGet(pt, 4, "Int")
@@ -743,15 +562,12 @@ return
 
 ; ===================== СКРИНШОТ ОБЛАСТИ ИГРЫ =====================
 CaptureGameArea(filepath) {
-    global MainGuiHwnd, GameAreaW, GameAreaH, GameAreaY
-    ; GameArea всегда в левом верхнем углу главного окна (x0, y=GameAreaY —
-    ; ниже кастомной тёмной шапки), размер GameAreaW x GameAreaH.
-    ; GuiControlGet здесь НЕ использовать: при вызове из окна калибровки
-    ; он ищет GameArea в чужом окне и возвращает нулевые размеры →
-    ; битый файл → чёрный экран.
+    global MainGuiHwnd, GameAreaW, GameAreaH
+    ; GameArea всегда в левом верхнем углу главного окна (x0 y0),
+    ; размер GameAreaW x GameAreaH. GuiControlGet здесь НЕ использовать:
+    ; при вызове из окна калибровки он ищет GameArea в чужом окне
+    ; и возвращает нулевые размеры → битый файл → чёрный экран.
     VarSetCapacity(pt, 8, 0)
-    NumPut(0, pt, 0, "Int")
-    NumPut(GameAreaY, pt, 4, "Int")
     DllCall("ClientToScreen", "ptr", MainGuiHwnd, "ptr", &pt)
     ScreenX := NumGet(pt, 0, "Int")
     ScreenY := NumGet(pt, 4, "Int")
@@ -1266,7 +1082,6 @@ OpenSettingsGui() {
     Gui, Settings:Add, Button, x200 y470 w180 h30 gSettingsCancel, Отмена
 
     Gui, Settings:Show, w400 h510, Настройки
-    WinActivate, Настройки
 }
 
 SettingsSave:
@@ -1299,7 +1114,6 @@ return
 BtnOpenPresets:
     if (PresetGuiHwnd && DllCall("IsWindow", "ptr", PresetGuiHwnd)) {
         Gui, Preset:Show
-        WinActivate, ahk_id %PresetGuiHwnd%
         return
     }
     OpenPresetsGui()
@@ -1335,7 +1149,6 @@ OpenPresetsGui() {
     Gui, Preset:Add, Button, x484 y300 w160 h28 gBtnPresetClose, Закрыть
 
     Gui, Preset:Show, w668 h344, Пресеты
-    WinActivate, Пресеты
     LoadPresetsList()
 }
 
@@ -1343,7 +1156,6 @@ OpenPresetsGui() {
 BtnOpenCalibration:
     if (CalibGuiHwnd && DllCall("IsWindow", "ptr", CalibGuiHwnd)) {
         Gui, Calib:Show
-        WinActivate, ahk_id %CalibGuiHwnd%
         return
     }
     OpenCalibrationGui()
@@ -1385,7 +1197,6 @@ OpenCalibrationGui() {
     Gui, Calib:Add, Button, x494 y442 w140 h28 gBtnCalibClose, Закрыть
 
     Gui, Calib:Show, w668 h486, Калибровка координат
-    WinActivate, Калибровка координат
 }
 
 ; ---- Проверка детекта победы/поражения на текущем экране ----
@@ -1651,7 +1462,6 @@ return
 BtnOpenAutoUpgradeSettings:
     if (AutoUpgradeGuiHwnd && DllCall("IsWindow", "ptr", AutoUpgradeGuiHwnd)) {
         Gui, AutoUpgrade:Show
-        WinActivate, ahk_id %AutoUpgradeGuiHwnd%
         return
     }
     OpenAutoUpgradeSettingsGui()
@@ -1690,7 +1500,6 @@ OpenAutoUpgradeSettingsGui() {
     Gui, AutoUpgrade:Add, Button, x414 y230 w120 h28 gBtnAutoUpgradeClose, Отмена
 
     Gui, AutoUpgrade:Show, w580 h272, Настройки автопрокачки
-    WinActivate, Настройки автопрокачки
 }
 
 BtnCaptureAutoUpgrade:
