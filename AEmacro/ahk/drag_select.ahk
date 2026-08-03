@@ -33,6 +33,13 @@ HideDragRect() {
 
 OnTemplateLButtonDown(wParam, lParam, msg, hwnd) {
     global MarkMode, MarkGuiHwnd, DragActive, DragStartSX, DragStartSY, DragCurSX, DragCurSY, DragPrevRect
+    global MainGuiHwnd, TitleBarBgHwnd, TitleBarTextHwnd
+    ; ---- Перетаскивание окна за кастомную тёмную шапку (нет системной Caption) ----
+    if (hwnd = TitleBarBgHwnd || hwnd = TitleBarTextHwnd) {
+        DllCall("ReleaseCapture")
+        PostMessage, 0xA1, 2, 0,, ahk_id %MainGuiHwnd%   ; WM_NCLBUTTONDOWN, HTCAPTION
+        return
+    }
     if (MarkMode != "template" || !MarkGuiHwnd)
         return
     GuiControlGet, picHwnd, Mark:Hwnd, MarkPic
