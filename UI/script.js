@@ -381,21 +381,27 @@
         var btnLoad = $('#btnPresetLoad');
         var btnDel  = $('#btnPresetDelete');
         var nameInput = $('#presetName');
+        function flagEmpty() {
+            if (!nameInput) return;
+            nameInput.style.borderColor = '#ef4444';
+            setTimeout(function () { nameInput.style.borderColor = ''; }, 800);
+        }
         if (btnSave) on(btnSave, 'click', function () {
             var n = nameInput ? nameInput.value.trim() : '';
-            if (!n) { alert('Enter a preset name.'); return; }
+            if (!n) { flagEmpty(); return; }
             window.ahkCmd = 'preset-save/' + n;
         });
         if (btnLoad) on(btnLoad, 'click', function () {
             var n = nameInput ? nameInput.value.trim() : '';
-            if (!n) { alert('Select or enter a preset name.'); return; }
+            if (!n) { flagEmpty(); return; }
             window.ahkCmd = 'preset-load/' + n;
         });
         if (btnDel) on(btnDel, 'click', function () {
             var n = nameInput ? nameInput.value.trim() : '';
-            if (!n) { alert('Select or enter a preset name.'); return; }
-            if (confirm('Delete preset "' + n + '"?'))
-                window.ahkCmd = 'preset-delete/' + n;
+            if (!n) { flagEmpty(); return; }
+            // alert()/confirm() не работают внутри ActiveX WebBrowser при Silent=true,
+            // поэтому подтверждение удаления теперь показывает нативный MsgBox в AHK.
+            window.ahkCmd = 'preset-delete-confirm/' + n;
         });
     }
     window.ahkLoadPresets = function(listStr) {

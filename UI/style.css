@@ -331,6 +331,7 @@ html, body {
 .modal-body {
     padding: 14px 18px; overflow-y: auto;
     -ms-flex: 1; flex: 1;
+    -ms-overflow-style: none; /* IE11/Trident: прячет полосу, колесо мыши продолжает скроллить */
 }
 .modal-body > * + * { margin-top: 12px; }
 .modal-desc { color: #666; font-size: 12px; margin: 0; }
@@ -459,6 +460,7 @@ body.modal-only .modal-body {
     overflow-y: auto;
     scrollbar-width: thin;
     scrollbar-color: #333 #1a1a1a;
+    -ms-overflow-style: none; /* IE11/Trident: прячет полосу, колесо мыши продолжает скроллить */
 }
 /* WebKit scrollbar */
 body.modal-only .modal-body::-webkit-scrollbar { width: 4px; }

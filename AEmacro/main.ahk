@@ -460,13 +460,22 @@ BtnEmbed:
 return
 
 UnembedGameWindow() {
-    global GameHwnd, OrigStyle, OrigExStyle, OrigParent
+    global GameHwnd, OrigStyle, OrigExStyle, OrigParent, MainGuiHwnd
     if (!GameHwnd || !WinExist("ahk_id " . GameHwnd))
         return
     DllCall("SetParent", "ptr", GameHwnd, "ptr", OrigParent)
     WinSet, Style, %OrigStyle%, ahk_id %GameHwnd%
     WinSet, ExStyle, %OrigExStyle%, ahk_id %GameHwnd%
     WinMove, ahk_id %GameHwnd%,, 100, 100, 1280, 720
+
+    ; Roblox был дочерним окном GameArea и полностью его перекрывал.
+    ; После отсоединения Windows не шлёт WM_PAINT в освободившийся регион —
+    ; форсируем перерисовку, иначе остаётся "призрак" последнего кадра игры.
+    GuiControlGet, ContainerHwnd, Hwnd, GameArea
+    DllCall("InvalidateRect", "ptr", ContainerHwnd, "ptr", 0, "int", true)
+    DllCall("UpdateWindow", "ptr", ContainerHwnd)
+    DllCall("RedrawWindow", "ptr", MainGuiHwnd, "ptr", 0, "ptr", 0, "uint", 0x0485) ; INVALIDATE|ERASE|UPDATENOW|ALLCHILDREN
+
     AddLog("Roblox возвращён в обычное окно")
 }
 
@@ -511,15 +520,27 @@ BtnCaptureMap:
 return
 
 ShowSnapshotPreview() {
-    global TempShot
-    Gui, Snap:New, , Снимок карты — превью
-    Gui, Snap:Color, 0x1E1E1E
+    global TempShot, SnapGuiHwnd
+    Gui, Snap:New, +HwndSnapGuiHwnd -Caption +Border, Снимок карты — превью
+    Gui, Snap:Color, 0x121212
     Gui, Snap:Font, s10 cE0E0E0, Segoe UI
-    Gui, Snap:Add, Picture, x10 y10 w640 h360, %TempShot%
-    Gui, Snap:Add, Button, x10 y380 w310 h34 gSnapConfirm, Подтвердить снимок
-    Gui, Snap:Add, Button, x340 y380 w310 h34 gSnapCancel, Отмена
-    Gui, Snap:Show, w660 h424, Снимок карты — превью
+    ; ---- кастомный тёмный заголовок вместо системного ----
+    Gui, Snap:Add, Text, x0 y0 w660 h34 Background0F0F0F gDragSnap,
+    Gui, Snap:Font, s10 cE4E4E4 Bold, Segoe UI
+    Gui, Snap:Add, Text, x14 y9 w500 h20 BackgroundTrans gDragSnap, Снимок карты — превью
+    Gui, Snap:Font, s11 c888888, Segoe UI
+    Gui, Snap:Add, Text, x628 y6 w24 h22 BackgroundTrans Center gSnapCancel, ✕
+    Gui, Snap:Font, s10 cE0E0E0, Segoe UI
+    Gui, Snap:Add, Picture, x10 y44 w640 h360, %TempShot%
+    Gui, Snap:Add, Button, x10 y414 w310 h34 gSnapConfirm, Подтвердить снимок
+    Gui, Snap:Add, Button, x340 y414 w310 h34 gSnapCancel, Отмена
+    Gui, Snap:Show, w660 h458, Снимок карты — превью
 }
+
+; Перетаскивание Snap-окна за кастомный заголовок (т.к. -Caption убрал системный drag)
+DragSnap:
+    PostMessage, 0xA1, 2, 0,, ahk_id %SnapGuiHwnd%  ; WM_NCLBUTTONDOWN / HTCAPTION
+return
 
 SnapConfirm:
     Gui, Snap:Destroy
@@ -879,17 +900,28 @@ CropBMP(srcBmp, x, y, w, h, dstBmp) {
 
 OpenMarkGui(promptText) {
     global TempShot, MarkPrompt, MarkPic, MarkListBox, MarkGuiHwnd
-    Gui, Mark:New, +HwndMarkGuiHwnd, Разметка
-    Gui, Mark:Color, 0x1E1E1E
+    Gui, Mark:New, +HwndMarkGuiHwnd -Caption +Border, Разметка
+    Gui, Mark:Color, 0x121212
+    ; ---- кастомный тёмный заголовок вместо системного ----
+    Gui, Mark:Add, Text, x0 y0 w1576 h34 Background0F0F0F gDragMark,
+    Gui, Mark:Font, s10 cE4E4E4 Bold, Segoe UI
+    Gui, Mark:Add, Text, x14 y9 w1400 h20 BackgroundTrans gDragMark, Разметка
+    Gui, Mark:Font, s11 c888888, Segoe UI
+    Gui, Mark:Add, Text, x1544 y6 w24 h22 BackgroundTrans Center gMarkCancel, ✕
     Gui, Mark:Font, s10 cE0E0E0, Segoe UI
-    Gui, Mark:Add, Text, x10 y10 w1280 vMarkPrompt, % promptText
-    Gui, Mark:Add, Picture, x10 y36 w1280 h720 gMarkClick vMarkPic, %TempShot%
-    Gui, Mark:Add, ListBox, x1300 y36 w260 h620 vMarkListBox,
-    Gui, Mark:Add, Button, x1300 y662 w260 h26 gMarkUndo, Отменить последнее
-    Gui, Mark:Add, Button, x1300 y692 w126 h30 gMarkDone, Готово / Сохранить
-    Gui, Mark:Add, Button, x1436 y692 w124 h30 gMarkCancel, Отмена
-    Gui, Mark:Show, w1576 h730, Разметка
+    Gui, Mark:Add, Text, x10 y44 w1280 vMarkPrompt, % promptText
+    Gui, Mark:Add, Picture, x10 y70 w1280 h720 gMarkClick vMarkPic, %TempShot%
+    Gui, Mark:Add, ListBox, x1300 y70 w260 h620 vMarkListBox,
+    Gui, Mark:Add, Button, x1300 y696 w260 h26 gMarkUndo, Отменить последнее
+    Gui, Mark:Add, Button, x1300 y726 w126 h30 gMarkDone, Готово / Сохранить
+    Gui, Mark:Add, Button, x1436 y726 w124 h30 gMarkCancel, Отмена
+    Gui, Mark:Show, w1576 h764, Разметка
 }
+
+; Перетаскивание Mark-окна за кастомный заголовок (т.к. -Caption убрал системный drag)
+DragMark:
+    PostMessage, 0xA1, 2, 0,, ahk_id %MarkGuiHwnd%  ; WM_NCLBUTTONDOWN / HTCAPTION
+return
 
 MarkClick:
     if (A_GuiControl != "MarkPic")
@@ -2303,6 +2335,17 @@ PollModalClose:
         PresetName := arg
         GoSub, BtnPresetLoad
         PushModalData("presets")
+    }
+    else if (action = "preset-delete-confirm") {
+        ; alert()/confirm() внутри ActiveX WebBrowser не работают при Silent=true,
+        ; поэтому подтверждение теперь через нативный MsgBox.
+        MsgBox, 4, Удаление пресета, Удалить пресет "%arg%"?
+        IfMsgBox, Yes
+        {
+            PresetName := arg
+            GoSub, BtnPresetDelete
+            PushModalData("presets")
+        }
     }
     else if (action = "preset-delete") {
         PresetName := arg

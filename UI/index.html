@@ -95,6 +95,7 @@ html, body {
     flex-direction: column;
     overflow-y: auto;
     overflow-x: hidden;
+    -ms-overflow-style: none; /* IE11/Trident: прячет полосу, колесо мыши продолжает скроллить */
     padding: 16px 14px 10px;
     height: 100%;
 }
@@ -192,6 +193,25 @@ html, body {
     -ms-transform: translateY(-50%); transform: translateY(-50%);
     width: 14px; height: 14px; pointer-events: none; color: #666;
 }
+.custom-select-btn {
+    width: 100%; text-align: left; background: #1e1e1e;
+}
+.custom-select-list {
+    display: none;
+    margin-top: 4px;
+    border: 1px solid #252525; border-radius: 8px;
+    background: #1a1a1a;
+    max-height: 160px; overflow-y: auto;
+    -ms-overflow-style: none;
+}
+.custom-select-list.open { display: block; }
+.custom-select-item {
+    padding: 6px 10px; font-size: 12px; color: #ccc; cursor: pointer;
+    border-bottom: 1px solid #1a1a1a;
+}
+.custom-select-item:last-child { border-bottom: none; }
+.custom-select-item:hover { background: #222; color: #e4e4e4; }
+.custom-select-item.active { color: #3b82f6; }
 
 /* ---- Button Row ---- */
 .btn-row { display: -ms-flexbox; display: flex; }
@@ -260,6 +280,7 @@ html, body {
     background: #0f0f0f; border: 1px solid #252525;
     border-radius: 6px; padding: 6px 8px;
     overflow-y: auto; overflow-x: hidden;
+    -ms-overflow-style: none; /* IE11/Trident: прячет полосу, колесо мыши продолжает скроллить */
     font-family: 'Consolas', monospace; font-size: 11px;
     line-height: 1.7; color: #666; word-wrap: break-word;
 }
@@ -338,17 +359,20 @@ html, body {
 .modal-body {
     padding: 14px 18px; overflow-y: auto;
     -ms-flex: 1; flex: 1;
+    -ms-overflow-style: none; /* IE11/Trident: прячет полосу, колесо мыши продолжает скроллить */
 }
 .modal-body > * + * { margin-top: 12px; }
 .modal-desc { color: #666; font-size: 12px; margin: 0; }
 
 .modal-foot {
     display: -ms-flexbox; display: flex;
-    -ms-flex-pack: end; justify-content: flex-end;
+    -ms-flex-align: center; align-items: center;
+    -ms-flex-pack: justify; justify-content: space-between;
     padding: 12px 18px; border-top: 1px solid #252525;
     -ms-flex-negative: 0; flex-shrink: 0;
 }
-.modal-foot .btn { margin-left: 8px; }
+.modal-foot .btn { margin-left: 8px; width: auto; -ms-flex-negative: 0; flex-shrink: 0; }
+.modal-foot .btn-danger { margin-left: 0; margin-right: auto; }
 
 /* ---- Fieldset ---- */
 .fieldset {
@@ -362,9 +386,9 @@ html, body {
 
 /* ---- Form Grid ---- */
 .form-grid { display: -ms-flexbox; display: flex; -ms-flex-wrap: wrap; flex-wrap: wrap; }
-.form-grid .field { width: 49%; margin-right: 2%; margin-bottom: 8px; }
+.form-grid .field { width: 49%; margin-right: 2%; margin-bottom: 14px; }
 .form-grid .field:nth-child(even) { margin-right: 0; }
-.form-grid-3 .field { width: 32%; margin-right: 2%; }
+.form-grid-3 .field { width: 32%; margin-right: 2%; margin-bottom: 14px; }
 .form-grid-3 .field:nth-child(3n) { margin-right: 0; }
 
 /* ---- Field ---- */
@@ -414,6 +438,7 @@ html, body {
 .preset-list {
     border: 1px solid #252525; border-radius: 8px;
     min-height: 70px; max-height: 160px; overflow-y: auto;
+    -ms-overflow-style: none; /* IE11/Trident: прячет полосу, колесо мыши продолжает скроллить */
     display: -ms-flexbox; display: flex;
     -ms-flex-direction: column; flex-direction: column;
 }
@@ -466,6 +491,7 @@ body.modal-only .modal-body {
     overflow-y: auto;
     scrollbar-width: thin;
     scrollbar-color: #333 #1a1a1a;
+    -ms-overflow-style: none; /* IE11/Trident: прячет полосу, колесо мыши продолжает скроллить */
 }
 /* WebKit scrollbar */
 body.modal-only .modal-body::-webkit-scrollbar { width: 4px; }
@@ -532,12 +558,16 @@ body.modal-only .modal-foot {
                     <span class="label">Map</span>
                     <span class="badge" id="mapBadge">None</span>
                 </div>
-                <div class="select-wrap">
-                    <select id="mapSelect" class="select">
-                        <option value="">-- Select Map --</option>
-                    </select>
+                <div class="select-wrap custom-select" id="mapCustomSelect">
+                    <button type="button" class="select custom-select-btn" id="mapSelectBtn">
+                        <span id="mapSelectLabel">-- Select Map --</span>
+                    </button>
                     <svg class="select-chevron" viewBox="0 0 16 16"><path d="m4 6 4 4 4-4" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+                    <div class="custom-select-list" id="mapSelectList"></div>
                 </div>
+                <select id="mapSelect" class="select" style="display:none">
+                    <option value="">-- Select Map --</option>
+                </select>
                 <div class="btn-row">
                     <button class="btn btn-ghost btn-sm" id="btnSnapshot">
                         <svg viewBox="0 0 16 16" fill="none"><rect x="1.5" y="4.5" width="13" height="10" rx="2" stroke="currentColor" stroke-width="1.2"/><circle cx="8" cy="9.5" r="2.5" stroke="currentColor" stroke-width="1.2"/><circle cx="12.5" cy="7.5" r="0.8" fill="currentColor"/><path d="M5 4.5 6.2 2.8a.5.5 0 0 1 .4-.3h2.8a.5.5 0 0 1 .4.3L11 4.5" stroke="currentColor" stroke-width="1.2"/></svg>
@@ -768,7 +798,7 @@ body.modal-only .modal-foot {
                     <div class="field"><label class="field-label">Slot 5</label><input type="number" class="input" id="upgSlot5" value="3" min="0" max="9"></div>
                     <div class="field"><label class="field-label">Slot 6</label><input type="number" class="input" id="upgSlot6" value="3" min="0" max="9"></div>
                 </div>
-                <div class="field" style="margin-top:8px">
+                <div class="field" style="margin-top:4px">
                     <label class="field-label">Unit Select Y-Offset (px)</label>
                     <input type="number" class="input" id="upgYOffset" value="20" style="max-width:120px">
                 </div>
@@ -873,13 +903,59 @@ body.modal-only .modal-foot {
     });
 
     // Map
-    var mapSelect = $('#mapSelect');
+    var mapSelect = $('#mapSelect');      // скрытый нативный select — источник данных
     var mapBadge  = $('#mapBadge');
+    var mapBtn    = $('#mapSelectBtn');
+    var mapLabel  = $('#mapSelectLabel');
+    var mapList   = $('#mapSelectList');
+
+    function fireChange(el) {
+        if (document.createEvent) {
+            var ev = document.createEvent('HTMLEvents');
+            ev.initEvent('change', true, true);
+            el.dispatchEvent(ev);
+        } else if (el.fireEvent) {
+            el.fireEvent('onchange');
+        }
+    }
+    function closeMapList() { mapList.className = 'custom-select-list'; }
+    function toggleMapList() {
+        mapList.className = 'custom-select-list' + (mapList.className.indexOf('open') === -1 ? ' open' : '');
+    }
+    function syncMapCustomUI() {
+        mapList.innerHTML = '';
+        var opts = mapSelect.options;
+        for (var i = 0; i < opts.length; i++) {
+            if (!opts[i].value) continue; // плейсхолдер не дублируем в списке
+            (function (opt) {
+                var div = document.createElement('div');
+                div.className = 'custom-select-item' + (opt.value === mapSelect.value ? ' active' : '');
+                div.textContent = opt.text;
+                on(div, 'click', function () {
+                    mapSelect.value = opt.value;
+                    fireChange(mapSelect);
+                    closeMapList();
+                });
+                mapList.appendChild(div);
+            })(opts[i]);
+        }
+        mapLabel.textContent = mapSelect.value ? mapSelect.options[mapSelect.selectedIndex].text : '-- Select Map --';
+    }
+    on(mapBtn, 'click', function (e) {
+        e = e || window.event;
+        if (e.stopPropagation) e.stopPropagation();
+        toggleMapList();
+    });
+    on(document, 'click', function (e) {
+        var tgt = (e || window.event).target || (e || window.event).srcElement;
+        if (tgt !== mapBtn && !mapBtn.contains(tgt) && tgt !== mapList && !mapList.contains(tgt)) closeMapList();
+    });
     on(mapSelect, 'change', function () {
         var val = mapSelect.value;
         state.map = val || null;
         mapBadge.textContent = val ? mapSelect.options[mapSelect.selectedIndex].text : 'None';
         mapBadge.className = val ? 'badge active' : 'badge';
+        syncMapCustomUI();
         sendCmd('select-map/' + (val || '__none__'));
     });
     on($('#btnSnapshot'), 'click', function () {
@@ -893,6 +969,7 @@ body.modal-only .modal-foot {
     on($('#btnClear'), 'click', function () {
         mapSelect.value = ''; state.map = null;
         mapBadge.textContent = 'None'; mapBadge.className = 'badge';
+        syncMapCustomUI();
         sendCmd('clear-map');
     });
 
@@ -1009,6 +1086,7 @@ body.modal-only .modal-foot {
             mapBadge.textContent = 'None';
             mapBadge.className = 'badge';
         }
+        syncMapCustomUI();
     };
 
     window.ahkSetMapOptions = function (optStr) {
@@ -1021,6 +1099,7 @@ body.modal-only .modal-foot {
             opt.textContent = names[i];
             mapSelect.appendChild(opt);
         }
+        syncMapCustomUI();
     };
 
     window.ahkClearLog = function () { if (logBox) logBox.innerHTML = ''; };
@@ -1165,21 +1244,27 @@ body.modal-only .modal-foot {
         var btnLoad = $('#btnPresetLoad');
         var btnDel  = $('#btnPresetDelete');
         var nameInput = $('#presetName');
+        function flagEmpty() {
+            if (!nameInput) return;
+            nameInput.style.borderColor = '#ef4444';
+            setTimeout(function () { nameInput.style.borderColor = ''; }, 800);
+        }
         if (btnSave) on(btnSave, 'click', function () {
             var n = nameInput ? nameInput.value.trim() : '';
-            if (!n) { alert('Enter a preset name.'); return; }
+            if (!n) { flagEmpty(); return; }
             window.ahkCmd = 'preset-save/' + n;
         });
         if (btnLoad) on(btnLoad, 'click', function () {
             var n = nameInput ? nameInput.value.trim() : '';
-            if (!n) { alert('Select or enter a preset name.'); return; }
+            if (!n) { flagEmpty(); return; }
             window.ahkCmd = 'preset-load/' + n;
         });
         if (btnDel) on(btnDel, 'click', function () {
             var n = nameInput ? nameInput.value.trim() : '';
-            if (!n) { alert('Select or enter a preset name.'); return; }
-            if (confirm('Delete preset "' + n + '"?'))
-                window.ahkCmd = 'preset-delete/' + n;
+            if (!n) { flagEmpty(); return; }
+            // alert()/confirm() не работают внутри ActiveX WebBrowser при Silent=true,
+            // поэтому подтверждение удаления теперь показывает нативный MsgBox в AHK.
+            window.ahkCmd = 'preset-delete-confirm/' + n;
         });
     }
     window.ahkLoadPresets = function(listStr) {
