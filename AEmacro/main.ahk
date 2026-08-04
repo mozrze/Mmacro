@@ -94,6 +94,7 @@ TemplateName := ""   ; заранее заданное имя шаблона (н
 MarkGuiHwnd := 0
 CalibGuiHwnd := 0
 PresetGuiHwnd := 0
+ModalHwnd := 0
 
 ; ---- drag-select для захвата шаблонов ----
 DragActive := false
@@ -109,64 +110,71 @@ OnMessage(0x202, "OnTemplateLButtonUp")       ; WM_LBUTTONUP
 ; =======================================================
 
 TotalW := GameAreaW + SidebarW
-TotalH := GameAreaH + 40
+TotalH := GameAreaH
 
 LoadConfig()
 LoadSettings()
 ReloadMapList()
 LoadAllMapCoords()
 
-; ===================== GUI (тёмная тема) =====================
-Gui, +HwndMainGuiHwnd
-Gui, Color, 0x1E1E1E, 0x252526
+; ===================== GUI (тёмная тема + HTML на всё окно) =====================
+Gui, +HwndMainGuiHwnd -Caption
+Gui, Color, 0x121212
+
+; ---- 1. HTML-панель на ВСЁ окно (первой — будет снизу) ----
+; Включаем IE11 Edge Mode
+RegRead, ieEmu, HKEY_CURRENT_USER, SOFTWARE\Microsoft\Internet Explorer\Main\FeatureControl\FEATURE_BROWSER_EMULATION, %A_ScriptName%
+if (ErrorLevel || ieEmu < 11001)
+    RegWrite, REG_DWORD, HKEY_CURRENT_USER, SOFTWARE\Microsoft\Internet Explorer\Main\FeatureControl\FEATURE_BROWSER_EMULATION, %A_ScriptName%, 11001
+
+htmlDir := A_ScriptDir . "\..\UI"
+Loop, %htmlDir%, 0, 0
+    htmlDir := A_LoopFileLongPath
+htmlPath := htmlDir . "\index.html"
+StringReplace, htmlPath, htmlPath, \, /, All
+htmlURL := "file:///" . htmlPath
+
+Gui, Add, ActiveX, x0 y0 w%TotalW% h%GameAreaH% vWB, Shell.Explorer
+WB.Silent := true
+ComObjConnect(WB, "WB_")
+WB.Navigate(htmlURL . "?_=" . A_TickCount)
+
+; Ждём загрузки HTML
+WBWaitStart := A_TickCount
+while (WB.ReadyState != 4 && A_TickCount - WBWaitStart < 15000)
+    Sleep, 100
+Sleep, 200
+
+; ---- 2. Игровая область ПОВЕРХ HTML (полный размер) ----
 Gui, Font, s10 cE0E0E0, Segoe UI
+Gui, Add, Text, x0 y0 w%GameAreaW% h%GameAreaH% vGameArea 0x201 Border Background0A0A0A,
 
-Gui, Add, Text, x0 y0 w%GameAreaW% h%GameAreaH% vGameArea 0x201 Border BackgroundBlack,
-Gui, Add, Text, x0 y%GameAreaH% w%GameAreaW% h40 c808080 Center 0x201, Область встраивания Roblox — нажми "Встроить" справа
+Gui, Show, w%TotalW% h%GameAreaH%, TD Macro Control
 
-SbX := GameAreaW + 12
-
-Gui, Font, s12 cFFFFFF Bold, Segoe UI
-Gui, Add, Text, x%SbX% y12 w%SidebarW%, TD MACRO
-
-Gui, Font, s9 cE0E0E0 Norm, Segoe UI
-Gui, Add, Text, x%SbX% y44 w280 c00CCFF, ОКНО ИГРЫ
-Gui, Add, Button, x%SbX% y64 w280 h30 gBtnEmbed vEmbedBtn, Встроить Roblox сюда
-Gui, Add, Text, x%SbX% y100 w280 h20 vWindowStatus c808080, Статус: не проверено
-
-Gui, Add, Text, x%SbX% y128 w280 c00CCFF, КАРТА И РАЗМЕТКА
-Gui, Add, DropDownList, x%SbX% y148 w280 vSelectedMapCtl gMapChanged, % (MapList.Length() > 0 ? JoinArr(MapList, "|") : "|")
-Gui, Add, Button, x%SbX% y184 w280 h26 gBtnCaptureMap, Сделать снимок карты
-Gui, Add, Button, x%SbX% y214 w280 h26 gBtnMarkSlots, Разметить слоты карты
-   Gui, Add, Button, x%SbX% y244 w280 h26 gBtnClearMap, Очистить разметку карты
-   Gui, Add, Text, x%SbX% y274 w280 h16 vOffsetStatus c808080, % "Up(" UpgradeX "," UpgradeY ") Auto(" AutoX "," AutoY ") Start(" StartGameX "," StartGameY ") Repeat(" RepeatStageX "," RepeatStageY ")"
-
-Gui, Add, Text, x%SbX% y296 w280 c00CCFF, ФАРМ
-Gui, Add, Button, x%SbX% y316 w280 h34 gBtnStartStop vStartStopBtn, Старт (F9)
-Gui, Add, CheckBox, x%SbX% y356 w200 h20 vAutoUpgradeEnabled gAutoUpgradeToggle cE0E0E0, Автопрокачка юнитов
-Gui, Add, Button, xp+210 y354 w70 h22 gBtnOpenAutoUpgradeSettings, Настройка
-Gui, Add, Text, x%SbX% y382 w280 h20 vFarmStatus c808080, Статус: остановлен
-
-Gui, Add, Text, x%SbX% y412 w280 c00CCFF, ЛОГ
-Gui, Add, Edit, x%SbX% y432 w280 h230 vLogBox ReadOnly -WantReturn Background151515 cB0B0B0,
-SbBtnW := 90
-SbBtnGap := 5
-SbBtn2X := SbX + SbBtnW + SbBtnGap
-SbBtn3X := SbBtn2X + SbBtnW + SbBtnGap
-Gui, Add, Button, x%SbX%    y696 w%SbBtnW% h24 gBtnSettings, Настройки
-Gui, Add, Button, x%SbBtn2X% y696 w%SbBtnW% h24 gBtnOpenPresets, Пресеты
-Gui, Add, Button, x%SbBtn3X% y696 w%SbBtnW% h24 gBtnOpenCalibration, Калибровка
-
-Gui, Show, w%TotalW% h%TotalH%, TD Macro Control
+; Таймер опроса JS-команд
+SetTimer, PollJSCmd, 20
+; Отправляем начальное состояние в HTML
+SetTimer, PushStateToHTML, -300
 return
 
 ; ===================== ЛОГ =====================
-AddLog(msg) {
-    Gui, 1:Default
-    GuiControlGet, cur,, LogBox
+AddLog(msg, cls := "") {
+    global WB
     FormatTime, ts,, HH:mm:ss
-    new := "[" ts "] " msg "`r`n" cur
-    GuiControl,, LogBox, %new%
+    ; Отправляем в HTML-панель
+    if (WB && WB.ReadyState = 4) {
+        jsCls := cls ? cls : ""
+        safeMsg := StrReplace(msg, "\", "\\")
+        safeMsg := StrReplace(safeMsg, """", "\""")
+        safeMsg := StrReplace(safeMsg, "`r`n", "\n")
+        safeMsg := StrReplace(safeMsg, "`n", "\n")
+        js := "ahkLog(""" . safeMsg . """, """ . jsCls . """)"
+        try {
+            WB.Document.parentWindow.execScript(js)
+        } catch e {
+            ; HTML ещё не готов — ничего страшного
+        }
+    }
 }
 
 ; ===================== КОНФИГ (координаты кнопок) =====================
@@ -295,29 +303,12 @@ ReloadMapList() {
     }
 }
 
-; Перестроение выпадающего списка карт в GUI (с сохранением выбора).
+; Перестроение списка карт в HTML-панели (с сохранением выбора).
 RefreshMapDropdown() {
     global MapList, SelectedMapCtl
-    if (MapList.Length() > 0) {
-        listStr := JoinArr(MapList, "|")
-        found := false
-        for i, m in MapList {
-            if (m = SelectedMapCtl) {
-                found := true
-                break
-            }
-        }
-        GuiControl, , SelectedMapCtl, %listStr%
-        if (found)
-            GuiControl, ChooseString, SelectedMapCtl, %SelectedMapCtl%
-        else
-            GuiControl, Choose, SelectedMapCtl, 1
-        Gui, Submit, NoHide
-    } else {
-        ; Список пуст — в DropDownList нельзя ставить пустую строку, ставим заглушку
-        GuiControl, , SelectedMapCtl, |
-        SelectedMapCtl := ""
-    }
+    UpdateMapListHTML()
+    if (SelectedMapCtl != "")
+        WBH_CallJS("ahkUpdateMap(""" . SelectedMapCtl . """)")
 }
 
 LoadMapCoordsOne(mapName) {
@@ -440,16 +431,15 @@ ClickGameButton(imageFile, delayAfter := 0) {
 }
 
 BtnEmbed:
-    Gui, Submit, NoHide
     if (Embedded) {
         UnembedGameWindow()
-        GuiControl,, EmbedBtn, Встроить Roblox сюда
         Embedded := false
+        WBH_CallJS("ahkUpdateEmbed(false)")
         return
     }
     if !WinExist(WinTitle) {
-        GuiControl,, WindowStatus, Статус: игра не найдена
-        AddLog("Ошибка встраивания: окно Roblox не найдено")
+        AddLog("Ошибка встраивания: окно Roblox не найдено", "warn")
+        WBH_CallJS("ahkUpdateEmbed(false)")
         return
     }
     GameHwnd := WinExist(WinTitle)
@@ -465,8 +455,7 @@ BtnEmbed:
     Sleep, 150
     GetClientSize(GameHwnd, RealW, RealH)
     Embedded := true
-    GuiControl,, EmbedBtn, Вернуть Roblox обратно
-    GuiControl,, WindowStatus, % "Статус: встроено, размер " RealW "x" RealH
+    WBH_CallJS("ahkUpdateEmbed(true)")
     AddLog("Roblox встроен, зафиксированный размер игры: " RealW "x" RealH)
 return
 
@@ -478,7 +467,6 @@ UnembedGameWindow() {
     WinSet, Style, %OrigStyle%, ahk_id %GameHwnd%
     WinSet, ExStyle, %OrigExStyle%, ahk_id %GameHwnd%
     WinMove, ahk_id %GameHwnd%,, 100, 100, 1280, 720
-    GuiControl,, WindowStatus, Статус: возвращено в обычный режим
     AddLog("Roblox возвращён в обычное окно")
 }
 
@@ -989,15 +977,15 @@ MarkDone:
         }
     } else if (MarkMode = "abs_upgrade") {
         SaveConfig()
-        GuiControl,, OffsetStatus, % "Up(" UpgradeX "," UpgradeY ") Auto(" AutoX "," AutoY ") Start(" StartGameX "," StartGameY ")"
+        UpdateCoordsHTML()
         AddLog("Калибровка Upgrade сохранена: (" UpgradeX "," UpgradeY ")")
     } else if (MarkMode = "abs_startgame") {
         SaveConfig()
-        GuiControl,, OffsetStatus, % "Up(" UpgradeX "," UpgradeY ") Auto(" AutoX "," AutoY ") Start(" StartGameX "," StartGameY ") Repeat(" RepeatStageX "," RepeatStageY ")"
+        UpdateCoordsHTML()
         AddLog("Калибровка Start Game сохранена: (" StartGameX "," StartGameY ")")
     } else if (MarkMode = "abs_repeatstage") {
         SaveConfig()
-        GuiControl,, OffsetStatus, % "Up(" UpgradeX "," UpgradeY ") Auto(" AutoX "," AutoY ") Start(" StartGameX "," StartGameY ") Repeat(" RepeatStageX "," RepeatStageY ")"
+        UpdateCoordsHTML()
         AddLog("Калибровка RepeatStage сохранена: (" RepeatStageX "," RepeatStageY ")")
     } else if (MarkMode = "template") {
         AddLog("Снятие шаблона закрыто без сохранения")
@@ -1125,30 +1113,30 @@ OpenPresetsGui() {
     Gui, Preset:Color, 0x1E1E1E, 0x252526
     Gui, Preset:Font, s10 cE0E0E0, Segoe UI
 
-    Gui, Preset:Font, s10 c00CCFF Bold, Segoe UI
-    Gui, Preset:Add, Text, x14 y14 w620 h24, Пресеты — полная конфигурация
-    Gui, Preset:Font, s10 cE0E0E0, Segoe UI
+    Gui, Preset:Font, s9 c00CCFF Bold, Segoe UI
+    Gui, Preset:Add, Text, x12 y10 w540 h20, Пресеты — полная конфигурация
+    Gui, Preset:Font, s9 cE0E0E0, Segoe UI
 
     ; ---- имя пресета + действия ----
-    Gui, Preset:Add, Text, x14 y54 w260, Имя пресета:
-    Gui, Preset:Add, Edit, x204 y50 w260 h22 vPresetName,
-    Gui, Preset:Add, Button, x484 y50 w160 h26 gBtnPresetSave, Сохранить пресет
+    Gui, Preset:Add, Text, x12 y40 w220, Имя пресета:
+    Gui, Preset:Add, Edit, x170 y38 w220 h22 vPresetName,
+    Gui, Preset:Add, Button, x400 y38 w150 h24 gBtnPresetSave, Сохранить пресет
 
     ; ---- список пресетов ----
-    Gui, Preset:Add, Text, x14 y90 w260, Список пресетов:
-    Gui, Preset:Add, ListBox, x204 y86 w260 h150 vPresetList gPresetSelect,
-    Gui, Preset:Add, Button, x484 y86 w160 h26 gBtnPresetLoad, Загрузить пресет
-    Gui, Preset:Add, Button, x484 y120 w160 h26 gBtnPresetDelete, Удалить пресет
-    Gui, Preset:Add, Button, x484 y154 w160 h26 gBtnPresetRefresh, Обновить список
+    Gui, Preset:Add, Text, x12 y72 w220, Список пресетов:
+    Gui, Preset:Add, ListBox, x170 y68 w220 h140 vPresetList gPresetSelect,
+    Gui, Preset:Add, Button, x400 y68 w150 h24 gBtnPresetLoad, Загрузить пресет
+    Gui, Preset:Add, Button, x400 y98 w150 h24 gBtnPresetDelete, Удалить пресет
+    Gui, Preset:Add, Button, x400 y128 w150 h24 gBtnPresetRefresh, Обновить список
 
     ; ---- подсказка о составе ----
-    Gui, Preset:Font, s8 c808080 Italic, Segoe UI
-    Gui, Preset:Add, Text, x14 y252 w620 h40, Пресет включает ВСЁ: координаты кнопок (Upgrade/Auto/StartGame/RepeatStage), задержки, параметры ImageSearch/PixelSearch и слоты всех карт (расположение юнитов). При загрузке пресет сразу применяется и записывается в config.ini, settings.ini и maps\*_slots.ini.
-    Gui, Preset:Font, s10 cE0E0E0 Norm, Segoe UI
+    Gui, Preset:Font, s7 c808080 Italic, Segoe UI
+    Gui, Preset:Add, Text, x12 y222 w540 h34, Пресет включает ВСЁ: координаты кнопок (Upgrade/Auto/StartGame/RepeatStage), задержки, параметры ImageSearch/PixelSearch и слоты всех карт (расположение юнитов). При загрузке пресет сразу применяется и записывается в config.ini, settings.ini и maps\*_slots.ini.
+    Gui, Preset:Font, s9 cE0E0E0 Norm, Segoe UI
 
-    Gui, Preset:Add, Button, x484 y300 w160 h28 gBtnPresetClose, Закрыть
+    Gui, Preset:Add, Button, x400 y268 w150 h26 gBtnPresetClose, Закрыть
 
-    Gui, Preset:Show, w668 h344, Пресеты
+    Gui, Preset:Show, w570 h306, Пресеты
     LoadPresetsList()
 }
 
@@ -1255,7 +1243,11 @@ PresetSelect:
 return
 
 BtnPresetSave:
-    Gui, Preset:Submit, NoHide
+    ; Если PresetName уже задан (из модального окна), не перезаписываем из GUI
+    if (PresetName = "" || !PresetGuiHwnd || !DllCall("IsWindow", "ptr", PresetGuiHwnd)) {
+        if (PresetGuiHwnd && DllCall("IsWindow", "ptr", PresetGuiHwnd))
+            Gui, Preset:Submit, NoHide
+    }
     if (PresetName = "") {
         MsgBox, 48, Ошибка, Введи имя пресета.
         return
@@ -1311,15 +1303,23 @@ BtnPresetSave:
 return
 
 BtnPresetLoad:
-    Gui, Preset:Submit, NoHide
-    Gui, Preset:Default
-    if (PresetName = "") {
-        GuiControlGet, sel, , PresetList
-        if (sel = "") {
-            MsgBox, 48, Ошибка, Выбери пресет из списка или введи имя.
-            return
+    ; Если PresetName уже задан (из модального окна), не перезаписываем из GUI
+    if (PresetName = "" || !PresetGuiHwnd || !DllCall("IsWindow", "ptr", PresetGuiHwnd)) {
+        if (PresetGuiHwnd && DllCall("IsWindow", "ptr", PresetGuiHwnd)) {
+            Gui, Preset:Submit, NoHide
+            Gui, Preset:Default
         }
-        PresetName := sel
+    }
+    if (PresetName = "") {
+        if (PresetGuiHwnd && DllCall("IsWindow", "ptr", PresetGuiHwnd)) {
+            GuiControlGet, sel, , PresetList
+            if (sel != "")
+                PresetName := sel
+        }
+    }
+    if (PresetName = "") {
+        MsgBox, 48, Ошибка, Выбери пресет из списка или введи имя.
+        return
     }
     IniRead, v, %PresetsIni%, %PresetName%, UpgradeX, __NONE__
     if (v = "__NONE__") {
@@ -1403,26 +1403,34 @@ BtnPresetLoad:
     ; ---- 7. Обновляем UI ----
     ReloadMapList()
     LoadAllMapCoords()
-    Gui, 1:Default
     RefreshMapDropdown()
-    GuiControl, 1:, OffsetStatus, % "Up(" UpgradeX "," UpgradeY ") Auto(" AutoX "," AutoY ") Start(" StartGameX "," StartGameY ") Repeat(" RepeatStageX "," RepeatStageY ")"
+    UpdateCoordsHTML()
     UpdateCalibStatus()
     AddLog("Пресет """ PresetName """ загружен (координаты + настройки + слоты карт применены и записаны на диск)")
 return
 
 BtnPresetDelete:
-    Gui, Preset:Submit, NoHide
-    Gui, Preset:Default
-    if (PresetName = "") {
-        GuiControlGet, sel, , PresetList
-        if (sel = "") {
-            MsgBox, 48, Ошибка, Введи или выбери имя пресета для удаления.
-            return
+    ; Если PresetName уже задан (из модального окна), не перезаписываем из GUI
+    if (PresetName = "" || !PresetGuiHwnd || !DllCall("IsWindow", "ptr", PresetGuiHwnd)) {
+        if (PresetGuiHwnd && DllCall("IsWindow", "ptr", PresetGuiHwnd)) {
+            Gui, Preset:Submit, NoHide
+            Gui, Preset:Default
         }
-        PresetName := sel
+    }
+    if (PresetName = "") {
+        if (PresetGuiHwnd && DllCall("IsWindow", "ptr", PresetGuiHwnd)) {
+            GuiControlGet, sel, , PresetList
+            if (sel != "")
+                PresetName := sel
+        }
+    }
+    if (PresetName = "") {
+        MsgBox, 48, Ошибка, Введи или выбери имя пресета для удаления.
+        return
     }
     IniDelete, %PresetsIni%, %PresetName%
-    GuiControl, Preset:, PresetName,
+    if (PresetGuiHwnd && DllCall("IsWindow", "ptr", PresetGuiHwnd))
+        GuiControl, Preset:, PresetName,
     AddLog("Пресет """ PresetName """ удалён")
     LoadPresetsList()
 return
@@ -1432,17 +1440,22 @@ BtnPresetRefresh:
 return
 
 LoadPresetsList() {
-    global PresetsIni
-    GuiControl, Preset:, PresetList, |
+    global PresetsIni, PresetGuiHwnd
+    if (PresetGuiHwnd && DllCall("IsWindow", "ptr", PresetGuiHwnd)) {
+        GuiControl, Preset:, PresetList, |
+    }
     if (!FileExist(PresetsIni))
         return
     FileRead, content, %PresetsIni%
     Loop, Parse, content, `n, `r
     {
-        line := A_LoopField
-        if (SubStr(line, 1, 1) = "[" && SubStr(line, 0, 1) = "]") {
+        line := Trim(A_LoopField)
+        if (line = "")
+            continue
+        if (SubStr(line, 1, 1) = "[" && SubStr(line, -1) = "]") {
             name := Trim(SubStr(line, 2, -1))
-            GuiControl, Preset:, PresetList, %name%
+            if (PresetGuiHwnd && DllCall("IsWindow", "ptr", PresetGuiHwnd))
+                GuiControl, Preset:, PresetList, %name%
         }
     }
 }
@@ -1455,8 +1468,7 @@ return
 
 ; ===================== НАСТРОЙКИ АВТОПРОКАЧКИ =====================
 AutoUpgradeToggle:
-    Gui, 1:Submit, NoHide
-    ; Галочка уже обновила AutoUpgradeEnabled, больше ничего не нужно
+    ; AutoUpgradeEnabled уже обновлён через ProcessJSCmd ("toggle-autoupgrade")
 return
 
 BtnOpenAutoUpgradeSettings:
@@ -1573,29 +1585,28 @@ return
 ; ===================== СТАРТ / СТОП ФАРМА =====================
 BtnStartStop:
 F9::
-    Gui, Submit, NoHide
     if (SelectedMapCtl = "") {
-        GuiControl,, FarmStatus, Статус: сначала выбери карту
+        AddLog("Сначала выбери карту", "warn")
+        WBH_CallJS("ahkUpdateStatus('Select a map', 'error')")
         return
     }
     if (!MapCoords.HasKey(SelectedMapCtl)) {
-        GuiControl,, FarmStatus, Статус: карта не размечена
-        AddLog("Нельзя запустить: """ SelectedMapCtl """ не размечена")
+        AddLog("Нельзя запустить: """ SelectedMapCtl """ не размечена", "warn")
+        WBH_CallJS("ahkUpdateStatus('Map not marked', 'error')")
         return
     }
     if !WinExist(WinTitle) {
-        GuiControl,, FarmStatus, Статус: игра не найдена
+        AddLog("Игра не найдена", "warn")
+        WBH_CallJS("ahkUpdateStatus('Game not found', 'error')")
         return
     }
     Running := !Running
     if (Running) {
-        GuiControl,, StartStopBtn, Стоп (F9)
-        GuiControl,, FarmStatus, Статус: расстановка...
+        WBH_CallJS("ahkUpdateFarm(true)")
         AddLog("Старт фарма: " SelectedMapCtl)
         SetTimer, RunPlacementSequence, -100
     } else {
-        GuiControl,, StartStopBtn, Старт (F9)
-        GuiControl,, FarmStatus, Статус: остановлен
+        WBH_CallJS("ahkUpdateFarm(false)")
         AddLog("Фарм остановлен")
         SetTimer, WatchNextStage, Off
     }
@@ -1784,10 +1795,10 @@ RunPlacementSequence:
         AddLog("Автопрокачка завершена")
     }
     if (Running) {
-        GuiControl,, FarmStatus, Статус: расстановка завершена, нажимаю Start Game...
+        WBH_CallJS("ahkUpdateStatus('Starting game...', 'running')")
         AddLog("Расстановка завершена, нажимаю Start Game...")
         ClickStartGameRetry()
-        GuiControl,, FarmStatus, Статус: игра запущена, наблюдение
+        WBH_CallJS("ahkUpdateStatus('Watching...', 'running')")
         SetTimer, WatchNextStage, 1000
     }
 return
@@ -1830,25 +1841,25 @@ return
 ; ---- Наблюдение за окончанием волны / победы / поражения ----
 WatchNextStage:
     if !WinExist(WinTitle) {
-        GuiControl,, FarmStatus, Статус: окно игры потеряно
+        WBH_CallJS("ahkUpdateFarm(false)")
+        WBH_CallJS("ahkUpdateStatus('Game lost', 'error')")
         AddLog("Окно Roblox пропало, остановка")
         SetTimer, WatchNextStage, Off
         Running := false
-        GuiControl,, StartStopBtn, Старт (F9)
         return
     }
     ; 1) Проверяем поражение/победу — ищем Defeat / Victory
     if (DetectDefeat()) {
         AddLog("Обнаружено поражение! Кликаю Repeat Stage...")
         ClickRepeatStage()
-        GuiControl,, FarmStatus, Статус: поражение, перезапуск...
+        WBH_CallJS("ahkUpdateStatus('Defeat, restarting...', 'error')")
         Gosub, RestartFarmLoop
         return
     }
     if (DetectVictory()) {
         AddLog("Обнаружена победа! Кликаю Repeat Stage...")
         ClickRepeatStage()
-        GuiControl,, FarmStatus, Статус: победа, перезапуск...
+        WBH_CallJS("ahkUpdateStatus('Victory, restarting...', 'running')")
         Gosub, RestartFarmLoop
         return
     }
@@ -1856,13 +1867,11 @@ WatchNextStage:
 return
 
 ; ---- Бесконечный цикл: после победы/поражения всё заново ----
-; Выключаем наблюдение, ждём перезагрузку этапа, заново расставляем
-; юнитов (RunPlacementSequence сам нажмёт Start Game и включит наблюдение).
 RestartFarmLoop:
     SetTimer, WatchNextStage, Off
     if (!Running)
         return
-    GuiControl,, FarmStatus, Статус: перезапуск этапа...
+    WBH_CallJS("ahkUpdateStatus('Restarting stage...', 'running')")
     AddLog("Перезапуск этапа: жду загрузку, затем расстановка заново")
     Sleep, 4000
     if (Running)
@@ -2007,8 +2016,458 @@ ClickRepeatStage() {
         AddLog("Repeat Stage: экран ещё на месте, увожу мышь и повторяю...")
         ; Не нажалось — уводим мышь в сторону, чтобы сбросить hover
         MoveMouseAway()
+	}
+	AddLog("ВНИМАНИЕ: Repeat Stage не нажалась за " attempts " попыток")
+}
+
+; ===================== HTML ↔ AHK BRIDGE =====================
+
+; ---- Выполнить JavaScript в HTML-панели ----
+WBH_CallJS(js) {
+    global WB
+    if (!WB || WB.ReadyState != 4)
+        return
+    try {
+        WB.Document.parentWindow.execScript(js)
+    } catch e {
+        ; HTML-панель может быть не готова
     }
-    AddLog("ВНИМАНИЕ: Repeat Stage не нажалась за " attempts " попыток")
+}
+
+; ---- Таймер: опрос команд от JS (каждые 150 мс) ----
+PollJSCmd:
+    if (!WB || WB.ReadyState != 4)
+        return
+    cmd := ""
+    try {
+        cmd := WB.Document.parentWindow.ahkCmd
+        if (cmd && cmd != "")
+            WB.Document.parentWindow.ahkCmd := ""
+    } catch e {
+        return
+    }
+    if (cmd && cmd != "")
+        ProcessJSCmd(cmd)
+return
+
+; ---- Обработка команд, пришедших из HTML ----
+ProcessJSCmd(cmd) {
+    global SelectedMapCtl, AutoUpgradeEnabled, Running, WB
+    
+    ; Разбираем команду: "command" или "command/arg"
+    slashPos := InStr(cmd, "/")
+    if (slashPos) {
+        action := SubStr(cmd, 1, slashPos - 1)
+        arg := SubStr(cmd, slashPos + 1)
+    } else {
+        action := cmd
+        arg := ""
+    }
+    
+    if (action = "embed") {
+        Gosub, BtnEmbed
+        return
+    }
+    if (action = "start-farm") {
+        Gosub, BtnStartStop
+        return
+    }
+    if (action = "select-map") {
+        if (arg = "__none__")
+            SelectedMapCtl := ""
+        else
+            SelectedMapCtl := arg
+        Gosub, MapChanged
+        return
+    }
+    if (action = "snapshot") {
+        Gosub, BtnCaptureMap
+        return
+    }
+    if (action = "mark-slots") {
+        Gosub, BtnMarkSlots
+        return
+    }
+    if (action = "clear-map") {
+        Gosub, BtnClearMap
+        return
+    }
+    if (action = "toggle-autoupgrade") {
+        AutoUpgradeEnabled := !AutoUpgradeEnabled
+        WBH_CallJS("document.getElementById('chkAutoUpgrade').checked = " . (AutoUpgradeEnabled ? "true" : "false") . ";")
+        if (AutoUpgradeEnabled)
+            AddLog("Auto Upgrade: ON")
+        else
+            AddLog("Auto Upgrade: OFF")
+        return
+    }
+    if (action = "settings") {
+        OpenModalWindow("settings", "Settings", 480, 530)
+        return
+    }
+    if (action = "presets") {
+        OpenModalWindow("presets", "Presets", 440, 370)
+        return
+    }
+    if (action = "calibrate") {
+        OpenModalWindow("calibrate", "Calibration", 440, 420)
+        return
+    }
+    if (action = "upgrade-cfg") {
+        OpenModalWindow("upgrade", "Auto Upgrade", 360, 320)
+        return
+    }
+    if (action = "clear-log") {
+        WBH_CallJS("ahkClearLog()")
+        return
+    }
+    if (action = "minimize-main") {
+        Gui, Minimize
+        return
+    }
+    if (action = "close-main") {
+        Gosub, GuiClose
+        return
+    }
+    if (InStr(cmd, "drag-start-main/")) {
+        params := SubStr(cmd, 17)
+        slashPos := InStr(params, "/")
+        if (slashPos) {
+            sx := SubStr(params, 1, slashPos - 1)
+            sy := SubStr(params, slashPos + 1)
+            DoNativeDrag(sx, sy)
+        }
+        return
+    }
+    if (InStr(cmd, "drag-start-modal/")) {
+        params := SubStr(cmd, 18)
+        slashPos := InStr(params, "/")
+        if (slashPos) {
+            sx := SubStr(params, 1, slashPos - 1)
+            sy := SubStr(params, slashPos + 1)
+            DoNativeDragModal(sx, sy)
+        }
+        return
+    }
+}
+
+; ---- Отправка начального состояния в HTML ----
+PushStateToHTML:
+    global UpgradeX, UpgradeY, AutoX, AutoY, StartGameX, StartGameY, RepeatStageX, RepeatStageY
+    global Embedded, Running, AutoUpgradeEnabled, MapList
+    
+    ; Сообщаем JS что мы в AHK-режиме (не standalone браузер)
+    WBH_CallJS("ahkSetMode()")
+    
+    if (Embedded)
+        WBH_CallJS("ahkUpdateEmbed(true)")
+    
+    ; Карты
+    if (MapList.Length() > 0) {
+        mapOpts := ""
+        for i, m in MapList
+            mapOpts .= (i > 1 ? "|" : "") . m
+        WBH_CallJS("ahkSetMapOptions(""" . mapOpts . """)")
+    }
+    
+    ; Координаты
+    upStr := "Up(" . UpgradeX . "," . UpgradeY . ")"
+    stStr := "Start(" . StartGameX . "," . StartGameY . ")"
+    rpStr := "Repeat(" . RepeatStageX . "," . RepeatStageY . ")"
+    auStr := "Auto(" . AutoX . "," . AutoY . ")"
+    WBH_CallJS("ahkUpdateCoords(""" . upStr . """,""" . stStr . """,""" . rpStr . """,""" . auStr . """)")
+    
+    ; Автопрокачка
+    if (AutoUpgradeEnabled)
+        WBH_CallJS("document.getElementById('chkAutoUpgrade').checked = true;")
+    
+    AddLog("HTML sidebar loaded — bridge active", "success")
+return
+
+; ---- Обновление координат в HTML (вызывается после калибровки) ----
+UpdateCoordsHTML() {
+    global UpgradeX, UpgradeY, AutoX, AutoY, StartGameX, StartGameY, RepeatStageX, RepeatStageY
+    upStr := "Up(" . UpgradeX . "," . UpgradeY . ")"
+    stStr := "Start(" . StartGameX . "," . StartGameY . ")"
+    rpStr := "Repeat(" . RepeatStageX . "," . RepeatStageY . ")"
+    auStr := "Auto(" . AutoX . "," . AutoY . ")"
+    WBH_CallJS("ahkUpdateCoords(""" . upStr . """,""" . stStr . """,""" . rpStr . """,""" . auStr . """)")
+}
+
+; ---- Обновление списка карт в HTML ----
+UpdateMapListHTML() {
+    global MapList
+    if (MapList.Length() > 0) {
+        mapOpts := ""
+        for i, m in MapList
+            mapOpts .= (i > 1 ? "|" : "") . m
+        WBH_CallJS("ahkSetMapOptions(""" . mapOpts . """)")
+    }
+}
+
+; ===================== MODAL WINDOWS (HTML sub-windows) =====================
+
+; ---- Открыть модальное окно с HTML-дизайном ----
+; name: "settings" / "presets" / "calibrate" / "upgrade"
+; title: заголовок окна
+; w, h: размеры окна
+OpenModalWindow(name, title, w, h) {
+    global htmlURL, WB_Modal, ModalHwnd
+    
+    ; Закрываем предыдущее модальное окно если открыто
+    Gui, Modal:Destroy
+    SetTimer, PollModalClose, Off
+    
+    ; Создаём окно без стандартного title bar (кастомный хотбар в HTML)
+    Gui, Modal:New, +HwndModalHwnd -Caption, %title%
+    Gui, Modal:Color, 0x121212
+    Gui, Modal:Add, ActiveX, x0 y0 w%w% h%h% vWB_Modal, Shell.Explorer
+    WB_Modal.Silent := true
+    navURL := htmlURL . "?_=" . A_TickCount . "#" . name
+    WB_Modal.Navigate(navURL)
+    
+    ; Ждём загрузки
+    waitStart := A_TickCount
+    while (WB_Modal.ReadyState != 4 && A_TickCount - waitStart < 10000)
+        Sleep, 80
+    
+    ; Пушим данные в модалку (текущие настройки / список пресетов / координаты)
+    PushModalData(name)
+    
+    ; Центрируем окно на экране
+    SysGet, Mon, MonitorWorkArea
+    cx := (MonRight - MonLeft - w) // 2
+    cy := (MonTop - MonTop + MonBottom - MonTop - h) // 2
+    if (cx < 0)
+        cx := 100
+    if (cy < 0)
+        cy := 100
+    
+    Gui, Modal:Show, x%cx% y%cy% w%w% h%h%, %title%
+    
+    ; Таймер для опроса JS-команд (закрыть, свернуть, драг)
+    SetTimer, PollModalClose, 20
+}
+
+; ---- Таймер: проверяем команды от JS (закрыть, свернуть, переместить) ----
+PollModalClose:
+    if (!WB_Modal || WB_Modal.ReadyState != 4)
+        return
+    cmd := ""
+    try {
+        cmd := WB_Modal.Document.parentWindow.ahkCmd
+        if (cmd && cmd != "")
+            WB_Modal.Document.parentWindow.ahkCmd := ""
+    } catch e {
+        return
+    }
+    if (cmd = "")
+        return
+    
+    ; Разбор команды: "action" или "action/arg"
+    slashPos := InStr(cmd, "/")
+    if (slashPos) {
+        action := SubStr(cmd, 1, slashPos - 1)
+        arg := SubStr(cmd, slashPos + 1)
+    } else {
+        action := cmd
+        arg := ""
+    }
+    
+    if (cmd = "close-modal") {
+        SetTimer, PollModalClose, Off
+        Gui, Modal:Destroy
+        ModalHwnd := 0
+    }
+    else if (cmd = "minimize-modal") {
+        Gui, Modal:Minimize
+    }
+    else if (InStr(cmd, "drag-start-modal/")) {
+        params := SubStr(cmd, 18)
+        slashPos := InStr(params, "/")
+        if (slashPos) {
+            DoNativeDragModal(SubStr(params, 1, slashPos - 1), SubStr(params, slashPos + 1))
+        }
+    }
+    
+    ; ---- Новые команды от модалок ----
+    else if (action = "settings-save") {
+        GoSub, ModalSaveSettings
+    }
+    else if (action = "preset-save") {
+        PresetName := arg
+        GoSub, BtnPresetSave
+        PushModalData("presets")
+    }
+    else if (action = "preset-load") {
+        PresetName := arg
+        GoSub, BtnPresetLoad
+        PushModalData("presets")
+    }
+    else if (action = "preset-delete") {
+        PresetName := arg
+        GoSub, BtnPresetDelete
+        PushModalData("presets")
+    }
+    else if (action = "calibrate-upgrade") {
+        SetTimer, PollModalClose, Off
+        Gui, Modal:Destroy
+        ModalHwnd := 0
+        GoSub, BtnCalibrateUpgrade
+    }
+    else if (action = "calibrate-startgame") {
+        SetTimer, PollModalClose, Off
+        Gui, Modal:Destroy
+        ModalHwnd := 0
+        GoSub, BtnCalibrateStartGame
+    }
+    else if (action = "calibrate-repeatstage") {
+        SetTimer, PollModalClose, Off
+        Gui, Modal:Destroy
+        ModalHwnd := 0
+        GoSub, BtnCalibrateRepeatStage
+    }
+    else if (action = "calibrate-autoupgrade") {
+        SetTimer, PollModalClose, Off
+        Gui, Modal:Destroy
+        ModalHwnd := 0
+        GoSub, BtnOpenAutoUpgradeSettings
+    }
+    else if (action = "upgrade-save") {
+        GoSub, ModalSaveUpgrade
+    }
+return
+
+; ---- Закрытие модалки через ✕ (крестик окна) ----
+ModalGuiClose:
+    SetTimer, PollModalClose, Off
+    Gui, Modal:Destroy
+    ModalHwnd := 0
+return
+
+; ---- Вызов JS в модальном окне ----
+ModalCallJS(js) {
+    global WB_Modal
+    if (!WB_Modal || WB_Modal.ReadyState != 4)
+        return
+    try {
+        WB_Modal.Document.parentWindow.execScript(js)
+    } catch e {
+        AddLog("Modal JS error: " . e.Message)
+    }
+}
+
+; ---- Пуш данных в модальное окно после загрузки ----
+PushModalData(name) {
+    global
+    if (name = "settings") {
+        colorHex := SubStr(StartGameColor, 3)  ; убираем "0x"
+        ModalCallJS("ahkLoadSettings("
+            . ClickDelay . "," . SlotClickDelay . "," . UpgradeClickDelay . ","
+            . AutoClickDelay . "," . UnitSleepDelay . "," . StartGameDelay . ","
+            . HoverDelay . "," . MouseSpeed . "," . ImgVariation . ",'"
+            . colorHex . "'," . StartGameColorVar . ","
+            . StartGameCenterX . "," . StartGameCenterY . "," . StartGameRadius . ")")
+    }
+    else if (name = "presets") {
+        ; Собираем список пресетов из presets.ini
+        presetsList := ""
+        if (FileExist(PresetsIni)) {
+            FileRead, content, %PresetsIni%
+            Loop, Parse, content, `n, `r
+            {
+                line := Trim(A_LoopField)
+                if (line = "")
+                    continue
+                if (SubStr(line, 1, 1) = "[" && SubStr(line, -1) = "]") {
+                    if (presetsList != "")
+                        presetsList .= "|"
+                    presetsList .= Trim(SubStr(line, 2, -1))
+                }
+            }
+        }
+        ModalCallJS("ahkLoadPresets('" . presetsList . "')")
+    }
+    else if (name = "calibrate") {
+        ModalCallJS("ahkUpdateCalibCoords("
+            . UpgradeX . "," . UpgradeY . ","
+            . StartGameX . "," . StartGameY . ","
+            . RepeatStageX . "," . RepeatStageY . ","
+            . AutoX . "," . AutoY . ")")
+    }
+    else if (name = "upgrade") {
+        prioStr := ""
+        Loop, 6 {
+            if (A_Index > 1)
+                prioStr .= ","
+            prioStr .= AutoUpgradePriority[A_Index]
+        }
+        ModalCallJS("ahkLoadUpgradeCfg('" . prioStr . "'," . AutoUpgradeUnitOffsetY . ")")
+    }
+}
+
+; ---- Сохранение настроек из модального окна Settings ----
+ModalSaveSettings:
+    ; arg = clickDelay/slotClickDelay/upgradeClickDelay/autoClickDelay/unitSleepDelay/startGameDelay/hoverDelay/mouseSpeed/imgVariation/startGameColor/startGameColorVar/startGameCenterX/startGameCenterY/startGameRadius
+    StringSplit, vals, arg, /
+    if (vals0 < 14)
+        return
+    ClickDelay        := vals1
+    SlotClickDelay    := vals2
+    UpgradeClickDelay := vals3
+    AutoClickDelay    := vals4
+    UnitSleepDelay    := vals5
+    StartGameDelay    := vals6
+    HoverDelay        := vals7
+    MouseSpeed        := vals8
+    ImgVariation      := vals9
+    StartGameColor    := "0x" . vals10
+    StartGameColorVar := vals11
+    StartGameCenterX  := vals12
+    StartGameCenterY  := vals13
+    StartGameRadius   := vals14
+    SaveSettings()
+    AddLog("Settings saved from modal")
+return
+
+; ---- Сохранение настроек автопрокачки из модального окна ----
+ModalSaveUpgrade:
+    ; arg = p1,p2,p3,p4,p5,p6/offset
+    secondSlash := InStr(arg, "/", , 0)
+    if (!secondSlash)
+        return
+    prioPart := SubStr(arg, 1, secondSlash - 1)
+    offsetPart := SubStr(arg, secondSlash + 1)
+    StringSplit, prio, prioPart, `,
+    Loop, 6 {
+        val := prio%A_Index%
+        if (val = "" || val < 0)
+            val := 0
+        if (val > 9)
+            val := 9
+        AutoUpgradePriority[A_Index] := val
+    }
+    AutoUpgradeUnitOffsetY := offsetPart
+    AddLog("Auto Upgrade settings saved from modal")
+return
+
+; ---- Нативный драг главного окна (цикл в AHK, без JS/COM) ----
+DoNativeDrag(startMX, startMY) {
+    global MainGuiHwnd
+    wid := MainGuiHwnd
+    DllCall("ReleaseCapture")
+    SendMessage, 0xA1, 2, 0,, ahk_id %wid%
+    DllCall("ReleaseCapture")
+}
+
+DoNativeDragModal(startMX, startMY) {
+    global ModalHwnd
+    if (!ModalHwnd)
+        return
+    wid := ModalHwnd
+    DllCall("ReleaseCapture")
+    SendMessage, 0xA1, 2, 0,, ahk_id %wid%
+    DllCall("ReleaseCapture")
 }
 
 GuiClose:

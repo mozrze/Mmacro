@@ -1,0 +1,1295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <title>TD Macro</title>
+<style>
+/* ============================================================
+   TD Macro — Full Layout + Modals (IE11 Compatible)
+   ============================================================ */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+    height: 100%;
+    background: #121212;
+    color: #e4e4e4;
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    font-size: 13px;
+    line-height: 1.5;
+    overflow: hidden;
+}
+
+/* ============================================================
+   FULL LAYOUT: game placeholder + sidebar
+   ============================================================ */
+.layout {
+    display: -ms-flexbox; display: flex;
+    height: 100%;
+    width: 100%;
+    overflow: hidden;
+}
+
+/* ---- LEFT: Game placeholder ---- */
+.game-ph {
+    -ms-flex: 1;
+    flex: 1;
+    background: #0a0a0a;
+    display: -ms-flexbox;
+    display: flex;
+    -ms-flex-direction: column;
+    flex-direction: column;
+    -ms-flex-align: center;
+    align-items: center;
+    -ms-flex-pack: center;
+    justify-content: center;
+    border-right: 1px solid #252525;
+    position: relative;
+    overflow: hidden;
+}
+
+.game-ph::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background:
+        radial-gradient(ellipse at center, rgba(59,130,246,0.03) 0%, transparent 70%),
+        repeating-linear-gradient(0deg, transparent, transparent 19px, rgba(255,255,255,0.008) 19px, rgba(255,255,255,0.008) 20px),
+        repeating-linear-gradient(90deg, transparent, transparent 19px, rgba(255,255,255,0.008) 19px, rgba(255,255,255,0.008) 20px);
+}
+
+.game-icon {
+    width: 48px; height: 48px;
+    color: #666;
+    opacity: 0.5;
+    z-index: 1;
+    margin-bottom: 12px;
+}
+
+.game-hint {
+    color: #666;
+    font-size: 13px;
+    letter-spacing: 0.3px;
+    z-index: 1;
+    margin-bottom: 8px;
+}
+
+.game-res {
+    color: #2e2e2e;
+    font-family: 'Consolas', monospace;
+    font-size: 11px;
+    padding: 4px 10px;
+    border: 1px solid #252525;
+    border-radius: 99px;
+    z-index: 1;
+}
+
+/* ---- RIGHT: Sidebar (fixed 320px) ---- */
+.sidebar {
+    width: 320px;
+    min-width: 320px;
+    background: #121212;
+    display: -ms-flexbox;
+    display: flex;
+    -ms-flex-direction: column;
+    flex-direction: column;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 16px 14px 10px;
+    height: 100%;
+}
+
+.ctrl { -ms-flex-negative: 0; flex-shrink: 0; }
+.ctrl > * + * { margin-top: 6px; }
+
+.sidebar-header {
+    display: -ms-flexbox; display: flex;
+    -ms-flex-align: center; align-items: center;
+    -ms-flex-pack: justify; justify-content: space-between;
+    -ms-flex-negative: 0; flex-shrink: 0;
+    cursor: default;
+    -webkit-user-select: none; -ms-user-select: none; user-select: none;
+}
+.logo { display: -ms-flexbox; display: flex; -ms-flex-align: center; align-items: center; }
+.logo-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: #3b82f6; margin-right: 10px;
+    box-shadow: 0 0 8px rgba(59,130,246,0.15);
+}
+.logo h1 { font-size: 15px; font-weight: 600; letter-spacing: 1.5px; margin: 0; }
+
+/* Header buttons (minimize / close) */
+.header-actions {
+    display: -ms-flexbox; display: flex;
+    -ms-flex-align: center; align-items: center;
+}
+.hdr-btn {
+    width: 26px; height: 22px; border-radius: 3px; border: none;
+    background: transparent; color: #555; cursor: pointer;
+    display: -ms-flexbox; display: flex;
+    -ms-flex-align: center; align-items: center;
+    -ms-flex-pack: center; justify-content: center;
+    margin-left: 2px;
+}
+.hdr-btn:hover { background: #222; color: #ccc; }
+.hdr-cls:hover { background: #e81123; color: #fff; }
+.hdr-btn svg { width: 13px; height: 13px; }
+
+.sep {
+    border: none; height: 1px; background: #252525;
+    margin: 10px 0; -ms-flex-negative: 0; flex-shrink: 0;
+}
+
+/* Labels & Badges */
+.label {
+    color: #999; font-size: 11px;
+    text-transform: uppercase; letter-spacing: 1px; font-weight: 600;
+}
+.badge {
+    font-size: 10px; padding: 2px 10px; border-radius: 99px;
+    font-family: 'Consolas', monospace; background: #1a1a1a; color: #666;
+}
+.badge.connected { background: rgba(34,197,94,0.1); color: #22c55e; }
+.badge.active    { background: rgba(59,130,246,0.1); color: #3b82f6; }
+
+/* ---- Buttons ---- */
+.btn {
+    display: -ms-inline-flexbox; display: inline-flex;
+    -ms-flex-align: center; align-items: center;
+    -ms-flex-pack: center; justify-content: center;
+    border: none; cursor: pointer;
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    font-size: 12px; font-weight: 500;
+    border-radius: 8px; padding: 8px 14px;
+    background: #1a1a1a; color: #999; white-space: nowrap;
+}
+.btn:hover { background: #222; color: #e4e4e4; }
+.btn svg { width: 14px; height: 14px; -ms-flex-negative: 0; flex-shrink: 0; margin-right: 6px; }
+.btn-primary      { background: #3b82f6; color: #fff; width: 100%; }
+.btn-primary:hover { background: #2563eb; color: #fff; }
+.btn-start        { background: #22c55e; color: #000; width: 100%; font-weight: 600; font-size: 13px; padding: 10px 14px; }
+.btn-start:hover  { filter: brightness(1.1); }
+.btn-start.running { background: #ef4444; color: #fff; }
+.btn-ghost        { background: transparent; color: #666; padding: 6px 10px; }
+.btn-ghost:hover  { background: #1a1a1a; color: #e4e4e4; }
+.btn-danger:hover { background: rgba(239,68,68,0.12); color: #ef4444; }
+.btn-sm { padding: 5px 8px; font-size: 11px; }
+.btn-xs { padding: 3px 8px; font-size: 10px; }
+
+/* ---- Select ---- */
+.select-wrap { position: relative; }
+.select {
+    width: 100%; -webkit-appearance: none; appearance: none;
+    background: #1e1e1e; color: #e4e4e4;
+    border: 1px solid #252525; border-radius: 8px;
+    padding: 7px 30px 7px 10px;
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; font-size: 12px; cursor: pointer;
+}
+.select:hover { border-color: #2e2e2e; }
+.select:focus { outline: none; border-color: #3b82f6; }
+.select-chevron {
+    position: absolute; right: 8px; top: 50%;
+    -ms-transform: translateY(-50%); transform: translateY(-50%);
+    width: 14px; height: 14px; pointer-events: none; color: #666;
+}
+
+/* ---- Button Row ---- */
+.btn-row { display: -ms-flexbox; display: flex; }
+.btn-row .btn { -ms-flex: 1; flex: 1; margin-right: 4px; }
+.btn-row .btn:last-child { margin-right: 0; }
+
+/* ---- Coord Grid ---- */
+.coord-grid { display: -ms-flexbox; display: flex; -ms-flex-wrap: wrap; flex-wrap: wrap; }
+.coord-item {
+    background: #1a1a1a; border-radius: 6px; padding: 5px 8px;
+    display: -ms-flexbox; display: flex;
+    -ms-flex-pack: justify; justify-content: space-between;
+    -ms-flex-align: center; align-items: center;
+    width: 49%; margin-right: 2%; margin-bottom: 4px;
+}
+.coord-item:nth-child(even) { margin-right: 0; }
+.coord-key   { font-size: 10px; color: #666; text-transform: uppercase; letter-spacing: 0.5px; }
+.coord-val   { font-family: 'Consolas', monospace; font-size: 11px; color: #999; }
+.coord-val.set { color: #3b82f6; }
+
+/* ---- Checkbox ---- */
+.check-label {
+    display: -ms-inline-flexbox; display: inline-flex;
+    -ms-flex-align: center; align-items: center; cursor: pointer;
+    font-size: 12px; color: #999;
+}
+.check-label:hover { color: #e4e4e4; }
+.check { display: none; }
+.check-custom {
+    width: 15px; height: 15px; border: 1.5px solid #2e2e2e;
+    border-radius: 4px; -ms-flex-negative: 0; flex-shrink: 0;
+    position: relative; margin-right: 8px;
+}
+.check:checked + .check-custom { background: #3b82f6; border-color: #3b82f6; }
+.check:checked + .check-custom::after {
+    content: ''; position: absolute; left: 4px; top: 0;
+    width: 5px; height: 9px; border: solid #fff;
+    border-width: 0 1.5px 1.5px 0;
+    -ms-transform: rotate(45deg); transform: rotate(45deg);
+}
+
+/* ---- Status Bar ---- */
+.status-bar {
+    display: -ms-flexbox; display: flex;
+    -ms-flex-align: center; align-items: center;
+    padding: 4px 0; -ms-flex-negative: 0; flex-shrink: 0;
+}
+.status-dot {
+    width: 7px; height: 7px; border-radius: 50%; background: #666;
+    -ms-flex-negative: 0; flex-shrink: 0; margin-right: 8px;
+}
+.status-dot.running { background: #22c55e; }
+.status-dot.error   { background: #ef4444; }
+#statusText { font-size: 11px; color: #666; font-family: 'Consolas', monospace; }
+
+/* ---- Log ---- */
+.log-section {
+    -ms-flex: 1; flex: 1;
+    display: -ms-flexbox; display: flex;
+    -ms-flex-direction: column; flex-direction: column;
+    min-height: 0; overflow: hidden;
+}
+.log-header { -ms-flex-negative: 0; flex-shrink: 0; margin-bottom: 4px; }
+.log-box {
+    -ms-flex: 1; flex: 1;
+    background: #0f0f0f; border: 1px solid #252525;
+    border-radius: 6px; padding: 6px 8px;
+    overflow-y: auto; overflow-x: hidden;
+    font-family: 'Consolas', monospace; font-size: 11px;
+    line-height: 1.7; color: #666; word-wrap: break-word;
+}
+.log-entry { display: -ms-flexbox; display: flex; }
+.log-time  { color: #2e2e2e; -ms-flex-negative: 0; flex-shrink: 0; margin-right: 8px; }
+.log-entry.warn    { color: #f59e0b; }
+.log-entry.error   { color: #ef4444; }
+.log-entry.success { color: #22c55e; }
+
+/* ---- Bottom ---- */
+.bottom-actions {
+    display: -ms-flexbox; display: flex;
+    -ms-flex-negative: 0; flex-shrink: 0;
+}
+.bottom-actions .btn { -ms-flex: 1; flex: 1; margin-right: 4px; }
+.bottom-actions .btn:last-child { margin-right: 0; }
+
+/* ============================================================
+   MODALS (positioned right-side, visible area)
+   ============================================================ */
+.overlay {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.55); z-index: 90;
+    display: none;
+}
+.overlay.show { display: block; }
+
+.modal {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    z-index: 100;
+    display: none;
+    -ms-flex-align: center; align-items: center;
+    -ms-flex-pack: center; justify-content: center;
+}
+.modal.show {
+    display: -ms-flexbox; display: flex;
+}
+
+.modal-panel {
+    background: #121212; border: 1px solid #252525;
+    border-radius: 12px;
+    width: 420px; max-width: 90vw; max-height: 80vh;
+    display: -ms-flexbox; display: flex;
+    -ms-flex-direction: column; flex-direction: column;
+    box-shadow: 0 24px 60px rgba(0,0,0,0.5);
+    margin-left: 160px; /* shift right past the game area */
+}
+
+.modal-head {
+    display: -ms-flexbox; display: flex;
+    -ms-flex-align: center; align-items: center;
+    -ms-flex-pack: justify; justify-content: space-between;
+    padding: 10px 12px; border-bottom: 1px solid #252525;
+    -ms-flex-negative: 0; flex-shrink: 0;
+    cursor: default;
+    -webkit-user-select: none; -ms-user-select: none; user-select: none;
+    background: #0f0f0f;
+}
+.modal-title { font-size: 13px; font-weight: 600; margin: 0; color: #e4e4e4; }
+.modal-actions {
+    display: -ms-flexbox; display: flex;
+    -ms-flex-align: center; align-items: center;
+}
+.modal-btn {
+    width: 28px; height: 24px; border-radius: 4px; border: none;
+    background: transparent; color: #888; cursor: pointer;
+    display: -ms-flexbox; display: flex;
+    -ms-flex-align: center; align-items: center;
+    -ms-flex-pack: center; justify-content: center;
+    margin-left: 2px;
+}
+.modal-btn:hover { background: #222; color: #e4e4e4; }
+.modal-cls:hover { background: #e81123; color: #fff; }
+.modal-btn svg { width: 14px; height: 14px; }
+
+.modal-body {
+    padding: 14px 18px; overflow-y: auto;
+    -ms-flex: 1; flex: 1;
+}
+.modal-body > * + * { margin-top: 12px; }
+.modal-desc { color: #666; font-size: 12px; margin: 0; }
+
+.modal-foot {
+    display: -ms-flexbox; display: flex;
+    -ms-flex-pack: end; justify-content: flex-end;
+    padding: 12px 18px; border-top: 1px solid #252525;
+    -ms-flex-negative: 0; flex-shrink: 0;
+}
+.modal-foot .btn { margin-left: 8px; }
+
+/* ---- Fieldset ---- */
+.fieldset {
+    border: 1px solid #252525; border-radius: 8px;
+    padding: 10px 12px 12px; margin: 0;
+}
+.fieldset-legend {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 1px;
+    color: #999; font-weight: 600; padding: 0 6px;
+}
+
+/* ---- Form Grid ---- */
+.form-grid { display: -ms-flexbox; display: flex; -ms-flex-wrap: wrap; flex-wrap: wrap; }
+.form-grid .field { width: 49%; margin-right: 2%; margin-bottom: 8px; }
+.form-grid .field:nth-child(even) { margin-right: 0; }
+.form-grid-3 .field { width: 32%; margin-right: 2%; }
+.form-grid-3 .field:nth-child(3n) { margin-right: 0; }
+
+/* ---- Field ---- */
+.field { display: -ms-flexbox; display: flex; -ms-flex-direction: column; flex-direction: column; }
+.field-label { font-size: 11px; color: #666; font-weight: 500; margin-bottom: 4px; }
+.input {
+    width: 100%; background: #1e1e1e; border: 1px solid #252525;
+    border-radius: 6px; padding: 6px 8px;
+    font-family: 'Consolas', monospace; font-size: 12px; color: #e4e4e4;
+}
+.input:hover { border-color: #2e2e2e; }
+.input:focus { outline: none; border-color: #3b82f6; }
+.color-field { display: -ms-flexbox; display: flex; }
+.input-color {
+    width: 32px; height: 32px; padding: 1px;
+    background: #1e1e1e; border: 1px solid #252525;
+    border-radius: 6px; cursor: pointer;
+    -ms-flex-negative: 0; flex-shrink: 0; margin-right: 6px;
+}
+
+/* ---- Calib Grid ---- */
+.calib-grid { display: -ms-flexbox; display: flex; -ms-flex-wrap: wrap; flex-wrap: wrap; }
+.calib-card {
+    background: #1a1a1a; border: 1px solid #252525;
+    border-radius: 8px; overflow: hidden; cursor: pointer;
+    width: 49%; margin-right: 2%; margin-bottom: 6px;
+}
+.calib-card:nth-child(even) { margin-right: 0; }
+.calib-card:hover { border-color: #3b82f6; }
+.calib-card-head {
+    display: -ms-flexbox; display: flex;
+    -ms-flex-pack: justify; justify-content: space-between;
+    -ms-flex-align: center; align-items: center; padding: 6px 8px;
+}
+.calib-key { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: #666; }
+.calib-val { font-family: 'Consolas', monospace; font-size: 10px; color: #3b82f6; }
+.calib-preview {
+    background: #0a0a0a; padding: 4px; border-top: 1px solid #252525;
+    display: -ms-flexbox; display: flex;
+    -ms-flex-align: center; align-items: center;
+    -ms-flex-pack: center; justify-content: center;
+    height: 48px;
+}
+.calib-preview svg { width: 100%; height: 100%; color: #666; }
+
+/* ---- Preset List ---- */
+.preset-list {
+    border: 1px solid #252525; border-radius: 8px;
+    min-height: 70px; max-height: 160px; overflow-y: auto;
+    display: -ms-flexbox; display: flex;
+    -ms-flex-direction: column; flex-direction: column;
+}
+.preset-list:empty { -ms-flex-align: center; align-items: center; -ms-flex-pack: center; justify-content: center; }
+.preset-empty { color: #666; font-size: 12px; padding: 20px; text-align: center; }
+.preset-item { padding: 6px 10px; cursor: pointer; font-size: 12px; color: #ccc; border-bottom: 1px solid #1a1a1a; }
+.preset-item:hover { background: #1a1a1a; }
+.preset-item:last-child { border-bottom: none; }
+
+/* ---- Helpers ---- */
+.row    { display: -ms-flexbox; display: flex; -ms-flex-align: center; align-items: center; }
+.between { -ms-flex-pack: justify; justify-content: space-between; }
+::selection { background: rgba(59,130,246,0.3); color: #fff; }
+*:focus-visible { outline: 1.5px solid #3b82f6; outline-offset: 2px; }
+
+/* ============================================================
+   MODAL-ONLY MODE (for separate AHK sub-windows)
+   ============================================================ */
+body.modal-only {
+    overflow: hidden;
+    background: #121212;
+}
+body.modal-only .layout { display: none; }
+body.modal-only .overlay { display: none !important; }
+body.modal-only .modal { display: none; }
+body.modal-only .modal.show {
+    position: static;
+    display: -ms-flexbox !important;
+    display: flex !important;
+    height: 100%;
+    opacity: 1;
+    visibility: visible;
+}
+body.modal-only .modal-panel {
+    margin-left: 0;
+    width: 100%;
+    max-width: 100%;
+    height: 100%;
+    max-height: 100%;
+    border-radius: 0;
+    border: 2px solid #252525;
+    box-shadow: none;
+}
+body.modal-only .modal-head {
+    padding: 8px 10px;
+    background: #0a0a0a;
+}
+body.modal-only .modal-body {
+    padding: 12px 14px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: #333 #1a1a1a;
+}
+/* WebKit scrollbar */
+body.modal-only .modal-body::-webkit-scrollbar { width: 4px; }
+body.modal-only .modal-body::-webkit-scrollbar-track { background: #1a1a1a; }
+body.modal-only .modal-body::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
+body.modal-only .modal-foot {
+    padding: 10px 14px;
+}
+</style>
+</head>
+<body>
+
+    <!-- ===== OVERLAY ===== -->
+    <div class="overlay" id="overlay"></div>
+
+    <!-- ===== FULL LAYOUT: game placeholder + sidebar ===== -->
+    <div class="layout">
+
+        <!-- LEFT: Game area placeholder (hidden behind native AHK control) -->
+        <div class="game-ph">
+            <svg class="game-icon" viewBox="0 0 64 64" fill="none">
+                <rect x="4" y="4" width="56" height="56" rx="12" stroke="currentColor" stroke-width="2"/>
+                <path d="M22 44V28l12-8v16l12-8v16" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+            </svg>
+            <span class="game-hint">Roblox — embedded area</span>
+            <span class="game-res">1280 × 720</span>
+        </div>
+
+        <!-- RIGHT: Sidebar -->
+        <aside class="sidebar">
+
+            <header class="sidebar-header" id="mainDragBar">
+                <div class="logo">
+                    <span class="logo-dot"></span>
+                    <h1>TD MACRO</h1>
+                </div>
+                <div class="header-actions">
+                    <button class="hdr-btn hdr-min" id="btnMainMin" title="Minimize">
+                        <svg viewBox="0 0 16 16" fill="none"><path d="M3 13h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                    </button>
+                    <button class="hdr-btn hdr-cls" id="btnMainClose" title="Close">
+                        <svg viewBox="0 0 16 16" fill="none"><path d="m4 4 8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                    </button>
+                </div>
+            </header>
+
+            <hr class="sep">
+
+            <section class="ctrl">
+                <div class="row between">
+                    <span class="label">Game Window</span>
+                    <span class="badge" id="embedBadge">Disconnected</span>
+                </div>
+                <button class="btn btn-primary" id="btnEmbed">
+                    <svg viewBox="0 0 16 16" fill="none"><path d="M3 2a1 1 0 0 0-1 1v4h1V3h10v10H9v1h4a1 1 0 0 0 1-1V3a1 1 0 0 0-1-1H3Zm6 4.5V3.7l3.15 3.15L9.3 9.7l-.7-.7L10.3 7H6V6h5.3L9.6 4.3l.7-.7L12.15 5.5H9Z" fill="currentColor"/></svg>
+                    <span>Embed</span>
+                </button>
+            </section>
+
+            <hr class="sep">
+
+            <section class="ctrl">
+                <div class="row between">
+                    <span class="label">Map</span>
+                    <span class="badge" id="mapBadge">None</span>
+                </div>
+                <div class="select-wrap">
+                    <select id="mapSelect" class="select">
+                        <option value="">-- Select Map --</option>
+                    </select>
+                    <svg class="select-chevron" viewBox="0 0 16 16"><path d="m4 6 4 4 4-4" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+                </div>
+                <div class="btn-row">
+                    <button class="btn btn-ghost btn-sm" id="btnSnapshot">
+                        <svg viewBox="0 0 16 16" fill="none"><rect x="1.5" y="4.5" width="13" height="10" rx="2" stroke="currentColor" stroke-width="1.2"/><circle cx="8" cy="9.5" r="2.5" stroke="currentColor" stroke-width="1.2"/><circle cx="12.5" cy="7.5" r="0.8" fill="currentColor"/><path d="M5 4.5 6.2 2.8a.5.5 0 0 1 .4-.3h2.8a.5.5 0 0 1 .4.3L11 4.5" stroke="currentColor" stroke-width="1.2"/></svg>
+                        <span>Snapshot</span>
+                    </button>
+                    <button class="btn btn-ghost btn-sm" id="btnMark">
+                        <svg viewBox="0 0 16 16" fill="none"><path d="M8 1.5C6.2 4.5 2.5 5.5 2.5 8c0 3 2.5 5.5 5.5 5.5s5.5-2.5 5.5-5.5c0-2.5-3.7-3.5-5.5-6.5Z" stroke="currentColor" stroke-width="1.2"/><circle cx="8" cy="8" r="1.8" stroke="currentColor" stroke-width="1.2"/></svg>
+                        <span>Mark</span>
+                    </button>
+                    <button class="btn btn-ghost btn-sm btn-danger" id="btnClear">
+                        <svg viewBox="0 0 16 16" fill="none"><path d="m4 4 8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+                        <span>Clear</span>
+                    </button>
+                </div>
+            </section>
+
+            <hr class="sep">
+
+            <section class="ctrl">
+                <div class="row between">
+                    <span class="label">Coordinates</span>
+                    <span class="badge" id="coordBadge">Not set</span>
+                </div>
+                <div class="coord-grid">
+                    <div class="coord-item"><span class="coord-key">Upgrade</span><span class="coord-val">—</span></div>
+                    <div class="coord-item"><span class="coord-key">Start</span><span class="coord-val">—</span></div>
+                    <div class="coord-item"><span class="coord-key">Repeat</span><span class="coord-val">—</span></div>
+                    <div class="coord-item"><span class="coord-key">AutoUp</span><span class="coord-val">—</span></div>
+                </div>
+            </section>
+
+            <hr class="sep">
+
+            <section class="ctrl">
+                <button class="btn btn-start" id="btnFarm">
+                    <svg viewBox="0 0 16 16" fill="currentColor"><path d="M5 3.5 13 8l-8 4.5v-9Z"/></svg>
+                    <span>Start Farm</span>
+                </button>
+                <div class="row between" style="margin-top:8px">
+                    <label class="check-label">
+                        <input type="checkbox" id="chkAutoUpgrade" class="check">
+                        <span class="check-custom"></span>
+                        <span>Auto Upgrade</span>
+                    </label>
+                    <button class="btn btn-ghost btn-sm" id="btnUpgradeCfg">
+                        <svg viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="3" stroke="currentColor" stroke-width="1.2"/><path d="M8 1.5v2M8 12.5v2M2.5 8h2M11.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+                        <span>Configure</span>
+                    </button>
+                </div>
+            </section>
+
+            <hr class="sep">
+
+            <div class="status-bar">
+                <div class="status-dot" id="statusDot"></div>
+                <span id="statusText">Idle</span>
+            </div>
+
+            <section class="log-section">
+                <div class="row between log-header">
+                    <span class="label">Log</span>
+                    <button class="btn btn-ghost btn-xs" id="btnClearLog">Clear</button>
+                </div>
+                <div class="log-box" id="logBox">
+                    <div class="log-entry"><span class="log-time">--:--:--</span> Loading...</div>
+                </div>
+            </section>
+
+            <hr class="sep">
+
+            <nav class="bottom-actions">
+                <button class="btn btn-ghost btn-sm" id="btnSettings">
+                    <svg viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="3" stroke="currentColor" stroke-width="1.2"/><path d="M8 1.5v2M8 12.5v2M2.5 8h2M11.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+                    <span>Settings</span>
+                </button>
+                <button class="btn btn-ghost btn-sm" id="btnPresets">
+                    <svg viewBox="0 0 16 16" fill="none"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M5.5 8h5M8 5.5v5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+                    <span>Presets</span>
+                </button>
+                <button class="btn btn-ghost btn-sm" id="btnCalibrate">
+                    <svg viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.2"/><circle cx="8" cy="8" r="1.5" stroke="currentColor" stroke-width="1.2"/><line x1="8" y1="2" x2="8" y2="5" stroke="currentColor" stroke-width="1.2"/><line x1="8" y1="11" x2="8" y2="14" stroke="currentColor" stroke-width="1.2"/><line x1="2" y1="8" x2="5" y2="8" stroke="currentColor" stroke-width="1.2"/><line x1="11" y1="8" x2="14" y2="8" stroke="currentColor" stroke-width="1.2"/></svg>
+                    <span>Calibrate</span>
+                </button>
+            </nav>
+
+        </aside>
+    </div>
+
+    <!-- =============================================================
+         MODAL: Settings
+         ============================================================= -->
+    <div class="modal" id="modal-settings">
+        <div class="modal-panel">
+            <div class="modal-head" id="dragHandle-settings">
+                <h2 class="modal-title">Settings</h2>
+                <div class="modal-actions">
+                    <button class="modal-btn modal-min" data-min title="Minimize">
+                        <svg viewBox="0 0 16 16" fill="none"><path d="M3 13h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                    </button>
+                    <button class="modal-btn modal-cls" data-close title="Close">
+                        <svg viewBox="0 0 16 16" fill="none"><path d="m4 4 8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                    </button>
+                </div>
+            </div>
+            <div class="modal-body">
+                <fieldset class="fieldset">
+                    <legend class="fieldset-legend">Delays (ms)</legend>
+                    <div class="form-grid">
+                        <div class="field"><label class="field-label">Place Unit</label><input type="number" class="input" id="setClickDelay" value="300"></div>
+                        <div class="field"><label class="field-label">Between Units</label><input type="number" class="input" id="setSlotClickDelay" value="500"></div>
+                        <div class="field"><label class="field-label">Upgrade Click</label><input type="number" class="input" id="setUpgradeClickDelay" value="100"></div>
+                        <div class="field"><label class="field-label">Auto Click</label><input type="number" class="input" id="setAutoClickDelay" value="200"></div>
+                        <div class="field"><label class="field-label">Start Game</label><input type="number" class="input" id="setStartGameDelay" value="1000"></div>
+                        <div class="field"><label class="field-label">Stage Check</label><input type="number" class="input" id="setUnitSleepDelay" value="1000"></div>
+                        <div class="field"><label class="field-label">After Hover</label><input type="number" class="input" id="setHoverDelay" value="380"></div>
+                        <div class="field"><label class="field-label">Mouse Speed</label><input type="number" class="input" id="setMouseSpeed" value="70" min="0" max="100"></div>
+                    </div>
+                </fieldset>
+                <fieldset class="fieldset">
+                    <legend class="fieldset-legend">ImageSearch</legend>
+                    <div class="form-grid">
+                        <div class="field"><label class="field-label">Variation (*N)</label><input type="number" class="input" id="setImgVariation" value="30"></div>
+                    </div>
+                </fieldset>
+                <fieldset class="fieldset">
+                    <legend class="fieldset-legend">PixelSearch</legend>
+                    <div class="form-grid">
+                        <div class="field"><label class="field-label">Center X</label><input type="number" class="input" id="setStartGameCenterX" value="640"></div>
+                        <div class="field"><label class="field-label">Center Y</label><input type="number" class="input" id="setStartGameCenterY" value="580"></div>
+                        <div class="field"><label class="field-label">Radius</label><input type="number" class="input" id="setStartGameRadius" value="30"></div>
+                        <div class="field"><label class="field-label">Color</label><div class="color-field"><input type="color" class="input-color" id="setStartGameColorPicker" value="#4ECD0C"><input type="text" class="input" id="setStartGameColor" value="4ECD0C"></div></div>
+                        <div class="field"><label class="field-label">Color Var</label><input type="number" class="input" id="setStartGameColorVar" value="30"></div>
+                    </div>
+                </fieldset>
+            </div>
+            <div class="modal-foot">
+                <button class="btn btn-ghost btn-sm" data-close>Cancel</button>
+                <button class="btn btn-primary btn-sm" id="btnSettingsSave">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- =============================================================
+         MODAL: Presets
+         ============================================================= -->
+    <div class="modal" id="modal-presets">
+        <div class="modal-panel">
+            <div class="modal-head" id="dragHandle-presets">
+                <h2 class="modal-title">Presets</h2>
+                <div class="modal-actions">
+                    <button class="modal-btn modal-min" data-min title="Minimize">
+                        <svg viewBox="0 0 16 16" fill="none"><path d="M3 13h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                    </button>
+                    <button class="modal-btn modal-cls" data-close title="Close">
+                        <svg viewBox="0 0 16 16" fill="none"><path d="m4 4 8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                    </button>
+                </div>
+            </div>
+            <div class="modal-body">
+                <div class="field"><label class="field-label">Preset Name</label><input type="text" class="input" id="presetName" placeholder="My Farm Config"></div>
+                <div class="preset-list" id="presetList"><div class="preset-empty" id="presetEmpty">No saved presets</div></div>
+            </div>
+            <div class="modal-foot">
+                <button class="btn btn-ghost btn-sm btn-danger" id="btnPresetDelete">
+                    <svg viewBox="0 0 16 16" fill="none"><path d="M3 5h10M6 5V3.5a.5.5 0 0 1 .5-.5h3a.5.5 0 0 1 .5.5V5M12.5 5v7.5a1 1 0 0 1-1 1h-7a1 1 0 0 1-1-1V5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+                    <span>Delete</span>
+                </button>
+                <button class="btn btn-primary btn-sm" id="btnPresetSave">Save</button>
+                <button class="btn btn-ghost btn-sm" id="btnPresetLoad">Load</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- =============================================================
+         MODAL: Calibration
+         ============================================================= -->
+    <div class="modal" id="modal-calibrate">
+        <div class="modal-panel">
+            <div class="modal-head" id="dragHandle-calibrate">
+                <h2 class="modal-title">Calibration</h2>
+                <div class="modal-actions">
+                    <button class="modal-btn modal-min" data-min title="Minimize">
+                        <svg viewBox="0 0 16 16" fill="none"><path d="M3 13h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                    </button>
+                    <button class="modal-btn modal-cls" data-close title="Close">
+                        <svg viewBox="0 0 16 16" fill="none"><path d="m4 4 8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                    </button>
+                </div>
+            </div>
+            <div class="modal-body">
+                <p class="modal-desc">Click a card to start calibrating that button position.</p>
+                <div class="calib-grid">
+                    <div class="calib-card" data-action="calibrate-upgrade"><div class="calib-card-head"><span class="calib-key">Upgrade</span><span class="calib-val" id="calibValUpgrade">—</span></div><div class="calib-preview"><svg viewBox="0 0 80 40" fill="none"><rect x="10" y="5" width="60" height="30" rx="4" stroke="currentColor" stroke-width="1" stroke-dasharray="4 3"/><text x="40" y="23" text-anchor="middle" fill="currentColor" font-size="9">Click to set</text></svg></div></div>
+                    <div class="calib-card" data-action="calibrate-startgame"><div class="calib-card-head"><span class="calib-key">Start Game</span><span class="calib-val" id="calibValStartGame">—</span></div><div class="calib-preview"><svg viewBox="0 0 80 40" fill="none"><rect x="10" y="5" width="60" height="30" rx="4" stroke="currentColor" stroke-width="1" stroke-dasharray="4 3"/><text x="40" y="23" text-anchor="middle" fill="currentColor" font-size="9">Click to set</text></svg></div></div>
+                    <div class="calib-card" data-action="calibrate-repeatstage"><div class="calib-card-head"><span class="calib-key">Repeat Stage</span><span class="calib-val" id="calibValRepeatStage">—</span></div><div class="calib-preview"><svg viewBox="0 0 80 40" fill="none"><rect x="10" y="5" width="60" height="30" rx="4" stroke="currentColor" stroke-width="1" stroke-dasharray="4 3"/><text x="40" y="23" text-anchor="middle" fill="currentColor" font-size="9">Click to set</text></svg></div></div>
+                    <div class="calib-card" data-action="calibrate-autoupgrade"><div class="calib-card-head"><span class="calib-key">AutoUpgrade</span><span class="calib-val" id="calibValAutoUpgrade">—</span></div><div class="calib-preview"><svg viewBox="0 0 80 40" fill="none"><rect x="10" y="5" width="60" height="30" rx="4" stroke="currentColor" stroke-width="1" stroke-dasharray="4 3"/><text x="40" y="23" text-anchor="middle" fill="currentColor" font-size="9">Click to set</text></svg></div></div>
+                </div>
+            </div>
+            <div class="modal-foot">
+                <button class="btn btn-ghost btn-sm" data-close>Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- =============================================================
+         MODAL: Auto Upgrade
+         ============================================================= -->
+    <div class="modal" id="modal-upgrade">
+        <div class="modal-panel">
+            <div class="modal-head" id="dragHandle-upgrade">
+                <h2 class="modal-title">Auto Upgrade</h2>
+                <div class="modal-actions">
+                    <button class="modal-btn modal-min" data-min title="Minimize">
+                        <svg viewBox="0 0 16 16" fill="none"><path d="M3 13h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                    </button>
+                    <button class="modal-btn modal-cls" data-close title="Close">
+                        <svg viewBox="0 0 16 16" fill="none"><path d="m4 4 8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                    </button>
+                </div>
+            </div>
+            <div class="modal-body">
+                <p class="modal-desc">Set upgrade priority (clicks) per unit slot.</p>
+                <div class="form-grid form-grid-3">
+                    <div class="field"><label class="field-label">Slot 1</label><input type="number" class="input" id="upgSlot1" value="3" min="0" max="9"></div>
+                    <div class="field"><label class="field-label">Slot 2</label><input type="number" class="input" id="upgSlot2" value="3" min="0" max="9"></div>
+                    <div class="field"><label class="field-label">Slot 3</label><input type="number" class="input" id="upgSlot3" value="3" min="0" max="9"></div>
+                    <div class="field"><label class="field-label">Slot 4</label><input type="number" class="input" id="upgSlot4" value="3" min="0" max="9"></div>
+                    <div class="field"><label class="field-label">Slot 5</label><input type="number" class="input" id="upgSlot5" value="3" min="0" max="9"></div>
+                    <div class="field"><label class="field-label">Slot 6</label><input type="number" class="input" id="upgSlot6" value="3" min="0" max="9"></div>
+                </div>
+                <div class="field" style="margin-top:8px">
+                    <label class="field-label">Unit Select Y-Offset (px)</label>
+                    <input type="number" class="input" id="upgYOffset" value="20" style="max-width:120px">
+                </div>
+            </div>
+            <div class="modal-foot">
+                <button class="btn btn-ghost btn-sm" data-close>Cancel</button>
+                <button class="btn btn-primary btn-sm" id="btnUpgradeSave">Save</button>
+            </div>
+        </div>
+    </div>
+
+<script>
+/* ============================================================
+   TD Macro — Full Layout + Modals + AHK Bridge (ES5)
+   ============================================================ */
+(function () {
+    'use strict';
+
+    /* ---- Helpers ---- */
+    function $(s) { return document.querySelector(s); }
+    function $$(s) { return document.querySelectorAll(s); }
+    function pad(n) { return (n < 10 ? '0' : '') + n; }
+    function now() {
+        var d = new Date();
+        return pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
+    }
+    function on(el, evt, fn) {
+        if (el.addEventListener) el.addEventListener(evt, fn, false);
+        else if (el.attachEvent) el.attachEvent('on' + evt, fn);
+    }
+    function esc(s) {
+        var d = document.createElement('div');
+        d.appendChild(document.createTextNode(s));
+        return d.innerHTML;
+    }
+
+    /* ---- State ---- */
+    var state = {
+        embedded: false,
+        farming: false,
+        map: null,
+        activeModal: null
+    };
+
+    /* ---- Detect: running in AHK or standalone browser? ---- */
+    var inAHK = false;
+    window.ahkSetMode = function () { inAHK = true; };
+
+    /* ---- AHK Bridge ---- */
+    function sendCmd(cmd) {
+        window.ahkCmd = cmd;
+    }
+
+    /* ---- Log ---- */
+    var logBox = $('#logBox');
+    function log(text, cls) {
+        if (!logBox) return;
+        var entry = document.createElement('div');
+        entry.className = 'log-entry' + (cls ? ' ' + cls : '');
+        entry.innerHTML = '<span class="log-time">' + now() + '</span> ' + esc(text);
+        logBox.appendChild(entry);
+        logBox.scrollTop = logBox.scrollHeight;
+    }
+
+    /* ---- Modal System ---- */
+    var overlay = $('#overlay');
+    function openModal(id) {
+        if (state.activeModal) closeModal(state.activeModal);
+        var modal = document.getElementById('modal-' + id);
+        if (!modal) return;
+        overlay.className = 'overlay show';
+        modal.className = 'modal show';
+        state.activeModal = id;
+    }
+    function closeModal(id) {
+        var modal = document.getElementById('modal-' + id);
+        if (!modal) return;
+        overlay.className = 'overlay';
+        modal.className = 'modal';
+        state.activeModal = null;
+    }
+    function closeAllModals() {
+        if (state.activeModal) closeModal(state.activeModal);
+    }
+
+    /* ======== WIRING ======== */
+
+    // Embed
+    var embedBadge = $('#embedBadge');
+    on($('#btnEmbed'), 'click', function () {
+        state.embedded = !state.embedded;
+        sendCmd('embed');
+        if (state.embedded) {
+            embedBadge.textContent = 'Connected';
+            embedBadge.className = 'badge connected';
+            this.querySelector('span').textContent = 'Unembed';
+        } else {
+            embedBadge.textContent = 'Disconnected';
+            embedBadge.className = 'badge';
+            this.querySelector('span').textContent = 'Embed';
+        }
+    });
+
+    // Map
+    var mapSelect = $('#mapSelect');
+    var mapBadge  = $('#mapBadge');
+    on(mapSelect, 'change', function () {
+        var val = mapSelect.value;
+        state.map = val || null;
+        mapBadge.textContent = val ? mapSelect.options[mapSelect.selectedIndex].text : 'None';
+        mapBadge.className = val ? 'badge active' : 'badge';
+        sendCmd('select-map/' + (val || '__none__'));
+    });
+    on($('#btnSnapshot'), 'click', function () {
+        if (!state.map) return log('Select a map first!', 'warn');
+        sendCmd('snapshot');
+    });
+    on($('#btnMark'), 'click', function () {
+        if (!state.map) return log('Select a map first!', 'warn');
+        sendCmd('mark-slots');
+    });
+    on($('#btnClear'), 'click', function () {
+        mapSelect.value = ''; state.map = null;
+        mapBadge.textContent = 'None'; mapBadge.className = 'badge';
+        sendCmd('clear-map');
+    });
+
+    // Farm
+    var btnFarm   = $('#btnFarm');
+    var statusDot = $('#statusDot');
+    var statusText = $('#statusText');
+    function setFarmUI(running) {
+        if (running) {
+            btnFarm.className = 'btn btn-start running';
+            btnFarm.querySelector('span').textContent = 'Stop Farm';
+            btnFarm.querySelector('svg').innerHTML = '<rect x="4" y="3.5" width="3.5" height="9" rx="1" fill="currentColor"/><rect x="8.5" y="3.5" width="3.5" height="9" rx="1" fill="currentColor"/>';
+        } else {
+            btnFarm.className = 'btn btn-start';
+            btnFarm.querySelector('span').textContent = 'Start Farm';
+            btnFarm.querySelector('svg').innerHTML = '<path d="M5 3.5 13 8l-8 4.5v-9Z"/>';
+        }
+    }
+    on(btnFarm, 'click', function () {
+        state.farming = !state.farming;
+        sendCmd('start-farm');
+        setFarmUI(state.farming);
+    });
+    on($('#chkAutoUpgrade'), 'change', function () { sendCmd('toggle-autoupgrade'); });
+    on($('#btnUpgradeCfg'), 'click', function () {
+        if (inAHK) sendCmd('upgrade-cfg');
+        else openModal('upgrade');
+    });
+
+    // Bottom buttons — direct ID binding, no conditions
+    var btnS = document.getElementById('btnSettings');
+    var btnP = document.getElementById('btnPresets');
+    var btnC = document.getElementById('btnCalibrate');
+    if (btnS) on(btnS, 'click', function () { window.ahkCmd = 'settings'; });
+    if (btnP) on(btnP, 'click', function () { window.ahkCmd = 'presets'; });
+    if (btnC) on(btnC, 'click', function () { window.ahkCmd = 'calibrate'; });
+
+    // Clear log
+    on($('#btnClearLog'), 'click', function () { logBox.innerHTML = ''; sendCmd('clear-log'); });
+
+    // Modal close: overlay + data-close buttons
+    on(overlay, 'click', function () { closeAllModals(); });
+    var closeBtns = $$('[data-close]');
+    for (var i = 0; i < closeBtns.length; i++) {
+        on(closeBtns[i], 'click', function () { closeAllModals(); });
+    }
+
+    // Escape key
+    on(document, 'keydown', function (e) {
+        e = e || window.event;
+        if (e.keyCode === 27) closeAllModals();
+        if (e.keyCode === 120) {  // F9
+            if (e.preventDefault) e.preventDefault();
+            btnFarm.click();
+        }
+    });
+
+    /* ============================================================
+       AHK → JS: global functions called via execScript
+       ============================================================ */
+    window.ahkLog = function (msg, cls) { log(msg, cls); };
+
+    window.ahkUpdateStatus = function (text, cls) {
+        statusText.textContent = text || 'Idle';
+        statusDot.className = 'status-dot' + (cls ? ' ' + cls : '');
+    };
+
+    window.ahkUpdateEmbed = function (connected) {
+        state.embedded = connected;
+        if (connected) {
+            embedBadge.textContent = 'Connected';
+            embedBadge.className = 'badge connected';
+            $('#btnEmbed').querySelector('span').textContent = 'Unembed';
+        } else {
+            embedBadge.textContent = 'Disconnected';
+            embedBadge.className = 'badge';
+            $('#btnEmbed').querySelector('span').textContent = 'Embed';
+        }
+    };
+
+    window.ahkUpdateFarm = function (running) {
+        state.farming = running;
+        setFarmUI(running);
+    };
+
+    window.ahkUpdateCoords = function (up, st, rp, au) {
+        var items = $$('.coord-val');
+        var vals = [up, st, rp, au];
+        var allSet = true;
+        for (var i = 0; i < 4; i++) {
+            if (vals[i]) {
+                items[i].textContent = vals[i];
+                items[i].className = 'coord-val set';
+            } else {
+                items[i].textContent = '—';
+                items[i].className = 'coord-val';
+                allSet = false;
+            }
+        }
+        var cb = $('#coordBadge');
+        cb.textContent = allSet ? 'All set' : 'Not set';
+        cb.className = allSet ? 'badge connected' : 'badge';
+    };
+
+    window.ahkUpdateMap = function (mapName) {
+        if (mapName) {
+            mapSelect.value = mapName;
+            state.map = mapName;
+            mapBadge.textContent = mapName;
+            mapBadge.className = 'badge active';
+        } else {
+            mapSelect.value = '';
+            state.map = null;
+            mapBadge.textContent = 'None';
+            mapBadge.className = 'badge';
+        }
+    };
+
+    window.ahkSetMapOptions = function (optStr) {
+        var names = optStr.split('|');
+        mapSelect.innerHTML = '<option value="">-- Select Map --</option>';
+        for (var i = 0; i < names.length; i++) {
+            if (!names[i]) continue;
+            var opt = document.createElement('option');
+            opt.value = names[i];
+            opt.textContent = names[i];
+            mapSelect.appendChild(opt);
+        }
+    };
+
+    window.ahkClearLog = function () { if (logBox) logBox.innerHTML = ''; };
+
+    /* ---- Modal-only mode: AHK opens a separate window for one modal ---- */
+    window.showModalOnly = function (name) {
+        document.body.className = 'modal-only';
+
+        // Hide layout elements directly (inline styles as safety)
+        var layout = document.getElementsByClassName('layout')[0];
+        if (layout) layout.style.display = 'none';
+        var ovl = document.getElementById('overlay');
+        if (ovl) ovl.style.display = 'none';
+
+        // Hide ALL modals first
+        var allModals = document.querySelectorAll('.modal');
+        for (var i = 0; i < allModals.length; i++) {
+            allModals[i].style.display = 'none';
+        }
+
+        // Show the target modal
+        var m = document.getElementById('modal-' + name);
+        if (!m) return;
+        m.style.display = 'block';
+        m.style.position = 'static';
+        m.style.height = '100%';
+        m.style.width = '100%';
+
+        // Make panel fill the window
+        var panel = m.getElementsByClassName('modal-panel')[0];
+        if (panel) {
+            panel.style.marginLeft = '0';
+            panel.style.width = '100%';
+            panel.style.maxWidth = '100%';
+            panel.style.height = '100%';
+            panel.style.maxHeight = '100%';
+            panel.style.borderRadius = '0';
+            panel.style.border = '2px solid #252525';
+            panel.style.boxShadow = 'none';
+        }
+
+        // Wire ALL buttons inside modal
+        var all = m.getElementsByTagName('BUTTON');
+        for (var i = 0; i < all.length; i++) {
+            var b = all[i];
+            var c = b.className || '';
+            if (c.indexOf('modal-cls') !== -1 || (b.getAttribute('data-close') !== null && !b.id)) {
+                on(b, 'mousedown', function () { window.ahkCmd = 'close-modal'; });
+            } else if (c.indexOf('modal-min') !== -1 || b.getAttribute('data-min') !== null) {
+                on(b, 'mousedown', function () { window.ahkCmd = 'minimize-modal'; });
+            }
+        }
+
+        // Drag via header
+        var head = m.getElementsByClassName('modal-head')[0];
+        if (head) {
+            head.style.cursor = 'default';
+            on(document, 'mousedown', function (e) {
+                e = e || window.event;
+                var el = e.target || e.srcElement;
+                while (el && el !== head) {
+                    if (el.tagName === 'BUTTON') return;
+                    el = el.parentNode;
+                }
+                if (!el) return;
+                window.ahkCmd = 'drag-start-modal/' + e.screenX + '/' + e.screenY;
+            });
+        }
+
+        // Modal-specific init
+        switch (name) {
+            case 'settings': initSettingsModal(m); break;
+            case 'presets':  initPresetsModal(m);  break;
+            case 'calibrate': initCalibrateModal(m); break;
+            case 'upgrade':  initUpgradeModal(m);  break;
+        }
+    };
+
+    /* ---- Settings Modal Init ---- */
+    function initSettingsModal(m) {
+        var btnSave = document.getElementById('btnSettingsSave');
+        if (btnSave) on(btnSave, 'click', function () {
+            var vals = [
+                $('#setClickDelay').value,
+                $('#setSlotClickDelay').value,
+                $('#setUpgradeClickDelay').value,
+                $('#setAutoClickDelay').value,
+                $('#setUnitSleepDelay').value,
+                $('#setStartGameDelay').value,
+                $('#setHoverDelay').value,
+                $('#setMouseSpeed').value,
+                $('#setImgVariation').value,
+                $('#setStartGameColor').value,
+                $('#setStartGameColorVar').value,
+                $('#setStartGameCenterX').value,
+                $('#setStartGameCenterY').value,
+                $('#setStartGameRadius').value
+            ];
+            window.ahkCmd = 'settings-save/' + vals.join('/');
+        });
+        // Sync color picker <-> text
+        var picker = $('#setStartGameColorPicker');
+        var text = $('#setStartGameColor');
+        if (picker && text) {
+            on(picker, 'input', function () {
+                text.value = picker.value.replace('#', '');
+            });
+            on(text, 'input', function () {
+                if (/^[0-9A-Fa-f]{6}$/.test(text.value))
+                    picker.value = '#' + text.value;
+            });
+        }
+    }
+    window.ahkLoadSettings = function(cd, scd, ucd, acd, usd, sgd, hd, ms, iv, sgc, sgcv, sgcx, sgcy, sgr) {
+        var set = function(id, v) { var el = $(id); if (el) el.value = v; };
+        set('#setClickDelay', cd); set('#setSlotClickDelay', scd);
+        set('#setUpgradeClickDelay', ucd); set('#setAutoClickDelay', acd);
+        set('#setUnitSleepDelay', usd); set('#setStartGameDelay', sgd);
+        set('#setHoverDelay', hd); set('#setMouseSpeed', ms);
+        set('#setImgVariation', iv);
+        var colorHex = (sgc || '').replace('0x', '');
+        set('#setStartGameColor', colorHex);
+        var picker = $('#setStartGameColorPicker');
+        if (picker && colorHex) picker.value = '#' + colorHex;
+        set('#setStartGameColorVar', sgcv);
+        set('#setStartGameCenterX', sgcx); set('#setStartGameCenterY', sgcy);
+        set('#setStartGameRadius', sgr);
+    };
+
+    /* ---- Presets Modal Init ---- */
+    function initPresetsModal(m) {
+        // Select preset from list -> copy to name field
+        var list = $('#presetList');
+        if (list) on(list, 'click', function (e) {
+            var tgt = e.target || e.srcElement;
+            if (tgt.className && tgt.className.indexOf('preset-item') !== -1) {
+                var nameInput = $('#presetName');
+                if (nameInput) nameInput.value = tgt.textContent || tgt.innerText;
+            }
+        });
+        var btnSave = $('#btnPresetSave');
+        var btnLoad = $('#btnPresetLoad');
+        var btnDel  = $('#btnPresetDelete');
+        var nameInput = $('#presetName');
+        if (btnSave) on(btnSave, 'click', function () {
+            var n = nameInput ? nameInput.value.trim() : '';
+            if (!n) { alert('Enter a preset name.'); return; }
+            window.ahkCmd = 'preset-save/' + n;
+        });
+        if (btnLoad) on(btnLoad, 'click', function () {
+            var n = nameInput ? nameInput.value.trim() : '';
+            if (!n) { alert('Select or enter a preset name.'); return; }
+            window.ahkCmd = 'preset-load/' + n;
+        });
+        if (btnDel) on(btnDel, 'click', function () {
+            var n = nameInput ? nameInput.value.trim() : '';
+            if (!n) { alert('Select or enter a preset name.'); return; }
+            if (confirm('Delete preset "' + n + '"?'))
+                window.ahkCmd = 'preset-delete/' + n;
+        });
+    }
+    window.ahkLoadPresets = function(listStr) {
+        var list = $('#presetList');
+        var empty = $('#presetEmpty');
+        if (!list) return;
+        if (!listStr || listStr === '') {
+            list.innerHTML = '';
+            var div = document.createElement('div');
+            div.className = 'preset-empty';
+            div.textContent = 'No saved presets';
+            list.appendChild(div);
+            return;
+        }
+        list.innerHTML = '';
+        var names = listStr.split('|');
+        for (var i = 0; i < names.length; i++) {
+            if (!names[i]) continue;
+            var div = document.createElement('div');
+            div.className = 'preset-item';
+            div.textContent = names[i];
+            div.style.cssText = 'padding: 6px 10px; cursor: pointer; font-size: 12px; color: #ccc; border-bottom: 1px solid #1a1a1a;';
+            div.onmouseover = function () { this.style.background = '#1a1a1a'; };
+            div.onmouseout  = function () { this.style.background = ''; };
+            list.appendChild(div);
+        }
+    };
+
+    /* ---- Calibration Modal Init ---- */
+    function initCalibrateModal(m) {
+        var cards = m.getElementsByClassName('calib-card');
+        for (var i = 0; i < cards.length; i++) {
+            on(cards[i], 'click', function () {
+                var action = this.getAttribute('data-action');
+                if (action) window.ahkCmd = action;
+            });
+        }
+    }
+    window.ahkUpdateCalibCoords = function(upX, upY, stX, stY, rpX, rpY, auX, auY) {
+        var set = function(id, x, y) {
+            var el = $(id);
+            if (el) el.textContent = (x && y) ? x + ', ' + y : '\u2014';
+        };
+        set('#calibValUpgrade', upX, upY);
+        set('#calibValStartGame', stX, stY);
+        set('#calibValRepeatStage', rpX, rpY);
+        set('#calibValAutoUpgrade', auX, auY);
+    };
+
+    /* ---- Auto Upgrade Modal Init ---- */
+    function initUpgradeModal(m) {
+        var btnSave = $('#btnUpgradeSave');
+        if (btnSave) on(btnSave, 'click', function () {
+            var prio = [
+                $('#upgSlot1').value, $('#upgSlot2').value, $('#upgSlot3').value,
+                $('#upgSlot4').value, $('#upgSlot5').value, $('#upgSlot6').value
+            ];
+            var offset = $('#upgYOffset').value;
+            window.ahkCmd = 'upgrade-save/' + prio.join(',') + '/' + offset;
+        });
+    }
+    window.ahkLoadUpgradeCfg = function(prioStr, offset) {
+        var prio = prioStr.split(',');
+        for (var i = 0; i < 6; i++) {
+            var el = $('#upgSlot' + (i + 1));
+            if (el) el.value = prio[i] || '3';
+        }
+        var offEl = $('#upgYOffset');
+        if (offEl) offEl.value = offset || '20';
+    };
+
+    /* ---- Init ---- */
+    log('TD Macro v1.0 ready.');
+
+    /* ---- Auto-show modal if URL has hash ---- */
+    (function () {
+        var hash = window.location.hash;
+        if (hash && hash.length > 1 && window.showModalOnly) {
+            window.showModalOnly(hash.substring(1));
+        }
+    })();
+
+    /* ---- Main window: drag via sidebar header + minimize/close ---- */
+    (function () {
+        var bar = document.getElementById('mainDragBar');
+        if (!bar) return;
+        bar.style.cursor = 'default';
+
+        on(document, 'mousedown', function (e) {
+            var tgt = e.target || e.srcElement;
+            var el = tgt;
+            // Check if click is inside the drag bar
+            while (el) {
+                if (el === bar) break;
+                // Don't start drag on buttons
+                if (el.tagName === 'BUTTON') return;
+                el = el.parentNode;
+            }
+            if (!el) return; // not in drag bar
+            window.ahkCmd = 'drag-start-main/' + e.screenX + '/' + e.screenY;
+        });
+
+        on(document.getElementById('btnMainMin'), 'click', function () {
+            window.ahkCmd = 'minimize-main';
+        });
+        on(document.getElementById('btnMainClose'), 'click', function () {
+            window.ahkCmd = 'close-main';
+        });
+    })();
+})();
+</script>
+</body>
+</html>
