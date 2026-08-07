@@ -21,7 +21,7 @@ html, body {
 }
 
 /* ============================================================
-   FULL LAYOUT: game placeholder + sidebar
+   FULL LAYOUT: sidebar only (game area = separate Roblox window)
    ============================================================ */
 .layout {
     display: -ms-flexbox; display: flex;
@@ -30,64 +30,15 @@ html, body {
     overflow: hidden;
 }
 
-/* ---- LEFT: Game placeholder ---- */
-.game-ph {
+/* Game area placeholder больше не нужен: Roblox — отдельное окно,
+   к которому сайдбар "прилипает" сбоку (dock). Главное окно AHK
+   содержит ТОЛЬКО сайдбар. */
+
+/* ---- Sidebar fills the whole AHK window ---- */
+.sidebar {
     -ms-flex: 1;
     flex: 1;
-    background: #0a0a0a;
-    display: -ms-flexbox;
-    display: flex;
-    -ms-flex-direction: column;
-    flex-direction: column;
-    -ms-flex-align: center;
-    align-items: center;
-    -ms-flex-pack: center;
-    justify-content: center;
-    border-right: 1px solid #252525;
-    position: relative;
-    overflow: hidden;
-}
-
-.game-ph::before {
-    content: '';
-    position: absolute;
-    top: 0; left: 0; right: 0; bottom: 0;
-    background:
-        radial-gradient(ellipse at center, rgba(59,130,246,0.03) 0%, transparent 70%),
-        repeating-linear-gradient(0deg, transparent, transparent 19px, rgba(255,255,255,0.008) 19px, rgba(255,255,255,0.008) 20px),
-        repeating-linear-gradient(90deg, transparent, transparent 19px, rgba(255,255,255,0.008) 19px, rgba(255,255,255,0.008) 20px);
-}
-
-.game-icon {
-    width: 48px; height: 48px;
-    color: #666;
-    opacity: 0.5;
-    z-index: 1;
-    margin-bottom: 12px;
-}
-
-.game-hint {
-    color: #666;
-    font-size: 13px;
-    letter-spacing: 0.3px;
-    z-index: 1;
-    margin-bottom: 8px;
-}
-
-.game-res {
-    color: #2e2e2e;
-    font-family: 'Consolas', monospace;
-    font-size: 11px;
-    padding: 4px 10px;
-    border: 1px solid #252525;
-    border-radius: 99px;
-    z-index: 1;
-}
-
-/* ---- RIGHT: Sidebar (fixed 320px) ---- */
-.sidebar {
-    width: 320px;
-    min-width: 320px;
+    width: 100%;
     background: #121212;
     display: -ms-flexbox;
     display: flex;
@@ -448,6 +399,70 @@ html, body {
 .preset-item:hover { background: #1a1a1a; }
 .preset-item:last-child { border-bottom: none; }
 
+/* ---- Mark Modal (slot marking + template drag-select) ---- */
+body.modal-only .modal-body { padding: 0; }
+.mark-canvas-wrap {
+    position: relative;
+    display: inline-block;
+    line-height: 0;
+    margin: 8px 14px;
+    border: 1px solid #252525;
+    border-radius: 6px;
+    overflow: hidden;
+    max-width: calc(100% - 28px);
+}
+.mark-img {
+    display: block;
+    max-width: 100%;
+    user-select: none;
+    -webkit-user-select: none;
+    -ms-user-select: none;
+    -webkit-user-drag: none;
+    user-drag: none;
+    cursor: crosshair;
+}
+.mark-overlay {
+    position: absolute;
+    left: 0; top: 0; width: 100%; height: 100%;
+    pointer-events: none;
+}
+.mark-side { padding: 0 14px 12px; }
+.mark-list-head {
+    display: -ms-flexbox; display: flex;
+    -ms-flex-align: center; align-items: center;
+    -ms-flex-pack: justify; justify-content: space-between;
+    margin-bottom: 6px;
+}
+/* Точка слота */
+.mark-dot {
+    position: absolute;
+    width: 16px; height: 16px;
+    border-radius: 50%;
+    background: rgba(59,130,246,0.9);
+    border: 2px solid #fff;
+    transform: translate(-50%, -50%);
+    box-shadow: 0 0 6px rgba(0,0,0,0.6);
+    pointer-events: none;
+    font-size: 10px; color: #fff;
+    text-align: center; line-height: 12px; font-weight: 700;
+}
+/* Прямоугольник drag-select (template) */
+.mark-rect {
+    position: absolute;
+    border: 2px dashed #3b82f6;
+    background: rgba(59,130,246,0.15);
+    pointer-events: none;
+}
+
+/* ---- Snap Modal ---- */
+.snap-img-wrap {
+    margin-bottom: 12px;
+    border: 1px solid #252525;
+    border-radius: 6px;
+    overflow: hidden;
+}
+.snap-img { display: block; width: 100%; }
+
 /* ---- Helpers ---- */
 .row    { display: -ms-flexbox; display: flex; -ms-flex-align: center; align-items: center; }
 .between { -ms-flex-pack: justify; justify-content: space-between; }
@@ -507,20 +522,10 @@ body.modal-only .modal-foot {
     <!-- ===== OVERLAY ===== -->
     <div class="overlay" id="overlay"></div>
 
-    <!-- ===== FULL LAYOUT: game placeholder + sidebar ===== -->
+    <!-- ===== FULL LAYOUT: sidebar only (game = separate Roblox window, docked) ===== -->
     <div class="layout">
 
-        <!-- LEFT: Game area placeholder (hidden behind native AHK control) -->
-        <div class="game-ph">
-            <svg class="game-icon" viewBox="0 0 64 64" fill="none">
-                <rect x="4" y="4" width="56" height="56" rx="12" stroke="currentColor" stroke-width="2"/>
-                <path d="M22 44V28l12-8v16l12-8v16" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
-            </svg>
-            <span class="game-hint">Roblox — embedded area</span>
-            <span class="game-res">1280 × 720</span>
-        </div>
-
-        <!-- RIGHT: Sidebar -->
+        <!-- Sidebar (main AHK window = sidebar only) -->
         <aside class="sidebar">
 
             <header class="sidebar-header" id="mainDragBar">
@@ -758,13 +763,39 @@ body.modal-only .modal-foot {
                 </div>
             </div>
             <div class="modal-body">
-                <p class="modal-desc">Click a card to start calibrating that button position.</p>
-                <div class="calib-grid">
-                    <div class="calib-card" data-action="calibrate-upgrade"><div class="calib-card-head"><span class="calib-key">Upgrade</span><span class="calib-val" id="calibValUpgrade">—</span></div><div class="calib-preview"><svg viewBox="0 0 80 40" fill="none"><rect x="10" y="5" width="60" height="30" rx="4" stroke="currentColor" stroke-width="1" stroke-dasharray="4 3"/><text x="40" y="23" text-anchor="middle" fill="currentColor" font-size="9">Click to set</text></svg></div></div>
-                    <div class="calib-card" data-action="calibrate-startgame"><div class="calib-card-head"><span class="calib-key">Start Game</span><span class="calib-val" id="calibValStartGame">—</span></div><div class="calib-preview"><svg viewBox="0 0 80 40" fill="none"><rect x="10" y="5" width="60" height="30" rx="4" stroke="currentColor" stroke-width="1" stroke-dasharray="4 3"/><text x="40" y="23" text-anchor="middle" fill="currentColor" font-size="9">Click to set</text></svg></div></div>
-                    <div class="calib-card" data-action="calibrate-repeatstage"><div class="calib-card-head"><span class="calib-key">Repeat Stage</span><span class="calib-val" id="calibValRepeatStage">—</span></div><div class="calib-preview"><svg viewBox="0 0 80 40" fill="none"><rect x="10" y="5" width="60" height="30" rx="4" stroke="currentColor" stroke-width="1" stroke-dasharray="4 3"/><text x="40" y="23" text-anchor="middle" fill="currentColor" font-size="9">Click to set</text></svg></div></div>
-                    <div class="calib-card" data-action="calibrate-autoupgrade"><div class="calib-card-head"><span class="calib-key">AutoUpgrade</span><span class="calib-val" id="calibValAutoUpgrade">—</span></div><div class="calib-preview"><svg viewBox="0 0 80 40" fill="none"><rect x="10" y="5" width="60" height="30" rx="4" stroke="currentColor" stroke-width="1" stroke-dasharray="4 3"/><text x="40" y="23" text-anchor="middle" fill="currentColor" font-size="9">Click to set</text></svg></div></div>
-                </div>
+                <fieldset class="fieldset">
+                    <legend class="fieldset-legend">Button positions (click a card)</legend>
+                    <div class="calib-grid">
+                        <div class="calib-card" data-action="calibrate-upgrade"><div class="calib-card-head"><span class="calib-key">Upgrade</span><span class="calib-val" id="calibValUpgrade">—</span></div><div class="calib-preview"><svg viewBox="0 0 80 40" fill="none"><rect x="10" y="5" width="60" height="30" rx="4" stroke="currentColor" stroke-width="1" stroke-dasharray="4 3"/><text x="40" y="23" text-anchor="middle" fill="currentColor" font-size="9">Click to set</text></svg></div></div>
+                        <div class="calib-card" data-action="calibrate-startgame"><div class="calib-card-head"><span class="calib-key">Start Game</span><span class="calib-val" id="calibValStartGame">—</span></div><div class="calib-preview"><svg viewBox="0 0 80 40" fill="none"><rect x="10" y="5" width="60" height="30" rx="4" stroke="currentColor" stroke-width="1" stroke-dasharray="4 3"/><text x="40" y="23" text-anchor="middle" fill="currentColor" font-size="9">Click to set</text></svg></div></div>
+                        <div class="calib-card" data-action="calibrate-repeatstage"><div class="calib-card-head"><span class="calib-key">Repeat Stage</span><span class="calib-val" id="calibValRepeatStage">—</span></div><div class="calib-preview"><svg viewBox="0 0 80 40" fill="none"><rect x="10" y="5" width="60" height="30" rx="4" stroke="currentColor" stroke-width="1" stroke-dasharray="4 3"/><text x="40" y="23" text-anchor="middle" fill="currentColor" font-size="9">Click to set</text></svg></div></div>
+                        <div class="calib-card" data-action="calibrate-autoupgrade"><div class="calib-card-head"><span class="calib-key">AutoUpgrade</span><span class="calib-val" id="calibValAutoUpgrade">—</span></div><div class="calib-preview"><svg viewBox="0 0 80 40" fill="none"><rect x="10" y="5" width="60" height="30" rx="4" stroke="currentColor" stroke-width="1" stroke-dasharray="4 3"/><text x="40" y="23" text-anchor="middle" fill="currentColor" font-size="9">Click to set</text></svg></div></div>
+                    </div>
+                </fieldset>
+                <fieldset class="fieldset">
+                    <legend class="fieldset-legend">Detection templates (Defeat / Victory)</legend>
+                    <p class="modal-desc" style="margin:0 0 8px">Drag-select a SMALL region (e.g. the word "VICTORY"). Large templates won't be found by ImageSearch.</p>
+                    <div class="btn-row">
+                        <button class="btn btn-primary btn-sm" data-action="capture-template"><span>Capture Template</span></button>
+                        <button class="btn btn-ghost btn-sm" data-action="test-detection"><span>Test Detection</span></button>
+                    </div>
+                </fieldset>
+                <fieldset class="fieldset">
+                    <legend class="fieldset-legend">Start Game template</legend>
+                    <p class="modal-desc" style="margin:0 0 8px">Drag-select a PART of the Start button (the word "START" — without border/edges).</p>
+                    <div class="btn-row">
+                        <button class="btn btn-primary btn-sm" data-action="capture-startgame"><span>Capture Start Game</span></button>
+                        <button class="btn btn-ghost btn-sm" data-action="test-startgame"><span>Test Start Game</span></button>
+                    </div>
+                </fieldset>
+                <fieldset class="fieldset">
+                    <legend class="fieldset-legend">AutoUpgrade template</legend>
+                    <p class="modal-desc" style="margin:0 0 8px">Drag-select the AutoUpgrade button. Saved as images\AutoUpgrade.bmp.</p>
+                    <div class="btn-row">
+                        <button class="btn btn-primary btn-sm" data-action="capture-autoupgrade"><span>Capture AutoUpgrade</span></button>
+                        <button class="btn btn-ghost btn-sm" data-action="test-autoupgrade"><span>Test AutoUpgrade</span></button>
+                    </div>
+                </fieldset>
             </div>
             <div class="modal-foot">
                 <button class="btn btn-ghost btn-sm" data-close>Close</button>
@@ -806,6 +837,75 @@ body.modal-only .modal-foot {
             <div class="modal-foot">
                 <button class="btn btn-ghost btn-sm" data-close>Cancel</button>
                 <button class="btn btn-primary btn-sm" id="btnUpgradeSave">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- =============================================================
+         MODAL: Mark (slot marking + template drag-select)
+         ============================================================= -->
+    <div class="modal" id="modal-mark">
+        <div class="modal-panel">
+            <div class="modal-head" id="dragHandle-mark">
+                <h2 class="modal-title" id="markTitle">Marking</h2>
+                <div class="modal-actions">
+                    <button class="modal-btn modal-min" data-min title="Minimize">
+                        <svg viewBox="0 0 16 16" fill="none"><path d="M3 13h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                    </button>
+                    <button class="modal-btn modal-cls" data-close title="Close">
+                        <svg viewBox="0 0 16 16" fill="none"><path d="m4 4 8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                    </button>
+                </div>
+            </div>
+            <div class="modal-body" style="padding:0">
+                <p class="modal-desc" id="markPrompt" style="padding:8px 14px 0">Click on the image to mark.</p>
+                <div class="mark-canvas-wrap" id="markCanvasWrap">
+                    <img id="markImg" class="mark-img" alt="screenshot" draggable="false" unselectable="on">
+                    <div class="mark-overlay" id="markOverlay"></div>
+                </div>
+                <div class="mark-side">
+                    <div class="mark-list-head">
+                        <span class="label">Slots</span>
+                        <button class="btn btn-ghost btn-xs" id="btnMarkUndo">Undo</button>
+                    </div>
+                    <div class="preset-list" id="markList" style="min-height:120px"></div>
+                </div>
+            </div>
+            <div class="modal-foot">
+                <button class="btn btn-ghost btn-sm" data-close>Cancel</button>
+                <button class="btn btn-primary btn-sm" id="btnMarkDone">Done / Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- =============================================================
+         MODAL: Snapshot preview
+         ============================================================= -->
+    <div class="modal" id="modal-snap">
+        <div class="modal-panel">
+            <div class="modal-head" id="dragHandle-snap">
+                <h2 class="modal-title">Snapshot Preview</h2>
+                <div class="modal-actions">
+                    <button class="modal-btn modal-min" data-min title="Minimize">
+                        <svg viewBox="0 0 16 16" fill="none"><path d="M3 13h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                    </button>
+                    <button class="modal-btn modal-cls" data-close title="Close">
+                        <svg viewBox="0 0 16 16" fill="none"><path d="m4 4 8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                    </button>
+                </div>
+            </div>
+            <div class="modal-body">
+                <div class="snap-img-wrap">
+                    <img id="snapImg" class="snap-img" alt="snapshot">
+                </div>
+                <div class="field">
+                    <label class="field-label" for="snapName">Map name</label>
+                    <input type="text" class="input" id="snapName" placeholder="e.g. FlowerForest_start">
+                </div>
+            </div>
+            <div class="modal-foot">
+                <button class="btn btn-ghost btn-sm" data-close>Cancel</button>
+                <button class="btn btn-primary btn-sm" id="btnSnapConfirm">Confirm</button>
             </div>
         </div>
     </div>
@@ -1175,6 +1275,8 @@ body.modal-only .modal-foot {
             case 'presets':  initPresetsModal(m);  break;
             case 'calibrate': initCalibrateModal(m); break;
             case 'upgrade':  initUpgradeModal(m);  break;
+            case 'mark':     initMarkModal(m);     break;
+            case 'snap':     initSnapModal(m);     break;
         }
     };
 
@@ -1295,12 +1397,15 @@ body.modal-only .modal-foot {
 
     /* ---- Calibration Modal Init ---- */
     function initCalibrateModal(m) {
-        var cards = m.getElementsByClassName('calib-card');
-        for (var i = 0; i < cards.length; i++) {
-            on(cards[i], 'click', function () {
-                var action = this.getAttribute('data-action');
-                if (action) window.ahkCmd = action;
-            });
+        // Любой элемент с data-action внутри модалки шлёт свою команду в AHK
+        var acted = m.querySelectorAll('[data-action]');
+        for (var i = 0; i < acted.length; i++) {
+            (function (el) {
+                on(el, 'click', function () {
+                    var action = el.getAttribute('data-action');
+                    if (action) window.ahkCmd = action;
+                });
+            })(acted[i]);
         }
     }
     window.ahkUpdateCalibCoords = function(upX, upY, stX, stY, rpX, rpY, auX, auY) {
@@ -1336,6 +1441,180 @@ body.modal-only .modal-foot {
         if (offEl) offEl.value = offset || '20';
     };
 
+    /* ---- Mark Modal Init (slot marking + template drag-select) ---- */
+    // markState — хранится глобально, чтобы AHK мог читать/дополнять список слотов
+    var markState = { mode: 'slots', slots: [], drag: null };
+    function initMarkModal(m) {
+        // Undo / Done — режим-независимые кнопки, вешаются один раз при открытии окна.
+        // Специфичные для режима (drag-select / клик-слот) обработчики ставятся
+        // в setupMarkMode() из ahkLoadMark() — ПОСЛЕ того, как AHK задал режим.
+        var btnUndo = $('#btnMarkUndo');
+        if (btnUndo) on(btnUndo, 'click', function () { window.ahkCmd = 'mark-undo'; });
+        var btnDone = $('#btnMarkDone');
+        if (btnDone) on(btnDone, 'click', function () { window.ahkCmd = 'mark-done'; });
+    }
+
+    // Навешивает обработчики ввода по canvas в зависимости от markState.mode.
+    // Вызывается из ahkLoadMark() после того, как режим уже известен.
+    // Раньше это делалось в initMarkModal() при загрузке страницы — но тогда
+    // markState.mode ещё не установлен (ahkLoadMark вызывается ПОЗЖЕ), и для
+    // шаблонов всегда срабатывала ветка 'slots' → drag-select не появлялся.
+    function setupMarkMode() {
+        var img = $('#markImg');
+        var overlay = $('#markOverlay');
+        var wrap = $('#markCanvasWrap');
+        if (!img || !overlay || !wrap) return;
+
+        // Координаты клика в пикселях исходного изображения (1280x720)
+        // с учётом масштаба отображения.
+        function imgCoords(clientX, clientY) {
+            var rect = img.getBoundingClientRect();
+            var sx = (clientX - rect.left) / rect.width;
+            var sy = (clientY - rect.top) / rect.height;
+            return { x: Math.round(sx * 1280), y: Math.round(sy * 720) };
+        }
+        // Координаты в CSS-пикселях относительно overlay (для отрисовки точки/прямоугольника)
+        function cssCoords(clientX, clientY) {
+            var rect = wrap.getBoundingClientRect();
+            return { x: clientX - rect.left, y: clientY - rect.top };
+        }
+
+        if (markState.mode === 'template') {
+            // ---- drag-select: обводим область для шаблона ----
+            var rect = null;
+            // подавить браузерный drag/re-select на всём канвасе
+            if (wrap.onselectstart !== undefined) wrap.onselectstart = function () { return false; };
+            if (wrap.ondragstart !== undefined) wrap.ondragstart = function () { return false; };
+            on(wrap, 'mousedown', function (e) {
+                e = e || window.event;
+                if (e.preventDefault) e.preventDefault();
+                e.returnValue = false;
+                if (e.stopPropagation) e.stopPropagation();
+                var c = cssCoords(e.clientX, e.clientY);
+                markState.drag = { x1: c.x, y1: c.y, x2: c.x, y2: c.y };
+                rect = document.createElement('div');
+                rect.className = 'mark-rect';
+                rect.style.left = c.x + 'px';
+                rect.style.top = c.y + 'px';
+                rect.style.width = '0px';
+                rect.style.height = '0px';
+                overlay.appendChild(rect);
+            });
+            on(document, 'mousemove', function (e) {
+                if (!markState.drag || !rect) return;
+                e = e || window.event;
+                var c = cssCoords(e.clientX, e.clientY);
+                markState.drag.x2 = c.x;
+                markState.drag.y2 = c.y;
+                var left = Math.min(markState.drag.x1, c.x);
+                var top = Math.min(markState.drag.y1, c.y);
+                var w = Math.abs(c.x - markState.drag.x1);
+                var h = Math.abs(c.y - markState.drag.y1);
+                rect.style.left = left + 'px';
+                rect.style.top = top + 'px';
+                rect.style.width = w + 'px';
+                rect.style.height = h + 'px';
+            });
+            on(document, 'mouseup', function (e) {
+                if (!markState.drag) return;
+                e = e || window.event;
+                var c = cssCoords(e.clientX, e.clientY);
+                // Координаты в пикселях исходника
+                var p1 = imgCoords(e.clientX - (c.x - markState.drag.x1), e.clientY - (c.y - markState.drag.y1));
+                var p2 = imgCoords(e.clientX, e.clientY);
+                markState.drag = null;
+                if (rect) { rect.parentNode.removeChild(rect); rect = null; }
+                if (p1.x === p2.x && p1.y === p2.y) return; // клик без перетаскивания
+                window.ahkCmd = 'mark-region/' + p1.x + '/' + p1.y + '/' + p2.x + '/' + p2.y;
+            });
+        } else {
+            // ---- режим слотов: клик = добавить слот ----
+            on(wrap, 'click', function (e) {
+                e = e || window.event;
+                var p = imgCoords(e.clientX, e.clientY);
+                window.ahkCmd = 'mark-click/' + p.x + '/' + p.y;
+            });
+        }
+    }
+    // AHK → JS: задаёт режим модалки ('slots' / 'template') и путь к картинке
+    window.ahkLoadMark = function(imgUrl, mode, prompt) {
+        var img = $('#markImg');
+        if (img) img.src = imgUrl;
+        markState.mode = mode || 'slots';
+        markState.slots = [];
+        markState.drag = null;
+        var ov = $('#markOverlay');
+        if (ov) ov.innerHTML = '';
+        var list = $('#markList');
+        if (list) list.innerHTML = '';
+        var pEl = $('#markPrompt');
+        if (pEl && prompt) pEl.textContent = prompt;
+        var tEl = $('#markTitle');
+        if (tEl) tEl.textContent = (mode === 'template') ? 'Capture Template' : 'Mark Slots';
+        // Режим теперь известен — ставим drag-select (template) или клик (slots).
+        // Делается здесь, а не в initMarkModal(), т.к. ahkLoadMark вызывается уже
+        // после загрузки страницы и задаёт реальный режим.
+        setupMarkMode();
+    };
+    // AHK → JS: обновить список слотов (массив {num,x,y})
+    window.ahkSetMarkSlots = function(slotsStr) {
+        var list = $('#markList');
+        var overlay = $('#markOverlay');
+        var img = $('#markImg');
+        if (list) list.innerHTML = '';
+        if (overlay) overlay.innerHTML = '';
+        markState.slots = [];
+        if (!slotsStr) return;
+        var items = slotsStr.split('|');
+        var rect = img ? img.getBoundingClientRect() : null;
+        var scaleX = rect ? (rect.width / 1280) : 1;
+        var scaleY = rect ? (rect.height / 720) : 1;
+        for (var i = 0; i < items.length; i++) {
+            if (!items[i]) continue;
+            var parts = items[i].split(',');
+            var s = { num: parts[0], x: parseInt(parts[1], 10), y: parseInt(parts[2], 10) };
+            markState.slots.push(s);
+            if (list) {
+                var div = document.createElement('div');
+                div.className = 'preset-item';
+                div.textContent = 'Slot ' + (i + 1) + ': unit ' + s.num + ' \u2192 (' + s.x + ', ' + s.y + ')';
+                list.appendChild(div);
+            }
+            if (overlay && rect) {
+                var dot = document.createElement('div');
+                dot.className = 'mark-dot';
+                dot.style.left = (s.x * scaleX) + 'px';
+                dot.style.top = (s.y * scaleY) + 'px';
+                dot.textContent = s.num;
+                overlay.appendChild(dot);
+            }
+        }
+    };
+
+    /* ---- Snap Modal Init ---- */
+    function initSnapModal(m) {
+        var btn = $('#btnSnapConfirm');
+        if (btn) on(btn, 'click', function () {
+            var nameEl = $('#snapName');
+            var n = nameEl ? nameEl.value.replace(/^\s+|\s+$/g, '') : '';
+            if (!n) {
+                if (nameEl) {
+                    nameEl.style.borderColor = '#ef4444';
+                    setTimeout(function () { nameEl.style.borderColor = ''; }, 800);
+                }
+                return;
+            }
+            window.ahkCmd = 'snap-confirm/' + encodeURIComponent(n);
+        });
+    }
+    // AHK → JS: путь к снимку для превью
+    window.ahkLoadSnap = function(imgUrl) {
+        var img = $('#snapImg');
+        if (img) img.src = imgUrl;
+        var name = $('#snapName');
+        if (name) name.value = '';
+    };
+
     /* ---- Init ---- */
     log('TD Macro v1.0 ready.');
 
@@ -1352,8 +1631,10 @@ body.modal-only .modal-foot {
         var bar = document.getElementById('mainDragBar');
         if (!bar) return;
         bar.style.cursor = 'default';
+        var dragging = false;
 
         on(document, 'mousedown', function (e) {
+            e = e || window.event;
             var tgt = e.target || e.srcElement;
             var el = tgt;
             // Check if click is inside the drag bar
@@ -1364,7 +1645,18 @@ body.modal-only .modal-foot {
                 el = el.parentNode;
             }
             if (!el) return; // not in drag bar
+            dragging = true;
+            if (bar.setCapture) bar.setCapture();
+            if (e.preventDefault) e.preventDefault();
+            e.returnValue = false;
             window.ahkCmd = 'drag-start-main/' + e.screenX + '/' + e.screenY;
+        });
+
+        on(document, 'mouseup', function () {
+            if (!dragging) return;
+            dragging = false;
+            if (document.releaseCapture) document.releaseCapture();
+            window.ahkCmd = 'drag-end-main';
         });
 
         on(document.getElementById('btnMainMin'), 'click', function () {

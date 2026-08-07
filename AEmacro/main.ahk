@@ -81,19 +81,20 @@ GameHwnd := 0
 OrigStyle := 0
 OrigExStyle := 0
 OrigParent := 0
+; Исходная позиция/размер Roblox для восстановления после отсоединения
+OrigRX := 0
+OrigRY := 0
+OrigRW := 0
+OrigRH := 0
 ; Автопрокачка юнитов: приоритет = сколько раз кликнуть по кнопке AutoUpgrade
 AutoUpgradeEnabled := false
 AutoUpgradePriority := {1: 1, 2: 1, 3: 1, 4: 1, 5: 1, 6: 1}
 AutoUpgradeUnitOffsetY := 20   ; смещение вверх при клике по юниту
-AutoUpgradeGuiHwnd := 0
 
 ; ---- состояние окна разметки/калибровки ----
 MarkMode := ""
 MarkList := []
 TemplateName := ""   ; заранее заданное имя шаблона (например "StartGame") или "" = спрашивать
-MarkGuiHwnd := 0
-CalibGuiHwnd := 0
-PresetGuiHwnd := 0
 ModalHwnd := 0
 
 ; ---- drag-select для захвата шаблонов ----
@@ -103,14 +104,23 @@ DragCurSX := 0, DragCurSY := 0
 DragPrevRect := ""
 DragOverlayHwnd := 0
 
-; Обработчики мыши: только для MarkMode = "template" (drag-select области)
-OnMessage(0x201, "OnTemplateLButtonDown")   ; WM_LBUTTONDOWN
-OnMessage(0x200, "OnTemplateMouseMove")       ; WM_MOUSEMOVE
-OnMessage(0x202, "OnTemplateLButtonUp")       ; WM_LBUTTONUP
+; ---- ручной перенос окна (ManualDragLoop) ----
+WinDragActive := false
+WinDragStartMX := 0, WinDragStartMY := 0
+WinDragStartWX := 0, WinDragStartWY := 0
+
+; Drag-select шаблонов (MarkMode = "template") теперь полностью в HTML-модалке.
+; Глобальные OnMessage-перехваты больше не используются.
+; Функции OnTemplateLButtonDown/Move/Up оставлены в drag_select.ahk как запасные заглушки.
 ; =======================================================
 
-TotalW := GameAreaW + SidebarW
-TotalH := GameAreaH
+; Главное окно AHK = ТОЛЬКО боковая панель (сайдбар).
+; Игровая область (Roblox) больше НЕ встраивается внутрь GUI — теперь это
+; отдельное полноценное окно, к которому сайдбар "прилипает" сбоку (dock).
+; Так Roblox остаётся играбельным (DirectX получает нормальный ввод),
+; а сайдбар синхронно двигается вместе с окном игры.
+SidebarTotalW := SidebarW
+SidebarTotalH := GameAreaH
 
 LoadConfig()
 LoadSettings()
@@ -134,7 +144,7 @@ htmlPath := htmlDir . "\index.html"
 StringReplace, htmlPath, htmlPath, \, /, All
 htmlURL := "file:///" . htmlPath
 
-Gui, Add, ActiveX, x0 y0 w%TotalW% h%GameAreaH% vWB, Shell.Explorer
+Gui, Add, ActiveX, x0 y0 w%SidebarTotalW% h%SidebarTotalH% vWB, Shell.Explorer
 WB.Silent := true
 ComObjConnect(WB, "WB_")
 WB.Navigate(htmlURL . "?_=" . A_TickCount)
@@ -145,11 +155,20 @@ while (WB.ReadyState != 4 && A_TickCount - WBWaitStart < 15000)
     Sleep, 100
 Sleep, 200
 
-; ---- 2. Игровая область ПОВЕРХ HTML (полный размер) ----
-Gui, Font, s10 cE0E0E0, Segoe UI
-Gui, Add, Text, x0 y0 w%GameAreaW% h%GameAreaH% vGameArea 0x201 Border Background0A0A0A,
+; ---- 2. Контейнер игры НЕ нужен ----
+; Roblox НЕ встраивается внутрь GUI — это отдельное окно, к которому
+; сайдбар прилипает (dock). См. BtnEmbed / SyncDockPosition.
 
-Gui, Show, w%TotalW% h%GameAreaH%, TD Macro Control
+; Центрируем сайдбар на экране при старте (до встраивания)
+SysGet, Mon0, MonitorWorkArea
+StartX := (Mon0Right - Mon0Left - SidebarTotalW) // 2
+StartY := (Mon0Bottom - Mon0Top - SidebarTotalH) // 2
+if (StartX < 0)
+    StartX := 100
+if (StartY < 0)
+    StartY := 100
+
+Gui, Show, x%StartX% y%StartY% w%SidebarTotalW% h%SidebarTotalH%, TD Macro Control
 
 ; Таймер опроса JS-команд
 SetTimer, PollJSCmd, 20
@@ -217,6 +236,7 @@ LoadSettings() {
     global SettingsFile, ClickDelay, SlotClickDelay, UpgradeClickDelay
     global AutoClickDelay, UnitSleepDelay, StartGameDelay, HoverDelay, MouseSpeed, ImgVariation
     global StartGameColor, StartGameColorVar, StartGameCenterX, StartGameCenterY, StartGameRadius
+    global AutoUpgradePriority, AutoUpgradeUnitOffsetY
     if !FileExist(SettingsFile)
         return
     IniRead, v, %SettingsFile%, Delays, ClickDelay, %ClickDelay%
@@ -247,12 +267,21 @@ LoadSettings() {
     StartGameCenterY := v
     IniRead, v, %SettingsFile%, PixelSearch, StartGameRadius, %StartGameRadius%
     StartGameRadius := v
+    Loop, 6 {
+        IniRead, v, %SettingsFile%, AutoUpgrade, Priority%A_Index%, % AutoUpgradePriority[A_Index]
+        if (v < 0 || v > 9)
+            v := AutoUpgradePriority[A_Index]
+        AutoUpgradePriority[A_Index] := v
+    }
+    IniRead, v, %SettingsFile%, AutoUpgrade, UnitOffsetY, %AutoUpgradeUnitOffsetY%
+    AutoUpgradeUnitOffsetY := v
 }
 
 SaveSettings() {
     global SettingsFile, ClickDelay, SlotClickDelay, UpgradeClickDelay
     global AutoClickDelay, UnitSleepDelay, StartGameDelay, HoverDelay, MouseSpeed, ImgVariation
     global StartGameColor, StartGameColorVar, StartGameCenterX, StartGameCenterY, StartGameRadius
+    global AutoUpgradePriority, AutoUpgradeUnitOffsetY
     IniWrite, %ClickDelay%, %SettingsFile%, Delays, ClickDelay
     IniWrite, %SlotClickDelay%, %SettingsFile%, Delays, SlotClickDelay
     IniWrite, %UpgradeClickDelay%, %SettingsFile%, Delays, UpgradeClickDelay
@@ -267,6 +296,9 @@ SaveSettings() {
     IniWrite, %StartGameCenterX%, %SettingsFile%, PixelSearch, StartGameCenterX
     IniWrite, %StartGameCenterY%, %SettingsFile%, PixelSearch, StartGameCenterY
     IniWrite, %StartGameRadius%, %SettingsFile%, PixelSearch, StartGameRadius
+    Loop, 6
+        IniWrite, % AutoUpgradePriority[A_Index], %SettingsFile%, AutoUpgrade, Priority%A_Index%
+    IniWrite, %AutoUpgradeUnitOffsetY%, %SettingsFile%, AutoUpgrade, UnitOffsetY
 }
 
 ; ===================== КООРДИНАТЫ КАРТ (слоты) =====================
@@ -345,20 +377,35 @@ SaveMapSlots(mapName, list) {
 }
 
 ; ===================== ФУНКЦИИ ОКНА / ВСТРАИВАНИЯ =====================
+; Возвращает экранные координаты левого-верхнего угла игровой области.
+; При встраивании (dock) это клиентская область окна Roblox (GameHwnd),
+; иначе — главное окно AHK. Возвращает true при успехе.
+GameAreaOrigin(ByRef ox, ByRef oy) {
+    global Embedded, GameHwnd, MainGuiHwnd
+    hwnd := MainGuiHwnd
+    if (Embedded && GameHwnd && DllCall("IsWindow", "ptr", GameHwnd))
+        hwnd := GameHwnd
+    if (!hwnd || !DllCall("IsWindow", "ptr", hwnd))
+        return false
+    VarSetCapacity(pt, 8, 0)
+    NumPut(0, pt, 0, "Int")
+    NumPut(0, pt, 4, "Int")
+    DllCall("ClientToScreen", "ptr", hwnd, "ptr", &pt)
+    ox := NumGet(pt, 0, "Int")
+    oy := NumGet(pt, 4, "Int")
+    return true
+}
+
 ToScreen(x, y) {
-    global MainGuiHwnd, TS_X, TS_Y
-    if (!MainGuiHwnd || !DllCall("IsWindow", "ptr", MainGuiHwnd)) {
-        AddLog("ToScreen: MainGuiHwnd некорректен (" MainGuiHwnd ")")
+    global TS_X, TS_Y
+    if (!GameAreaOrigin(ox, oy)) {
+        AddLog("ToScreen: игровое окно недоступно")
         TS_X := x
         TS_Y := y
         return
     }
-    VarSetCapacity(pt, 8, 0)
-    NumPut(x, pt, 0, "Int")
-    NumPut(y, pt, 4, "Int")
-    DllCall("ClientToScreen", "ptr", MainGuiHwnd, "ptr", &pt)
-    TS_X := NumGet(pt, 0, "Int")
-    TS_Y := NumGet(pt, 4, "Int")
+    TS_X := ox + x
+    TS_Y := oy + y
 }
 
 GetClientSize(hwnd, ByRef cw, ByRef ch) {
@@ -370,15 +417,9 @@ GetClientSize(hwnd, ByRef cw, ByRef ch) {
 
 ; ===================== ПОИСК ИЗОБРАЖЕНИЙ (fallback) =====================
 FindGameButton(imageFile, ByRef foundX, ByRef foundY) {
-    global MainGuiHwnd, GameAreaW, GameAreaH, ImgVariation
-    if (!MainGuiHwnd || !DllCall("IsWindow", "ptr", MainGuiHwnd))
+    global GameAreaW, GameAreaH, ImgVariation
+    if (!GameAreaOrigin(sx, sy))
         return false
-    VarSetCapacity(pt, 8, 0)
-    NumPut(0, pt, 0, "Int")
-    NumPut(0, pt, 4, "Int")
-    DllCall("ClientToScreen", "ptr", MainGuiHwnd, "ptr", &pt)
-    sx := NumGet(pt, 0, "Int")
-    sy := NumGet(pt, 4, "Int")
     ex := sx + GameAreaW
     ey := sy + GameAreaH
     ImageSearch, foundX, foundY, sx, sy, ex, ey, *%ImgVariation% %imageFile%
@@ -391,15 +432,11 @@ FindGameButton(imageFile, ByRef foundX, ByRef foundY) {
 }
 
 FindGameButtonByColor(color, variation, ByRef foundX, ByRef foundY) {
-    global MainGuiHwnd, StartGameCenterX, StartGameCenterY, StartGameRadius
-    if (!MainGuiHwnd || !DllCall("IsWindow", "ptr", MainGuiHwnd))
+    global StartGameCenterX, StartGameCenterY, StartGameRadius
+    if (!GameAreaOrigin(baseX, baseY))
         return false
-    VarSetCapacity(pt, 8, 0)
-    NumPut(StartGameCenterX, pt, 0, "Int")
-    NumPut(StartGameCenterY, pt, 4, "Int")
-    DllCall("ClientToScreen", "ptr", MainGuiHwnd, "ptr", &pt)
-    cx := NumGet(pt, 0, "Int")
-    cy := NumGet(pt, 4, "Int")
+    cx := baseX + StartGameCenterX
+    cy := baseY + StartGameCenterY
     sx := cx - StartGameRadius
     sy := cy - StartGameRadius
     ex := cx + StartGameRadius
@@ -446,37 +483,156 @@ BtnEmbed:
     WinGet, OrigStyle, Style, ahk_id %GameHwnd%
     WinGet, OrigExStyle, ExStyle, ahk_id %GameHwnd%
     OrigParent := DllCall("GetParent", "ptr", GameHwnd, "ptr")
-    GuiControlGet, ContainerHwnd, Hwnd, GameArea
-    WinSet, Style, -0xC00000, ahk_id %GameHwnd%
-    WinSet, Style, -0x800000, ahk_id %GameHwnd%
-    WinSet, Style, -0x40000,  ahk_id %GameHwnd%
-    DllCall("SetParent", "ptr", GameHwnd, "ptr", ContainerHwnd)
-    WinMove, ahk_id %GameHwnd%,, 0, 0, %GameAreaW%, %GameAreaH%
+    ; Запоминаем исходную позицию/размер Roblox для восстановления
+    WinGetPos, OrigRX, OrigRY, OrigRW, OrigRH, ahk_id %GameHwnd%
+
+    ; ---- DOCK-режим: Roblox НЕ делается дочерним окном ----
+    ; Roblox остаётся полноценным окном (DirectX получает ввод — можно ходить
+    ; и пользоваться мышью). Сайдбар AHK "прилипает" к нему сбоку и двигается
+    ; синхронно через таймер SyncDockPosition.
+    ; Снимаем рамку/заголовок и фиксируем размер GameAreaW x GameAreaH.
+    dockStyle := OrigStyle
+    dockStyle := dockStyle & ~0x00C00000  ; WS_CAPTION
+    dockStyle := dockStyle & ~0x00040000  ; WS_THICKFRAME (запрет resize)
+    dockStyle := dockStyle & ~0x00800000  ; WS_BORDER
+    SetWindowLongPtr(GameHwnd, -16, dockStyle)
+
+    ; Левый верхний угол рабочего стола для Roblox, сайдбар — справа от него.
+    SysGet, Mon1, MonitorWorkArea
+    dockRX := Mon1Left
+    dockRY := Mon1Top
+    ; Если правый край Roblox+сайдбар не помещается на экране — сдвигаем влево
+    totalDockW := GameAreaW + SidebarW
+    if (dockRX + totalDockW > Mon1Right)
+        dockRX := Mon1Right - totalDockW
+    if (dockRX < Mon1Left)
+        dockRX := Mon1Left
+
+    DllCall("SetWindowPos", "ptr", GameHwnd, "ptr", 0
+        , "int", dockRX, "int", dockRY, "int", GameAreaW, "int", GameAreaH
+        , "uint", 0x0040)  ; SWP_SHOWWINDOW
+    DllCall("ShowWindow", "ptr", GameHwnd, "int", 5)  ; SW_SHOW
+
+    ; Сайдбар — строго справа от Roblox, тот же Y
+    dockSx := dockRX + GameAreaW
+    DllCall("SetWindowPos", "ptr", MainGuiHwnd, "ptr", 0
+        , "int", dockSx, "int", dockRY
+        , "int", SidebarW, "int", GameAreaH
+        , "uint", 0x0040)  ; SWP_SHOWWINDOW
+    DllCall("ShowWindow", "ptr", MainGuiHwnd, "int", 8)  ; SW_SHOWNA (без активации — фокус у Roblox)
+
     Sleep, 150
     GetClientSize(GameHwnd, RealW, RealH)
     Embedded := true
+    ; Инициализируем last-позиции для двусторонней синхронизации
+    Embed_LastRX := dockRX, Embed_LastRY := dockRY, Embed_LastRW := GameAreaW
+    Embed_LastSX := dockSx, Embed_LastSY := dockRY
+    ; Запускаем синхронизацию: сайдбар следует за окном Roblox
+    SetTimer, SyncDockPosition, 50
     WBH_CallJS("ahkUpdateEmbed(true)")
-    AddLog("Roblox встроен, зафиксированный размер игры: " RealW "x" RealH)
+    AddLog("Roblox прикреплён (dock): " RealW "x" RealH " — игра остаётся играбельной")
 return
 
 UnembedGameWindow() {
     global GameHwnd, OrigStyle, OrigExStyle, OrigParent, MainGuiHwnd
-    if (!GameHwnd || !WinExist("ahk_id " . GameHwnd))
+    global OrigRX, OrigRY, OrigRW, OrigRH
+    ; Останавливаем синхронизацию положения
+    SetTimer, SyncDockPosition, Off
+    if (!GameHwnd || !WinExist("ahk_id " . GameHwnd)) {
+        GameHwnd := 0
         return
-    DllCall("SetParent", "ptr", GameHwnd, "ptr", OrigParent)
-    WinSet, Style, %OrigStyle%, ahk_id %GameHwnd%
-    WinSet, ExStyle, %OrigExStyle%, ahk_id %GameHwnd%
-    WinMove, ahk_id %GameHwnd%,, 100, 100, 1280, 720
+    }
+    ; Возвращаем исходный стиль Roblox (заголовок/рамка/resize)
+    SetWindowLongPtr(GameHwnd, -16, OrigStyle)
+    SetWindowLongPtr(GameHwnd, -20, OrigExStyle)
+    ; Восстанавливаем позицию/размер (если были сохранены)
+    if (OrigRW > 0 && OrigRH > 0)
+        DllCall("SetWindowPos", "ptr", GameHwnd, "ptr", 0
+            , "int", OrigRX, "int", OrigRY, "int", OrigRW, "int", OrigRH
+            , "uint", 0x0040)  ; SWP_SHOWWINDOW
+    else
+        DllCall("SetWindowPos", "ptr", GameHwnd, "ptr", 0
+            , "int", 100, "int", 100, "int", 1280, "int", 720, "uint", 0x0040)
+    DllCall("ShowWindow", "ptr", GameHwnd, "int", 5)
+    GameHwnd := 0
+    AddLog("Roblox откреплён, окно восстановлено")
+}
 
-    ; Roblox был дочерним окном GameArea и полностью его перекрывал.
-    ; После отсоединения Windows не шлёт WM_PAINT в освободившийся регион —
-    ; форсируем перерисовку, иначе остаётся "призрак" последнего кадра игры.
-    GuiControlGet, ContainerHwnd, Hwnd, GameArea
-    DllCall("InvalidateRect", "ptr", ContainerHwnd, "ptr", 0, "int", true)
-    DllCall("UpdateWindow", "ptr", ContainerHwnd)
-    DllCall("RedrawWindow", "ptr", MainGuiHwnd, "ptr", 0, "ptr", 0, "uint", 0x0485) ; INVALIDATE|ERASE|UPDATENOW|ALLCHILDREN
+; ---- Синхронизация положения сайдбара с окном Roblox (dock) ----
+; Roblox остаётся foreground-окном (играбельным), а сайдбар AHK следует
+; за его перемещением. Работает в обе стороны: при драге сайдбара Roblox
+; тоже подтягивается к нему (через DoNativeDrag + последующую синхронизацию).
+; Последние известные позиции — для определения, чей ход.
+SyncDockPosition:
+    global Embed_LastRX, Embed_LastRY, Embed_LastRW, Embed_LastSX, Embed_LastSY
+    if (!Embedded)
+        return
+    if (!GameHwnd || !DllCall("IsWindow", "ptr", GameHwnd)) {
+        ; Roblox закрыт — открепляемся
+        Embedded := false
+        SetTimer, SyncDockPosition, Off
+        WBH_CallJS("ahkUpdateEmbed(false)")
+        AddLog("Окно Roblox закрыто, сайдбар откреплён")
+        return
+    }
+    ; Проверяем состояние окна Roblox
+    WinGet, minMax, MinMax, ahk_id %GameHwnd%
+    if (minMax = -1) {
+        ; Roblox свёрнут — прячем сайдбар
+        if (DllCall("IsWindowVisible", "ptr", MainGuiHwnd))
+            DllCall("ShowWindow", "ptr", MainGuiHwnd, "int", 0)  ; SW_HIDE
+        return
+    }
+    if (!DllCall("IsWindowVisible", "ptr", MainGuiHwnd))
+        DllCall("ShowWindow", "ptr", MainGuiHwnd, "int", 8)  ; SW_SHOWNA
 
-    AddLog("Roblox возвращён в обычное окно")
+    ; Читаем позиции
+    VarSetCapacity(rct, 16, 0), VarSetCapacity(sct, 16, 0)
+    okR := DllCall("GetWindowRect", "ptr", GameHwnd, "ptr", &rct)
+    okS := DllCall("GetWindowRect", "ptr", MainGuiHwnd, "ptr", &sct)
+    if (!okR || !okS)
+        return
+    rx := NumGet(rct, 0, "Int"), ry := NumGet(rct, 4, "Int")
+    rw := NumGet(rct, 8, "Int") - rx
+    sx := NumGet(sct, 0, "Int"), sy := NumGet(sct, 4, "Int")
+
+    ; Определяем, кто двигался (если оба/никто — Roblox главный)
+    robloxMoved := (rx != Embed_LastRX || ry != Embed_LastRY || rw != Embed_LastRW)
+    sidebarMoved := (sx != Embed_LastSX || sy != Embed_LastSY)
+
+    ; Обновляем last-позиции
+    Embed_LastRX := rx, Embed_LastRY := ry, Embed_LastRW := rw
+    Embed_LastSX := sx, Embed_LastSY := sy
+
+    if (sidebarMoved && !robloxMoved) {
+        ; Драгали сайдбар (DoNativeDrag) — подтягиваем Roblox к сайдбару
+        newRX := sx - GameAreaW
+        newRY := sy
+        if (rx != newRX || ry != newRY) {
+            DllCall("SetWindowPos", "ptr", GameHwnd, "ptr", 0
+                , "int", newRX, "int", newRY
+                , "int", 0, "int", 0
+                , "uint", 0x0213)  ; SWP_NOACTIVATE | SWP_NOZORDER | SWP_SHOWWINDOW | SWP_NOSIZE
+            Embed_LastRX := newRX, Embed_LastRY := newRY
+        }
+    } else {
+        ; Roblox двигался (или никто) — сайдбар за Roblox
+        newSx := rx + rw
+        newSy := ry
+        if (sx != newSx || sy != newSy) {
+            DllCall("SetWindowPos", "ptr", MainGuiHwnd, "ptr", 0
+                , "int", newSx, "int", newSy
+                , "int", SidebarW, "int", GameAreaH
+                , "uint", 0x0213)  ; SWP_NOACTIVATE | SWP_NOZORDER | SWP_SHOWWINDOW
+            Embed_LastSX := newSx, Embed_LastSY := newSy
+        }
+    }
+return
+
+; Get/SetWindowLongPtr с совместимостью для 32- и 64-битного AutoHotkey.
+SetWindowLongPtr(hwnd, index, value) {
+    fn := (A_PtrSize = 8) ? "SetWindowLongPtr" : "SetWindowLong"
+    return DllCall(fn, "ptr", hwnd, "int", index, "ptr", value, "ptr")
 }
 
 ; ===================== ВЫБОР КАРТЫ =====================
@@ -520,66 +676,54 @@ BtnCaptureMap:
 return
 
 ShowSnapshotPreview() {
-    global TempShot, SnapGuiHwnd
-    Gui, Snap:New, +HwndSnapGuiHwnd -Caption +Border, Снимок карты — превью
-    Gui, Snap:Color, 0x121212
-    Gui, Snap:Font, s10 cE0E0E0, Segoe UI
-    ; ---- кастомный тёмный заголовок вместо системного ----
-    Gui, Snap:Add, Text, x0 y0 w660 h34 Background0F0F0F gDragSnap,
-    Gui, Snap:Font, s10 cE4E4E4 Bold, Segoe UI
-    Gui, Snap:Add, Text, x14 y9 w500 h20 BackgroundTrans gDragSnap, Снимок карты — превью
-    Gui, Snap:Font, s11 c888888, Segoe UI
-    Gui, Snap:Add, Text, x628 y6 w24 h22 BackgroundTrans Center gSnapCancel, ✕
-    Gui, Snap:Font, s10 cE0E0E0, Segoe UI
-    Gui, Snap:Add, Picture, x10 y44 w640 h360, %TempShot%
-    Gui, Snap:Add, Button, x10 y414 w310 h34 gSnapConfirm, Подтвердить снимок
-    Gui, Snap:Add, Button, x340 y414 w310 h34 gSnapCancel, Отмена
-    Gui, Snap:Show, w660 h458, Снимок карты — превью
+    global TempShot
+    ; Открываем HTML-модалку snap для превью снимка
+    OpenModalWindow("snap", "Snapshot Preview", 700, 560)
+    shotPath := TempShot
+    StringReplace, shotPath, shotPath, \, /, All
+    shotURL := "file:///" . shotPath . "?_=" . A_TickCount
+    PushModalData("snap")
+    ModalCallJS("ahkLoadSnap('" . shotURL . "')")
 }
 
-; Перетаскивание Snap-окна за кастомный заголовок (т.к. -Caption убрал системный drag)
-DragSnap:
-    PostMessage, 0xA1, 2, 0,, ahk_id %SnapGuiHwnd%  ; WM_NCLBUTTONDOWN / HTCAPTION
-return
-
 SnapConfirm:
-    Gui, Snap:Destroy
-    InputBox, ShotName, Название снимка, Введи имя для этого снимка карты (например: FlowerForest_start), , 300, 140
-    if (ErrorLevel) {
-        AddLog("Сохранение снимка отменено")
-        return
-    }
-    if (ShotName = "") {
+    ; SnapName приходит из HTML-модалки (поле ввода), SnapName задан в PollModalClose
+    if (SnapName = "") {
         AddLog("Имя не указано, снимок не сохранён")
         return
     }
-    FinalPath := MapsDir . "\" . ShotName . ".bmp"
+    FinalPath := MapsDir . "\" . SnapName . ".bmp"
+    global TempShot
     FileCopy, %TempShot%, %FinalPath%, 1
-    AddLog("Снимок карты сохранён: maps\" . ShotName . ".bmp")
+    AddLog("Снимок карты сохранён: maps\" . SnapName . ".bmp")
     ; Появляется в списке карт сразу после сохранения снимка
     ReloadMapList()
-    SelectedMapCtl := ShotName
-    Gui, 1:Default
+    global SelectedMapCtl
+    SelectedMapCtl := SnapName
     RefreshMapDropdown()
-    AddLog("Карта """ . ShotName . """ добавлена в список")
+    AddLog("Карта """ . SnapName . """ добавлена в список")
+    ; Закрываем модалку снимка
+    SetTimer, PollModalClose, Off
+    Gui, Modal:Destroy
+    ModalHwnd := 0
 return
 
 SnapCancel:
-    Gui, Snap:Destroy
+    SetTimer, PollModalClose, Off
+    Gui, Modal:Destroy
+    ModalHwnd := 0
     AddLog("Снимок отклонён, не сохранён")
 return
 
 ; ===================== СКРИНШОТ ОБЛАСТИ ИГРЫ =====================
 CaptureGameArea(filepath) {
-    global MainGuiHwnd, GameAreaW, GameAreaH
-    ; GameArea всегда в левом верхнем углу главного окна (x0 y0),
-    ; размер GameAreaW x GameAreaH. GuiControlGet здесь НЕ использовать:
-    ; при вызове из окна калибровки он ищет GameArea в чужом окне
-    ; и возвращает нулевые размеры → битый файл → чёрный экран.
-    VarSetCapacity(pt, 8, 0)
-    DllCall("ClientToScreen", "ptr", MainGuiHwnd, "ptr", &pt)
-    ScreenX := NumGet(pt, 0, "Int")
-    ScreenY := NumGet(pt, 4, "Int")
+    global GameAreaW, GameAreaH
+    ; Игровая область: при dock-встраивании это клиентская область Roblox,
+    ; иначе — главное окно AHK. GameAreaOrigin выбирает нужный HWND.
+    if (!GameAreaOrigin(ScreenX, ScreenY)) {
+        AddLog("CaptureGameArea: игровое окно недоступно")
+        return
+    }
     CaptureScreenshot(ScreenX, ScreenY, GameAreaW, GameAreaH, filepath)
     ; Если кадр вышел почти чёрным (игра свёрнута/не видна на экране) —
     ; пробуем PrintWindow по HWND игры
@@ -644,31 +788,26 @@ IsMostlyBlack(filepath) {
     return (total < n*30)
 }
 
-; ---- Захват с временным скрытием плавающих окон ----
-; Прячет все дочерние окна (калибровка, настройки, пресеты),
-; чтобы они не заслоняли GameArea при BitBlt, затем захватывает
-; и возвращает окна обратно.
+; ---- Захват с временным скрытием модального окна ----
+; Прячет модальное окно калибровки/настроек (если открыто), чтобы оно не
+; заслоняло игровую область при BitBlt, затем захватывает и возвращает окно.
 CaptureForMarking(filepath) {
-    global CalibGuiHwnd, PresetGuiHwnd
-    hidden := []
+    global ModalHwnd
+    hidden := false
 
-    ; Прячем окна калибровки / пресетов / настроек если открыты
-    if (CalibGuiHwnd && DllCall("IsWindow", "ptr", CalibGuiHwnd)) {
-        DllCall("ShowWindow", "ptr", CalibGuiHwnd, "int", 0)
-        hidden.Push(CalibGuiHwnd)
+    ; Прячем модальное окно если открыто
+    if (ModalHwnd && DllCall("IsWindow", "ptr", ModalHwnd) && DllCall("IsWindowVisible", "ptr", ModalHwnd)) {
+        DllCall("ShowWindow", "ptr", ModalHwnd, "int", 0)
+        hidden := true
     }
-    if (PresetGuiHwnd && DllCall("IsWindow", "ptr", PresetGuiHwnd)) {
-        DllCall("ShowWindow", "ptr", PresetGuiHwnd, "int", 0)
-        hidden.Push(PresetGuiHwnd)
-    }
-    ; WinWaitActive / Sleep чтобы DWM успел перерисовать без этих окон
+    ; Sleep чтобы DWM успел перерисовать без модального окна
     Sleep, 150
 
     CaptureGameArea(filepath)
 
-    ; Возвращаем окна обратно
-    for i, hwnd in hidden
-        DllCall("ShowWindow", "ptr", hwnd, "int", 1)
+    ; Возвращаем модальное окно обратно
+    if (hidden)
+        DllCall("ShowWindow", "ptr", ModalHwnd, "int", 5)
 }
 
 CaptureScreenshot(x, y, w, h, filepath) {
@@ -899,52 +1038,44 @@ CropBMP(srcBmp, x, y, w, h, dstBmp) {
 }
 
 OpenMarkGui(promptText) {
-    global TempShot, MarkPrompt, MarkPic, MarkListBox, MarkGuiHwnd
-    Gui, Mark:New, +HwndMarkGuiHwnd -Caption +Border, Разметка
-    Gui, Mark:Color, 0x121212
-    ; ---- кастомный тёмный заголовок вместо системного ----
-    Gui, Mark:Add, Text, x0 y0 w1576 h34 Background0F0F0F gDragMark,
-    Gui, Mark:Font, s10 cE4E4E4 Bold, Segoe UI
-    Gui, Mark:Add, Text, x14 y9 w1400 h20 BackgroundTrans gDragMark, Разметка
-    Gui, Mark:Font, s11 c888888, Segoe UI
-    Gui, Mark:Add, Text, x1544 y6 w24 h22 BackgroundTrans Center gMarkCancel, ✕
-    Gui, Mark:Font, s10 cE0E0E0, Segoe UI
-    Gui, Mark:Add, Text, x10 y44 w1280 vMarkPrompt, % promptText
-    Gui, Mark:Add, Picture, x10 y70 w1280 h720 gMarkClick vMarkPic, %TempShot%
-    Gui, Mark:Add, ListBox, x1300 y70 w260 h620 vMarkListBox,
-    Gui, Mark:Add, Button, x1300 y696 w260 h26 gMarkUndo, Отменить последнее
-    Gui, Mark:Add, Button, x1300 y726 w126 h30 gMarkDone, Готово / Сохранить
-    Gui, Mark:Add, Button, x1436 y726 w124 h30 gMarkCancel, Отмена
-    Gui, Mark:Show, w1576 h764, Разметка
+    global TempShot, MarkMode, MarkList
+    ; Открываем HTML-модалку mark. Размер — под картинку 1280x720 + панель.
+    OpenModalWindow("mark", "Marking", 1320, 820)
+    ; Путь к снимку для <img src>. file:/// + прямой слеш.
+    shotPath := TempShot
+    StringReplace, shotPath, shotPath, \, /, All
+    shotURL := "file:///" . shotPath . "?_=" . A_TickCount
+    mode := (MarkMode = "template") ? "template" : "slots"
+    safePrompt := StrReplace(promptText, "'", "\'")
+    safePrompt := StrReplace(safePrompt, """", "\""")
+    PushModalData("mark")
+    ModalCallJS("ahkLoadMark('" . shotURL . "', '" . mode . "', """ . safePrompt . """)")
+    ; Сразу показываем уже размеченные слоты (если редактируем существующую карту)
+    SendMarkSlotsToModal()
 }
 
-; Перетаскивание Mark-окна за кастомный заголовок (т.к. -Caption убрал системный drag)
-DragMark:
-    PostMessage, 0xA1, 2, 0,, ahk_id %MarkGuiHwnd%  ; WM_NCLBUTTONDOWN / HTCAPTION
-return
+; ---- Отправка текущего списка слотов MarkList в HTML-модалку ----
+SendMarkSlotsToModal() {
+    global MarkList, MarkMode
+    if (MarkMode = "template")
+        return  ; для шаблонов список слотов не нужен
+    slotsStr := ""
+    for i, s in MarkList {
+        if (i > 1)
+            slotsStr .= "|"
+        slotsStr .= s.num . "," . s.x . "," . s.y
+    }
+    ModalCallJS("ahkSetMarkSlots('" . slotsStr . "')")
+}
 
+
+; ---- Команды mark-* из HTML-модалки ----
+; arg = "x/y" (координаты в пикселях исходного изображения 1280x720)
 MarkClick:
-    if (A_GuiControl != "MarkPic")
-        return
-    if (!MarkGuiHwnd) {
-        AddLog("MarkClick: MarkGuiHwnd не задан")
-        return
-    }
-    CoordMode, Mouse, Screen
-    MouseGetPos, sx, sy
-    VarSetCapacity(mpt, 8, 0)
-    NumPut(sx, mpt, 0, "Int")
-    NumPut(sy, mpt, 4, "Int")
-    DllCall("ScreenToClient", "ptr", MarkGuiHwnd, "ptr", &mpt)
-    wx := NumGet(mpt, 0, "Int")
-    wy := NumGet(mpt, 4, "Int")
-    px := wx - 10
-    py := wy - 36
-    if (px < 0 || py < 0 || px > 1280 || py > 720) {
-        AddLog("Клик мимо картинки разметки, игнорирую (" px "," py ")")
-        return
-    }
-
+    px := 0, py := 0
+    StringSplit, mp, arg, /
+    px := mp1
+    py := mp2
     if (MarkMode = "slots") {
         InputBox, num, Номер юнита, Какой цифрой (1-6) ставится юнит в эту точку?, , 260, 130
         if (ErrorLevel || num = "" || num < 1 || num > 6) {
@@ -952,49 +1083,31 @@ MarkClick:
             return
         }
         MarkList.Push({num: num, x: px, y: py})
-        GuiControl, Mark:, MarkListBox, % "Слот " MarkList.Length() ": юнит " num " -> (" px "," py ")"
+        SendMarkSlotsToModal()
     }
     else if (MarkMode = "abs_upgrade") {
         UpgradeX := px
         UpgradeY := py
-        GuiControl, Mark:, MarkListBox, % "Upgrade: (" px "," py ")"
-        GuiControl, Mark:, MarkPrompt, Готово — нажми "Готово / Сохранить"
+        ModalCallJS("ahkSetMarkSlots('" px "," py ",0')")
     }
     else if (MarkMode = "abs_startgame") {
         StartGameX := px
         StartGameY := py
-        GuiControl, Mark:, MarkListBox, % "Start Game: (" px "," py ")"
-        GuiControl, Mark:, MarkPrompt, Готово — нажми "Готово / Сохранить"
+        ModalCallJS("ahkSetMarkSlots('" px "," py ",0')")
     }
     else if (MarkMode = "abs_repeatstage") {
         RepeatStageX := px
         RepeatStageY := py
-        GuiControl, Mark:, MarkListBox, % "RepeatStage: (" px "," py ")"
-        GuiControl, Mark:, MarkPrompt, Готово — нажми "Готово / Сохранить"
+        ModalCallJS("ahkSetMarkSlots('" px "," py ",0')")
     }
-    ; Примечание: template-режим (drag-select) обрабатывается через OnMessage-обработчики,
-    ; а не через этот g-label. См. OnTemplateLButtonUp.
 return
 
 MarkUndo:
     if (MarkMode = "slots") {
-        if (MarkList.Length() > 0) {
+        if (MarkList.Length() > 0)
             MarkList.Pop()
-            GuiControl, Mark:, MarkListBox, |
-            for i, s in MarkList
-                GuiControl, Mark:, MarkListBox, % "Слот " i ": юнит " s.num " -> (" s.x "," s.y ")"
-        }
-    } else if (MarkMode = "abs_upgrade") {
-        GuiControl, Mark:, MarkListBox, |
-        GuiControl, Mark:, MarkPrompt, Кликни на кнопку Upgrade
-    } else if (MarkMode = "abs_startgame") {
-        GuiControl, Mark:, MarkListBox, |
-        GuiControl, Mark:, MarkPrompt, Кликни на кнопку Start Game
-    } else if (MarkMode = "abs_repeatstage") {
-        GuiControl, Mark:, MarkListBox, |
-        GuiControl, Mark:, MarkPrompt, Кликни на кнопку Repeat Stage
+        SendMarkSlotsToModal()
     }
-    ; template — нет отмены (drag-select целиком обрабатывается в OnTemplateLButtonUp)
 return
 
 MarkDone:
@@ -1009,28 +1122,20 @@ MarkDone:
         }
     } else if (MarkMode = "abs_upgrade") {
         SaveConfig()
-        UpdateCoordsHTML()
         AddLog("Калибровка Upgrade сохранена: (" UpgradeX "," UpgradeY ")")
     } else if (MarkMode = "abs_startgame") {
         SaveConfig()
-        UpdateCoordsHTML()
         AddLog("Калибровка Start Game сохранена: (" StartGameX "," StartGameY ")")
     } else if (MarkMode = "abs_repeatstage") {
         SaveConfig()
-        UpdateCoordsHTML()
         AddLog("Калибровка RepeatStage сохранена: (" RepeatStageX "," RepeatStageY ")")
-    } else if (MarkMode = "template") {
-        AddLog("Снятие шаблона закрыто без сохранения")
-        TemplateName := ""
-        ; Подчищаем drag-состояние (если пользователь нажал Готово не отпуская мышь)
-        DragCleanup()
     }
     MarkMode := ""
-    Gui, Mark:Destroy
-    ; Восстанавливаем видимость окна калибровки
-    if (CalibGuiHwnd && DllCall("IsWindow", "ptr", CalibGuiHwnd))
-        DllCall("ShowWindow", "ptr", CalibGuiHwnd, "int", 1)
-    UpdateCalibStatus()
+    SetTimer, PollModalClose, Off
+    Gui, Modal:Destroy
+    ModalHwnd := 0
+    UpdateCoordsHTML()
+    PushModalData("calibrate")
 return
 
 MarkCancel:
@@ -1038,186 +1143,25 @@ MarkCancel:
     TemplateName := ""
     DragCleanup()
     AddLog("Разметка/калибровка отменена пользователем")
-    Gui, Mark:Destroy
+    SetTimer, PollModalClose, Off
+    Gui, Modal:Destroy
+    ModalHwnd := 0
 return
 
 ; ===================== НАСТРОЙКИ (диалог) =====================
 BtnSettings:
-    OpenSettingsGui()
-return
-
-OpenSettingsGui() {
-    global ClickDelay, SlotClickDelay, UpgradeClickDelay
-    global AutoClickDelay, UnitSleepDelay, StartGameDelay, HoverDelay, MouseSpeed, ImgVariation
-    global StartGameColor, StartGameColorVar, StartGameCenterX, StartGameCenterY, StartGameRadius
-    Gui, Settings:New, , Настройки
-    Gui, Settings:Color, 0x1E1E1E
-    Gui, Settings:Font, s10 cE0E0E0, Segoe UI
-
-    Gui, Settings:Add, Text, x10 y10 w380 c00CCFF, Задержки между кликами (мс)
-
-    Gui, Settings:Add, Text, x10 y40 w280, КД после номера юнита:
-    Gui, Settings:Add, Edit, x300 y40 w80 vSetClickDelay, %ClickDelay%
-
-    Gui, Settings:Add, Text, x10 y70 w280, КД после клика по слоту:
-    Gui, Settings:Add, Edit, x300 y70 w80 vSetSlotClickDelay, %SlotClickDelay%
-
-    Gui, Settings:Add, Text, x10 y100 w280, КД после клика Upgrade:
-    Gui, Settings:Add, Edit, x300 y100 w80 vSetUpgradeClickDelay, %UpgradeClickDelay%
-
-    Gui, Settings:Add, Text, x10 y130 w280, КД между кликами AutoUpgrade:
-    Gui, Settings:Add, Edit, x300 y130 w80 vSetAutoClickDelay, %AutoClickDelay%
-
-    Gui, Settings:Add, Text, x10 y160 w280, КД между юнитами:
-    Gui, Settings:Add, Edit, x300 y160 w80 vSetUnitSleepDelay, %UnitSleepDelay%
-
-    Gui, Settings:Add, Text, x10 y190 w280, КД после Start Game:
-    Gui, Settings:Add, Edit, x300 y190 w80 vSetStartGameDelay, %StartGameDelay%
-
-    Gui, Settings:Add, Text, x10 y220 w280, КД после наведения (перед выбором юнита):
-    Gui, Settings:Add, Edit, x300 y220 w80 vSetHoverDelay, %HoverDelay%
-
-    Gui, Settings:Add, Text, x10 y250 w280, Скорость мыши (0-100):
-    Gui, Settings:Add, Edit, x300 y250 w80 vSetMouseSpeed, %MouseSpeed%
-
-    Gui, Settings:Add, Text, x10 y280 w280, Допуск цвета (ImageSearch, 0-255):
-    Gui, Settings:Add, Edit, x300 y280 w80 vSetImgVariation, %ImgVariation%
-
-    Gui, Settings:Add, Text, x10 y310 w280, Цвет Start Game (0xRRGGBB):
-    Gui, Settings:Add, Edit, x300 y310 w80 vSetStartGameColor, %StartGameColor%
-
-    Gui, Settings:Add, Text, x10 y340 w280, Допуск PixelSearch (0-255):
-    Gui, Settings:Add, Edit, x300 y340 w80 vSetStartGameColorVar, %StartGameColorVar%
-
-    Gui, Settings:Add, Text, x10 y370 w280, Центр X (0-1280):
-    Gui, Settings:Add, Edit, x300 y370 w80 vSetStartGameCenterX, %StartGameCenterX%
-
-    Gui, Settings:Add, Text, x10 y400 w280, Центр Y (0-720):
-    Gui, Settings:Add, Edit, x300 y400 w80 vSetStartGameCenterY, %StartGameCenterY%
-
-    Gui, Settings:Add, Text, x10 y430 w280, Радиус поиска (пиксели):
-    Gui, Settings:Add, Edit, x300 y430 w80 vSetStartGameRadius, %StartGameRadius%
-
-    Gui, Settings:Add, Button, x10 y470 w180 h30 gSettingsSave, Сохранить
-    Gui, Settings:Add, Button, x200 y470 w180 h30 gSettingsCancel, Отмена
-
-    Gui, Settings:Show, w400 h510, Настройки
-}
-
-SettingsSave:
-    Gui, 1:Default
-    Gui, Settings:Submit, NoHide
-    ClickDelay := SetClickDelay
-    SlotClickDelay := SetSlotClickDelay
-    UpgradeClickDelay := SetUpgradeClickDelay
-    AutoClickDelay := SetAutoClickDelay
-    UnitSleepDelay := SetUnitSleepDelay
-    StartGameDelay := SetStartGameDelay
-    HoverDelay := SetHoverDelay
-    MouseSpeed := SetMouseSpeed
-    ImgVariation := SetImgVariation
-    StartGameColor := SetStartGameColor
-    StartGameColorVar := SetStartGameColorVar
-    StartGameCenterX := SetStartGameCenterX
-    StartGameCenterY := SetStartGameCenterY
-    StartGameRadius := SetStartGameRadius
-    SaveSettings()
-    AddLog("Настройки сохранены в ahk\settings.ini")
-    Gui, Settings:Destroy
-return
-
-SettingsCancel:
-    Gui, Settings:Destroy
+    OpenModalWindow("settings", "Settings", 480, 530)
 return
 
 ; ===================== ПРЕСЕТЫ (отдельное окно) =====================
 BtnOpenPresets:
-    if (PresetGuiHwnd && DllCall("IsWindow", "ptr", PresetGuiHwnd)) {
-        Gui, Preset:Show
-        return
-    }
-    OpenPresetsGui()
+    OpenModalWindow("presets", "Presets", 440, 370)
 return
-
-OpenPresetsGui() {
-    global PresetGuiHwnd
-    Gui, Preset:New, +HwndPresetGuiHwnd, Пресеты
-    Gui, Preset:Color, 0x1E1E1E, 0x252526
-    Gui, Preset:Font, s10 cE0E0E0, Segoe UI
-
-    Gui, Preset:Font, s9 c00CCFF Bold, Segoe UI
-    Gui, Preset:Add, Text, x12 y10 w540 h20, Пресеты — полная конфигурация
-    Gui, Preset:Font, s9 cE0E0E0, Segoe UI
-
-    ; ---- имя пресета + действия ----
-    Gui, Preset:Add, Text, x12 y40 w220, Имя пресета:
-    Gui, Preset:Add, Edit, x170 y38 w220 h22 vPresetName,
-    Gui, Preset:Add, Button, x400 y38 w150 h24 gBtnPresetSave, Сохранить пресет
-
-    ; ---- список пресетов ----
-    Gui, Preset:Add, Text, x12 y72 w220, Список пресетов:
-    Gui, Preset:Add, ListBox, x170 y68 w220 h140 vPresetList gPresetSelect,
-    Gui, Preset:Add, Button, x400 y68 w150 h24 gBtnPresetLoad, Загрузить пресет
-    Gui, Preset:Add, Button, x400 y98 w150 h24 gBtnPresetDelete, Удалить пресет
-    Gui, Preset:Add, Button, x400 y128 w150 h24 gBtnPresetRefresh, Обновить список
-
-    ; ---- подсказка о составе ----
-    Gui, Preset:Font, s7 c808080 Italic, Segoe UI
-    Gui, Preset:Add, Text, x12 y222 w540 h34, Пресет включает ВСЁ: координаты кнопок (Upgrade/Auto/StartGame/RepeatStage), задержки, параметры ImageSearch/PixelSearch и слоты всех карт (расположение юнитов). При загрузке пресет сразу применяется и записывается в config.ini, settings.ini и maps\*_slots.ini.
-    Gui, Preset:Font, s9 cE0E0E0 Norm, Segoe UI
-
-    Gui, Preset:Add, Button, x400 y268 w150 h26 gBtnPresetClose, Закрыть
-
-    Gui, Preset:Show, w570 h306, Пресеты
-    LoadPresetsList()
-}
 
 ; ===================== КАЛИБРОВКА (отдельное окно) =====================
 BtnOpenCalibration:
-    if (CalibGuiHwnd && DllCall("IsWindow", "ptr", CalibGuiHwnd)) {
-        Gui, Calib:Show
-        return
-    }
-    OpenCalibrationGui()
+    OpenModalWindow("calibrate", "Calibration", 460, 550)
 return
-
-OpenCalibrationGui() {
-    global CalibGuiHwnd, CalibStatus
-    Gui, Calib:New, +HwndCalibGuiHwnd, Калибровка координат
-    Gui, Calib:Color, 0x1E1E1E, 0x252526
-    Gui, Calib:Font, s10 cE0E0E0, Segoe UI
-
-    Gui, Calib:Font, s10 c00CCFF Bold, Segoe UI
-    Gui, Calib:Add, Text, x14 y14 w520 h24, Калибровка координат кнопок TD
-    Gui, Calib:Font, s10 cE0E0E0, Segoe UI
-
-    Gui, Calib:Add, Text, x14 y44 w520 h20 vCalibStatus, % CalibStatusText()
-
-    ; ---- группа: калибровка кнопок ----
-    Gui, Calib:Add, GroupBox, x14 y74 w640 h140, Калибровка кнопок
-    Gui, Calib:Add, Button, x34 y104 w160 h28 gBtnCalibrateUpgrade, Калибровать Upgrade
-    Gui, Calib:Add, Button, x204 y104 w160 h28 gBtnCalibrateStartGame, Калибровать Start Game
-    Gui, Calib:Add, Button, x374 y104 w160 h28 gBtnCalibrateRepeatStage, Калибровать Repeat Stage
-    Gui, Calib:Add, Text, x204 y146 w330 h20 c808080, Клик по скриншоту разметит кнопку. AutoUpgrade — в меню Автопрокачки.
-
-    ; ---- группа: шаблоны для детекта победы/поражения ----
-    Gui, Calib:Add, GroupBox, x14 y224 w640 h96, Шаблоны детекта Defeat / Victory
-    Gui, Calib:Add, Button, x34 y250 w180 h28 gBtnCaptureTemplate, Снять шаблон с экрана
-    Gui, Calib:Add, Button, x34 y284 w180 h28 gBtnTestDetection, Проверить детект сейчас
-    Gui, Calib:Add, Text, x224 y256 w410 h40 c808080, Обведи мышью НЕБОЛЬШУЮ область (например слово "VICTORY" или "DEFEAT"). Большие шаблоны ImageSearch не находит!
-    Gui, Calib:Add, Text, x224 y278 w410 h20 c00CCFF, Имя сохранится как images\*.bmp
-
-    ; ---- группа: шаблон детекта кнопки Start Game ----
-    Gui, Calib:Add, GroupBox, x14 y330 w640 h96, Шаблон детекта Start Game
-    Gui, Calib:Add, Button, x34 y356 w180 h28 gBtnCaptureStartGame, Снять шаблон Start Game
-    Gui, Calib:Add, Button, x34 y390 w180 h28 gBtnTestStartGame, Проверить детект старта
-    Gui, Calib:Add, Text, x224 y362 w410 h40 c808080, Обведи ЧАСТЬ кнопки Start (например слово "START" — без рамки и краёв). Макрос будет искать и кликать по нему.
-    Gui, Calib:Add, Text, x224 y384 w410 h20 c00CCFF, Сохранится как images\StartGame.bmp (без запроса имени)
-
-    Gui, Calib:Add, Button, x494 y442 w140 h28 gBtnCalibClose, Закрыть
-
-    Gui, Calib:Show, w668 h486, Калибровка координат
-}
 
 ; ---- Проверка детекта победы/поражения на текущем экране ----
 BtnTestDetection:
@@ -1262,26 +1206,18 @@ CalibStatusText() {
     return "Up(" UpgradeX "," UpgradeY ")  Auto(" AutoX "," AutoY ")  Start(" StartGameX "," StartGameY ")  Repeat(" RepeatStageX "," RepeatStageY ")"
 }
 
+; Обновляет координаты в HTML-модалке калибровки (если открыта) и в сайдбаре.
 UpdateCalibStatus() {
-    global CalibStatus
-    if (CalibGuiHwnd && DllCall("IsWindow", "ptr", CalibGuiHwnd))
-        GuiControl, Calib:, CalibStatus, % CalibStatusText()
+    global UpgradeX, UpgradeY, AutoX, AutoY, StartGameX, StartGameY, RepeatStageX, RepeatStageY
+    UpdateCoordsHTML()
+    ; Если открыта модалка калибровки — обновим карточки координат в ней
+    PushModalData("calibrate")
 }
 
-; ---------- пресеты (окно Preset) ----------
-PresetSelect:
-    Gui, Preset:Submit, NoHide
-    GuiControl, Preset:, PresetName, % PresetList
-return
-
 BtnPresetSave:
-    ; Если PresetName уже задан (из модального окна), не перезаписываем из GUI
-    if (PresetName = "" || !PresetGuiHwnd || !DllCall("IsWindow", "ptr", PresetGuiHwnd)) {
-        if (PresetGuiHwnd && DllCall("IsWindow", "ptr", PresetGuiHwnd))
-            Gui, Preset:Submit, NoHide
-    }
+    ; PresetName задаётся модальным окном (из JS-моста).
     if (PresetName = "") {
-        MsgBox, 48, Ошибка, Введи имя пресета.
+        AddLog("Сохранение пресета отменено: имя не указано", "warn")
         return
     }
     ; ---- 1. Координаты кнопок (калибровка) ----
@@ -1331,31 +1267,17 @@ BtnPresetSave:
         }
     }
     AddLog("Пресет """ PresetName """ сохранён (координаты + настройки + слоты всех карт)")
-    LoadPresetsList()
 return
 
 BtnPresetLoad:
-    ; Если PresetName уже задан (из модального окна), не перезаписываем из GUI
-    if (PresetName = "" || !PresetGuiHwnd || !DllCall("IsWindow", "ptr", PresetGuiHwnd)) {
-        if (PresetGuiHwnd && DllCall("IsWindow", "ptr", PresetGuiHwnd)) {
-            Gui, Preset:Submit, NoHide
-            Gui, Preset:Default
-        }
-    }
+    ; PresetName задаётся модальным окном (из JS-моста).
     if (PresetName = "") {
-        if (PresetGuiHwnd && DllCall("IsWindow", "ptr", PresetGuiHwnd)) {
-            GuiControlGet, sel, , PresetList
-            if (sel != "")
-                PresetName := sel
-        }
-    }
-    if (PresetName = "") {
-        MsgBox, 48, Ошибка, Выбери пресет из списка или введи имя.
+        AddLog("Загрузка пресета отменена: имя не указано", "warn")
         return
     }
     IniRead, v, %PresetsIni%, %PresetName%, UpgradeX, __NONE__
     if (v = "__NONE__") {
-        MsgBox, 48, Ошибка, Пресет """ PresetName """ не найден.
+        AddLog("Пресет """ PresetName """ не найден", "warn")
         return
     }
     ; ---- 1. Координаты кнопок ----
@@ -1442,61 +1364,16 @@ BtnPresetLoad:
 return
 
 BtnPresetDelete:
-    ; Если PresetName уже задан (из модального окна), не перезаписываем из GUI
-    if (PresetName = "" || !PresetGuiHwnd || !DllCall("IsWindow", "ptr", PresetGuiHwnd)) {
-        if (PresetGuiHwnd && DllCall("IsWindow", "ptr", PresetGuiHwnd)) {
-            Gui, Preset:Submit, NoHide
-            Gui, Preset:Default
-        }
-    }
+    ; PresetName задаётся модальным окном (из JS-моста).
     if (PresetName = "") {
-        if (PresetGuiHwnd && DllCall("IsWindow", "ptr", PresetGuiHwnd)) {
-            GuiControlGet, sel, , PresetList
-            if (sel != "")
-                PresetName := sel
-        }
-    }
-    if (PresetName = "") {
-        MsgBox, 48, Ошибка, Введи или выбери имя пресета для удаления.
+        AddLog("Удаление пресета отменено: имя не указано", "warn")
         return
     }
     IniDelete, %PresetsIni%, %PresetName%
-    if (PresetGuiHwnd && DllCall("IsWindow", "ptr", PresetGuiHwnd))
-        GuiControl, Preset:, PresetName,
     AddLog("Пресет """ PresetName """ удалён")
-    LoadPresetsList()
 return
 
-BtnPresetRefresh:
-    LoadPresetsList()
-return
-
-LoadPresetsList() {
-    global PresetsIni, PresetGuiHwnd
-    if (PresetGuiHwnd && DllCall("IsWindow", "ptr", PresetGuiHwnd)) {
-        GuiControl, Preset:, PresetList, |
-    }
-    if (!FileExist(PresetsIni))
-        return
-    FileRead, content, %PresetsIni%
-    Loop, Parse, content, `n, `r
-    {
-        line := Trim(A_LoopField)
-        if (line = "")
-            continue
-        if (SubStr(line, 1, 1) = "[" && SubStr(line, -1) = "]") {
-            name := Trim(SubStr(line, 2, -1))
-            if (PresetGuiHwnd && DllCall("IsWindow", "ptr", PresetGuiHwnd))
-                GuiControl, Preset:, PresetList, %name%
-        }
-    }
-}
-
-BtnPresetClose:
-PresetGuiClose:
-    Gui, Preset:Destroy
-    PresetGuiHwnd := 0
-return
+; ===================== КАЛИБРОВКА (отдельное окно) =====================
 
 ; ===================== НАСТРОЙКИ АВТОПРОКАЧКИ =====================
 AutoUpgradeToggle:
@@ -1504,47 +1381,8 @@ AutoUpgradeToggle:
 return
 
 BtnOpenAutoUpgradeSettings:
-    if (AutoUpgradeGuiHwnd && DllCall("IsWindow", "ptr", AutoUpgradeGuiHwnd)) {
-        Gui, AutoUpgrade:Show
-        return
-    }
-    OpenAutoUpgradeSettingsGui()
+    OpenModalWindow("upgrade", "Auto Upgrade", 360, 320)
 return
-
-OpenAutoUpgradeSettingsGui() {
-    global AutoUpgradeGuiHwnd, AutoUpgradePriority
-    global Priority1, Priority2, Priority3, Priority4, Priority5, Priority6
-    Gui, AutoUpgrade:New, +HwndAutoUpgradeGuiHwnd, Настройки автопрокачки
-    Gui, AutoUpgrade:Color, 0x1E1E1E
-    Gui, AutoUpgrade:Font, s10 cE0E0E0, Segoe UI
-
-    Gui, AutoUpgrade:Font, s10 c00CCFF Bold
-    Gui, AutoUpgrade:Add, Text, x14 y14 w520 h24, Приоритет прокачки по слотам (кликов по AutoUpgrade)
-    Gui, AutoUpgrade:Font, s10 cE0E0E0 Norm
-
-    ; 6 полей для приоритета (1-6)
-    loopX := 14
-    Loop, 6 {
-        Gui, AutoUpgrade:Add, Text, x%loopX% y48 w40 Center, Слот %A_Index%
-        Gui, AutoUpgrade:Add, Edit, x%loopX% y68 w40 h22 Number Center vPriority%A_Index%, % AutoUpgradePriority[A_Index]
-        loopX += 66
-    }
-
-    ; Смещение Y при выборе юнита
-    Gui, AutoUpgrade:Add, Text, x14 y96 w310 h20, Смещение Y выбора юнита (пикс. вверх):
-    Gui, AutoUpgrade:Add, Edit, x330 y94 w50 h22 Number vUnitOffsetY, %AutoUpgradeUnitOffsetY%
-
-    ; Калибровка кнопки AutoUpgrade
-    Gui, AutoUpgrade:Add, GroupBox, x14 y126 w550 h90, Калибровка кнопки AutoUpgrade
-    Gui, AutoUpgrade:Add, Button, x34 y152 w200 h28 gBtnCaptureAutoUpgrade, Снять шаблон AutoUpgrade
-    Gui, AutoUpgrade:Add, Button, x34 y182 w200 h28 gBtnTestAutoUpgrade, Проверить детект сейчас
-    Gui, AutoUpgrade:Add, Text, x244 y158 w310 h40 c808080, Зажми и обведи кнопку AutoUpgrade. Сохранится как images\AutoUpgrade.bmp
-
-    Gui, AutoUpgrade:Add, Button, x284 y230 w120 h28 gBtnAutoUpgradeSave, Сохранить и закрыть
-    Gui, AutoUpgrade:Add, Button, x414 y230 w120 h28 gBtnAutoUpgradeClose, Отмена
-
-    Gui, AutoUpgrade:Show, w580 h272, Настройки автопрокачки
-}
 
 BtnCaptureAutoUpgrade:
     if !WinExist(WinTitle) {
@@ -1575,43 +1413,6 @@ BtnTestAutoUpgrade:
         AddLog("Проверка: AutoUpgrade найден на экране в (" bx "," by ") — детект будет работать!")
     else
         AddLog("Проверка: AutoUpgrade НЕ найден. Открой экран где видна кнопка AutoUpgrade.")
-return
-
-BtnAutoUpgradeSave:
-    Gui, AutoUpgrade:Submit, NoHide
-    Loop, 6 {
-        val := Priority%A_Index%
-        if val is integer
-        {
-            if (val < 0)
-                val := 0
-            if (val > 9)
-                val := 9
-        }
-        else
-            val := 1
-        AutoUpgradePriority[A_Index] := val
-    }
-    ; Смещение Y
-    if UnitOffsetY is integer
-        AutoUpgradeUnitOffsetY := UnitOffsetY
-    else
-        AutoUpgradeUnitOffsetY := 20
-    AddLog("Настройки автопрокачки сохранены: " AutoUpgradePriority[1] "-" AutoUpgradePriority[2] "-" AutoUpgradePriority[3] "-" AutoUpgradePriority[4] "-" AutoUpgradePriority[5] "-" AutoUpgradePriority[6] "  offset=" AutoUpgradeUnitOffsetY)
-    Gui, AutoUpgrade:Destroy
-    AutoUpgradeGuiHwnd := 0
-return
-
-BtnAutoUpgradeClose:
-AutoUpgradeGuiClose:
-    Gui, AutoUpgrade:Destroy
-    AutoUpgradeGuiHwnd := 0
-return
-
-BtnCalibClose:
-CalibGuiClose:
-    Gui, Calib:Destroy
-    CalibGuiHwnd := 0
 return
 
 ; ===================== СТАРТ / СТОП ФАРМА =====================
@@ -1959,9 +1760,9 @@ DetectDefeat() {
         full := ImagesDir . "\Defeat.png"
     if (FileExist(full)) {
         if (IsTemplateTooBig(full)) {
-            static warnedDefeat := false
-            if (!warnedDefeat) {
-                warnedDefeat := true
+            global WarnedDefeat
+            if (!WarnedDefeat) {
+                WarnedDefeat := true
                 AddLog("Defeat-шаблон слишком большой — ImageSearch вешает макрос. Сними маленький шаблон (Калибровка → Снять шаблон, имя Defeat).")
             }
             return false
@@ -1982,9 +1783,9 @@ DetectVictory() {
         full := ImagesDir . "\Victory.png"
     if (FileExist(full)) {
         if (IsTemplateTooBig(full)) {
-            static warnedVictory := false
-            if (!warnedVictory) {
-                warnedVictory := true
+            global WarnedVictory
+            if (!WarnedVictory) {
+                WarnedVictory := true
                 AddLog("Victory-шаблон слишком большой — ImageSearch вешает макрос. Сними маленький шаблон (Калибровка → Снять шаблон, имя Victory).")
             }
             return false
@@ -2000,7 +1801,7 @@ DetectVictory() {
 ; экран победы/поражения. Если нет — повторяет (до 3 попыток).
 ClickRepeatStage() {
     global RepeatStageX, RepeatStageY, ImagesDir, ImgVariation, StartGameColor, StartGameColorVar
-    global MainGuiHwnd, TS_X, TS_Y
+    global TS_X, TS_Y
     global Running
     attempts := 3
     Loop, %attempts% {
@@ -2085,6 +1886,10 @@ return
 ; ---- Обработка команд, пришедших из HTML ----
 ProcessJSCmd(cmd) {
     global SelectedMapCtl, AutoUpgradeEnabled, Running, WB
+    ; Переменные ручного драга окна: без global они стали бы локальными в этой
+    ; функции, и ManualDragLoop (метка, глобальная область) читал бы нули →
+    ; сайдбар прыгал к курсору, а Roblox уезжал за левый край экрана.
+    global WinDragStartMX, WinDragStartMY, WinDragStartWX, WinDragStartWY, WinDragActive, MainGuiHwnd
     
     ; Разбираем команду: "command" или "command/arg"
     slashPos := InStr(cmd, "/")
@@ -2142,7 +1947,7 @@ ProcessJSCmd(cmd) {
         return
     }
     if (action = "calibrate") {
-        OpenModalWindow("calibrate", "Calibration", 440, 420)
+        OpenModalWindow("calibrate", "Calibration", 460, 550)
         return
     }
     if (action = "upgrade-cfg") {
@@ -2167,8 +1972,27 @@ ProcessJSCmd(cmd) {
         if (slashPos) {
             sx := SubStr(params, 1, slashPos - 1)
             sy := SubStr(params, slashPos + 1)
-            DoNativeDrag(sx, sy)
+            WinDragStartMX := sx, WinDragStartMY := sy
+            ; WinGetPos: OutX, OutY, OutWidth, OutHeight, WinTitle, ...
+            ; Раньше здесь было «WinGetPos, X, Y, ahk_id %MainGuiHwnd%» — без
+            ; пустых OutWidth/OutHeight заголовок окна попадал в поле ширины,
+            ; и AHK пытался создать переменную с именем «ahk_id 0x...» (нелегальный
+            ; символ — пробел), что убивало поток и драг не стартовал.
+            WinGetPos, WinDragStartWX, WinDragStartWY, , , ahk_id %MainGuiHwnd%
+            WinDragActive := true
+            ; На время ручного драга отключаем SyncDockPosition (чтобы не дёргалось)
+            SetTimer, SyncDockPosition, Off
+            ; 16 мс ≈ 60 fps — синхронно с DWM. 10 мс (100 fps) давало белые
+            ; полоски: DWM не успевал перерисовать старую область между кадрами.
+            SetTimer, ManualDragLoop, 16
         }
+        return
+    }
+    if (InStr(cmd, "drag-end-main")) {
+        WinDragActive := false
+        SetTimer, ManualDragLoop, Off
+        if (Embedded)
+            SetTimer, SyncDockPosition, 50
         return
     }
     if (InStr(cmd, "drag-start-modal/")) {
@@ -2186,13 +2010,17 @@ ProcessJSCmd(cmd) {
 ; ---- Отправка начального состояния в HTML ----
 PushStateToHTML:
     global UpgradeX, UpgradeY, AutoX, AutoY, StartGameX, StartGameY, RepeatStageX, RepeatStageY
-    global Embedded, Running, AutoUpgradeEnabled, MapList
+    global Embedded, Running, AutoUpgradeEnabled, MapList, SelectedMapCtl
     
     ; Сообщаем JS что мы в AHK-режиме (не standalone браузер)
     WBH_CallJS("ahkSetMode()")
-    
-    if (Embedded)
-        WBH_CallJS("ahkUpdateEmbed(true)")
+    WBH_CallJS("ahkUpdateEmbed(" . (Embedded ? "true" : "false") . ")")
+    WBH_CallJS("ahkUpdateFarm(" . (Running ? "true" : "false") . ")")
+    WBH_CallJS("ahkUpdateAutoUpgrade(" . (AutoUpgradeEnabled ? "true" : "false") . ")")
+    if (Running)
+        WBH_CallJS("ahkUpdateStatus('Watching...', 'running')")
+    else
+        WBH_CallJS("ahkUpdateStatus('Idle', '')")
     
     ; Карты
     if (MapList.Length() > 0) {
@@ -2208,6 +2036,10 @@ PushStateToHTML:
     rpStr := "Repeat(" . RepeatStageX . "," . RepeatStageY . ")"
     auStr := "Auto(" . AutoX . "," . AutoY . ")"
     WBH_CallJS("ahkUpdateCoords(""" . upStr . """,""" . stStr . """,""" . rpStr . """,""" . auStr . """)")
+    if (SelectedMapCtl != "")
+        WBH_CallJS("ahkUpdateMap('" . StrReplace(SelectedMapCtl, "'", "\\'") . "')")
+    else
+        WBH_CallJS("ahkUpdateMap('')")
     
     ; Автопрокачка
     if (AutoUpgradeEnabled)
@@ -2371,13 +2203,78 @@ PollModalClose:
         GoSub, BtnCalibrateRepeatStage
     }
     else if (action = "calibrate-autoupgrade") {
+        ; Калибровка кнопки AutoUpgrade: снимаем шаблон (как Upgrade/StartGame)
         SetTimer, PollModalClose, Off
         Gui, Modal:Destroy
         ModalHwnd := 0
-        GoSub, BtnOpenAutoUpgradeSettings
+        GoSub, BtnCaptureAutoUpgrade
+    }
+    else if (action = "capture-template") {
+        ; Снятие шаблона Defeat/Victory (имя спросит после выделения)
+        SetTimer, PollModalClose, Off
+        Gui, Modal:Destroy
+        ModalHwnd := 0
+        GoSub, BtnCaptureTemplate
+    }
+    else if (action = "test-detection") {
+        ; Проверка детекта Defeat/Victory на текущем экране (модалку не закрываем)
+        GoSub, BtnTestDetection
+    }
+    else if (action = "capture-startgame") {
+        ; Снятие шаблона кнопки Start Game
+        SetTimer, PollModalClose, Off
+        Gui, Modal:Destroy
+        ModalHwnd := 0
+        GoSub, BtnCaptureStartGame
+    }
+    else if (action = "test-startgame") {
+        ; Проверка детекта Start Game (модалку не закрываем)
+        GoSub, BtnTestStartGame
+    }
+    else if (action = "capture-autoupgrade") {
+        ; Снятие шаблона кнопки AutoUpgrade (альтернативный путь из карточки)
+        SetTimer, PollModalClose, Off
+        Gui, Modal:Destroy
+        ModalHwnd := 0
+        GoSub, BtnCaptureAutoUpgrade
+    }
+    else if (action = "test-autoupgrade") {
+        ; Проверка детекта AutoUpgrade (модалку не закрываем)
+        GoSub, BtnTestAutoUpgrade
     }
     else if (action = "upgrade-save") {
         GoSub, ModalSaveUpgrade
+    }
+    ; ---- Команды mark-* (модалка разметки) ----
+    else if (action = "mark-click") {
+        GoSub, MarkClick
+    }
+    else if (action = "mark-region") {
+        ; arg = x1/y1/x2/y2 — обведённая область (для шаблонов Defeat/Victory/StartGame/AutoUpgrade)
+        StringSplit, rp, arg, /
+        SaveTemplateRegion(rp1, rp2, rp3, rp4)
+        MarkMode := ""
+        SetTimer, PollModalClose, Off
+        Gui, Modal:Destroy
+        ModalHwnd := 0
+        if (ModalHwnd && DllCall("IsWindow", "ptr", ModalHwnd))
+            DllCall("ShowWindow", "ptr", ModalHwnd, "int", 5)
+        UpdateCalibStatus()
+    }
+    else if (action = "mark-undo") {
+        GoSub, MarkUndo
+    }
+    else if (action = "mark-done") {
+        GoSub, MarkDone
+    }
+    ; ---- Команды snap-* (превью снимка) ----
+    else if (action = "snap-confirm") {
+        ; arg = имя карты (URL-encoded)
+        SnapName := UriDecode(arg)
+        GoSub, SnapConfirm
+    }
+    else if (action = "snap-cancel") {
+        GoSub, SnapCancel
     }
 return
 
@@ -2447,6 +2344,8 @@ PushModalData(name) {
         }
         ModalCallJS("ahkLoadUpgradeCfg('" . prioStr . "'," . AutoUpgradeUnitOffsetY . ")")
     }
+    ; mark и snap: данные отправляются в OpenMarkGui / ShowSnapshotPreview,
+    ; здесь дополнительно пушить нечего.
 }
 
 ; ---- Сохранение настроек из модального окна Settings ----
@@ -2494,14 +2393,66 @@ ModalSaveUpgrade:
     AddLog("Auto Upgrade settings saved from modal")
 return
 
-; ---- Нативный драг главного окна (цикл в AHK, без JS/COM) ----
-DoNativeDrag(startMX, startMY) {
-    global MainGuiHwnd
-    wid := MainGuiHwnd
-    DllCall("ReleaseCapture")
-    SendMessage, 0xA1, 2, 0,, ahk_id %wid%
-    DllCall("ReleaseCapture")
-}
+; ---- Нативный драг главного окна: ручной перенос через таймер ----
+; SendMessage WM_NCLBUTTONDOWN/HTCAPTION не работает при -Caption.
+; Вместо этого AHK сам двигает окно(а) по смещению мыши через таймер.
+;
+; ВАЖНО: используем DllCall(SetWindowPos/DeferWindowPos), а НЕ WinMove.
+; WinMove подчиняется SetWinDelay (по умолчанию 100 мс) — два WinMove
+; давали ~200 мс на каждую итерацию драга (≈5 fps), отсюда рывки.
+; DllCall работает мгновенно, а DeferWindowPos двигает оба окна одной
+; атомарной операцией — DWM перерисовывает их вместе, без разрыва.
+;
+; Белые полоски при быстром драге = DWM не успевает перерисовать область
+; под СТАРОЙ позицией окон. Решение: перед перемещением запоминаем старые
+; rect'ы, а после — RedrawWindow(RDW_UPDATENOW) принудительно перерисовывает
+; их (синхронно, до возврата из вызова).
+ManualDragLoop:
+    CoordMode, Mouse, Screen
+    MouseGetPos, mx, my
+    ; Вычисляем новую позицию сайдбара относительно стартовой точки зажатия
+    newX := WinDragStartWX + mx - WinDragStartMX
+    newY := WinDragStartWY + my - WinDragStartMY
+    ; Только перемещение: без resize / z-order / activate
+    moveFlags := 0x0015  ; SWP_NOSIZE(0x1) | SWP_NOZORDER(0x4) | SWP_NOACTIVATE(0x10)
+    ; Флаги перерисовки старой области (убирают белые следы):
+    ; RDW_INVALIDATE(0x1) | RDW_ERASE(0x4) | RDW_UPDATENOW(0x100)
+    redrawFlags := 0x0105
+    if (Embedded && GameHwnd && DllCall("IsWindow", "ptr", GameHwnd)) {
+        ; Запоминаем старые области окон ДО перемещения
+        VarSetCapacity(oldRectS, 16, 0)
+        DllCall("GetWindowRect", "ptr", MainGuiHwnd, "ptr", &oldRectS)
+        VarSetCapacity(oldRectR, 16, 0)
+        DllCall("GetWindowRect", "ptr", GameHwnd, "ptr", &oldRectR)
+        newRX := newX - GameAreaW
+        newRY := newY
+        ; DeferWindowPos: батчим оба окна в один пакет перерисовки DWM
+        hwp := DllCall("BeginDeferWindowPos", "int", 2, "ptr")
+        if (hwp) {
+            hwp := DllCall("DeferWindowPos", "ptr", hwp, "ptr", MainGuiHwnd, "ptr", 0
+                , "int", newX, "int", newY, "int", 0, "int", 0, "uint", moveFlags, "ptr")
+            if (hwp)
+                hwp := DllCall("DeferWindowPos", "ptr", hwp, "ptr", GameHwnd, "ptr", 0
+                    , "int", newRX, "int", newRY, "int", 0, "int", 0, "uint", moveFlags, "ptr")
+            DllCall("EndDeferWindowPos", "ptr", hwp)
+        }
+        ; Обновляем last-позиции для SyncDockPosition
+        Embed_LastRX := newRX
+        Embed_LastRY := newRY
+        Embed_LastSX := newX
+        Embed_LastSY := newY
+        ; Принудительно перерисовываем старые области — убирает белые следы
+        DllCall("RedrawWindow", "ptr", 0, "ptr", &oldRectS, "ptr", 0, "uint", redrawFlags)
+        DllCall("RedrawWindow", "ptr", 0, "ptr", &oldRectR, "ptr", 0, "uint", redrawFlags)
+    } else {
+        ; Roblox не встроен — двигаем только сайдбар
+        VarSetCapacity(oldRectS, 16, 0)
+        DllCall("GetWindowRect", "ptr", MainGuiHwnd, "ptr", &oldRectS)
+        DllCall("SetWindowPos", "ptr", MainGuiHwnd, "ptr", 0
+            , "int", newX, "int", newY, "int", 0, "int", 0, "uint", moveFlags, "ptr")
+        DllCall("RedrawWindow", "ptr", 0, "ptr", &oldRectS, "ptr", 0, "uint", redrawFlags)
+    }
+return
 
 DoNativeDragModal(startMX, startMY) {
     global ModalHwnd
@@ -2511,6 +2462,32 @@ DoNativeDragModal(startMX, startMY) {
     DllCall("ReleaseCapture")
     SendMessage, 0xA1, 2, 0,, ahk_id %wid%
     DllCall("ReleaseCapture")
+}
+
+; ---- Простой URL-декодер (%XX → символ) ----
+UriDecode(str) {
+    result := ""
+    i := 1
+    while (i <= StrLen(str)) {
+        c := SubStr(str, i, 1)
+        if (c = "+") {
+            result .= " "
+            i++
+        } else if (c = "%" && i+2 <= StrLen(str)) {
+            hex := SubStr(str, i+1, 2)
+            if RegExMatch(hex, "^[0-9A-Fa-f]{2}$") {
+                result .= Chr("0x" . hex)
+                i += 3
+            } else {
+                result .= c
+                i++
+            }
+        } else {
+            result .= c
+            i++
+        }
+    }
+    return result
 }
 
 GuiClose:
