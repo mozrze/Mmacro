@@ -21,6 +21,22 @@ html, body {
 }
 
 /* ============================================================
+   Scrollbars (Trident/IE11 — все скроллящиеся элементы в дизайне)
+   Движок рендерит ActiveX Shell.Explorer — это Trident, поэтому
+   работаю ТОЛЬКО IE-свойства; ::-webkit-scrollbar тут бесполезны.
+   ============================================================ */
+html, body {
+    scrollbar-face-color: #333;
+    scrollbar-track-color: #1a1a1a;
+    scrollbar-arrow-color: #666;
+    scrollbar-shadow-color: #121212;
+    scrollbar-darkshadow-color: #121212;
+    scrollbar-3dlight-color: #252525;
+    scrollbar-highlight-color: #252525;
+    scrollbar-base-color: #333;
+}
+
+/* ============================================================
    FULL LAYOUT: sidebar only (game area = separate Roblox window)
    ============================================================ */
 .layout {
@@ -46,7 +62,7 @@ html, body {
     flex-direction: column;
     overflow-y: auto;
     overflow-x: hidden;
-    -ms-overflow-style: none; /* IE11/Trident: прячет полосу, колесо мыши продолжает скроллить */
+    -ms-overflow-style: scrollbar; /* тонкий скроллбар (цвета — в блоке Scrollbar) */
     padding: 16px 14px 10px;
     height: 100%;
 }
@@ -153,7 +169,7 @@ html, body {
     border: 1px solid #252525; border-radius: 8px;
     background: #1a1a1a;
     max-height: 160px; overflow-y: auto;
-    -ms-overflow-style: none;
+    -ms-overflow-style: scrollbar;
 }
 .custom-select-list.open { display: block; }
 .custom-select-item {
@@ -231,7 +247,7 @@ html, body {
     background: #0f0f0f; border: 1px solid #252525;
     border-radius: 6px; padding: 6px 8px;
     overflow-y: auto; overflow-x: hidden;
-    -ms-overflow-style: none; /* IE11/Trident: прячет полосу, колесо мыши продолжает скроллить */
+    -ms-overflow-style: scrollbar; /* тонкий скроллбар (цвета — в блоке Scrollbar) */
     font-family: 'Consolas', monospace; font-size: 11px;
     line-height: 1.7; color: #666; word-wrap: break-word;
 }
@@ -310,7 +326,7 @@ html, body {
 .modal-body {
     padding: 14px 18px; overflow-y: auto;
     -ms-flex: 1; flex: 1;
-    -ms-overflow-style: none; /* IE11/Trident: прячет полосу, колесо мыши продолжает скроллить */
+    -ms-overflow-style: scrollbar; /* тонкий скроллбар (цвета — в блоке Scrollbar) */
 }
 .modal-body > * + * { margin-top: 12px; }
 .modal-desc { color: #666; font-size: 12px; margin: 0; }
@@ -389,7 +405,7 @@ html, body {
 .preset-list {
     border: 1px solid #252525; border-radius: 8px;
     min-height: 70px; max-height: 160px; overflow-y: auto;
-    -ms-overflow-style: none; /* IE11/Trident: прячет полосу, колесо мыши продолжает скроллить */
+    -ms-overflow-style: scrollbar; /* тонкий скроллбар (цвета — в блоке Scrollbar) */
     display: -ms-flexbox; display: flex;
     -ms-flex-direction: column; flex-direction: column;
 }
@@ -454,6 +470,45 @@ body.modal-only .modal-body { padding: 0; }
     pointer-events: none;
 }
 
+/* ---- Pop-up выбора номера юнита (режим mark slots) ---- */
+/* Заменяет системный InputBox «Какой цифрой (1-6) ставится юнит?».
+   Появляется в точке клика по снимку. */
+.mark-unitpop {
+    position: absolute;
+    z-index: 50;
+    background: #1a1a1a;
+    border: 1px solid #2e2e2e;
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+    padding: 8px;
+    pointer-events: auto; /* родительский .mark-overlay — pointer-events:none */
+    -webkit-user-select: none; -ms-user-select: none; user-select: none;
+}
+.mark-unitpop-head {
+    font-size: 10px;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-weight: 600;
+    margin: 0 0 6px 4px;
+}
+.mark-unitpop-grid {
+    display: -ms-flexbox; display: flex;
+    -ms-flex-pack: justify; justify-content: space-between;
+}
+.mark-unitpop-btn {
+    width: 30px; height: 30px;
+    border-radius: 6px;
+    border: 1px solid #252525;
+    background: #1e1e1e;
+    color: #e4e4e4;
+    font-family: 'Consolas', monospace;
+    font-size: 14px; font-weight: 700;
+    cursor: pointer;
+    margin: 0 2px;
+}
+.mark-unitpop-btn:hover { background: #3b82f6; border-color: #3b82f6; color: #fff; }
+
 /* ---- Snap Modal ---- */
 .snap-img-wrap {
     margin-bottom: 12px;
@@ -504,11 +559,9 @@ body.modal-only .modal-head {
 body.modal-only .modal-body {
     padding: 12px 14px;
     overflow-y: auto;
-    scrollbar-width: thin;
-    scrollbar-color: #333 #1a1a1a;
-    -ms-overflow-style: none; /* IE11/Trident: прячет полосу, колесо мыши продолжает скроллить */
+    -ms-overflow-style: scrollbar;
 }
-/* WebKit scrollbar */
+/* WebKit scrollbar (запасной движок, если когда-нибудь перейдут) */
 body.modal-only .modal-body::-webkit-scrollbar { width: 4px; }
 body.modal-only .modal-body::-webkit-scrollbar-track { background: #1a1a1a; }
 body.modal-only .modal-body::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
@@ -1059,7 +1112,6 @@ body.modal-only .modal-foot {
         sendCmd('select-map/' + (val || '__none__'));
     });
     on($('#btnSnapshot'), 'click', function () {
-        if (!state.map) return log('Select a map first!', 'warn');
         sendCmd('snapshot');
     });
     on($('#btnMark'), 'click', function () {
@@ -1278,6 +1330,17 @@ body.modal-only .modal-foot {
             case 'mark':     initMarkModal(m);     break;
             case 'snap':     initSnapModal(m);     break;
         }
+
+        // Trident/IE11 (Shell.Explorer в AHK) не всегда перерисовывает окно
+        // после того, как showModalOnly выставил inline-стили и перестроил DOM
+        // (особенно у пресетов/разметки, где PushModalData делает innerHTML).
+        // Из-за этого модалка видна «пустой», пока пользователь не наведёт мышь
+        // на поле. Принудительный reflow + отложенный пустой тик перерисовки
+        // заставляют движок отрисовать содержимое сразу.
+        if (panel) { var _r = panel.offsetHeight; } /* reflow */
+        setTimeout(function () {
+            if (panel) { var _r2 = panel.offsetHeight; } /* reflow again */
+        }, 0);
     };
 
     /* ---- Settings Modal Init ---- */
@@ -1379,20 +1442,22 @@ body.modal-only .modal-foot {
             div.className = 'preset-empty';
             div.textContent = 'No saved presets';
             list.appendChild(div);
-            return;
+        } else {
+            list.innerHTML = '';
+            var names = listStr.split('|');
+            for (var i = 0; i < names.length; i++) {
+                if (!names[i]) continue;
+                var div = document.createElement('div');
+                div.className = 'preset-item';
+                div.textContent = names[i];
+                div.style.cssText = 'padding: 6px 10px; cursor: pointer; font-size: 12px; color: #ccc; border-bottom: 1px solid #1a1a1a;';
+                div.onmouseover = function () { this.style.background = '#1a1a1a'; };
+                div.onmouseout  = function () { this.style.background = ''; };
+                list.appendChild(div);
+            }
         }
-        list.innerHTML = '';
-        var names = listStr.split('|');
-        for (var i = 0; i < names.length; i++) {
-            if (!names[i]) continue;
-            var div = document.createElement('div');
-            div.className = 'preset-item';
-            div.textContent = names[i];
-            div.style.cssText = 'padding: 6px 10px; cursor: pointer; font-size: 12px; color: #ccc; border-bottom: 1px solid #1a1a1a;';
-            div.onmouseover = function () { this.style.background = '#1a1a1a'; };
-            div.onmouseout  = function () { this.style.background = ''; };
-            list.appendChild(div);
-        }
+        // Trident: перестройка innerHTML до показа/после execScript не перерисовывается
+        var _r = list.offsetHeight; /* reflow */
     };
 
     /* ---- Calibration Modal Init ---- */
@@ -1527,16 +1592,91 @@ body.modal-only .modal-foot {
                 if (p1.x === p2.x && p1.y === p2.y) return; // клик без перетаскивания
                 window.ahkCmd = 'mark-region/' + p1.x + '/' + p1.y + '/' + p2.x + '/' + p2.y;
             });
-        } else {
-            // ---- режим слотов: клик = добавить слот ----
+        } else if (markState.mode === 'calib') {
+            // ---- режим калибровки кнопок: клик = точка, без номера юнита ----
             on(wrap, 'click', function (e) {
                 e = e || window.event;
                 var p = imgCoords(e.clientX, e.clientY);
                 window.ahkCmd = 'mark-click/' + p.x + '/' + p.y;
             });
+        } else {
+            // ---- режим слотов: клик = открыть попап выбора номера юнита ----
+            // Раньше тут шла команда mark-click в AHK, и тот показывал системный
+            // InputBox «Какой цифрой (1-6)». Теперь попап рисуется прямо в дизайне
+            // (кнопки 1-6 в точке клика), и выбор шлёт mark-unit-num/x/y/n.
+            var pendingSlot = null;   // {x, y} — ждёт выбора номера
+            var popEl = null;          // текущий DOM-элемент попапа
+            function closeUnitPop() {
+                if (popEl && popEl.parentNode) popEl.parentNode.removeChild(popEl);
+                popEl = null;
+                pendingSlot = null;
+            }
+            on(wrap, 'click', function (e) {
+                e = e || window.event;
+                var p = imgCoords(e.clientX, e.clientY);
+                closeUnitPop();
+                pendingSlot = p;
+                var c = cssCoords(e.clientX, e.clientY);
+                popEl = document.createElement('div');
+                popEl.className = 'mark-unitpop';
+                var headEl = document.createElement('div');
+                headEl.className = 'mark-unitpop-head';
+                headEl.textContent = 'Unit number';
+                popEl.appendChild(headEl);
+                var gridEl = document.createElement('div');
+                gridEl.className = 'mark-unitpop-grid';
+                for (var n = 1; n <= 6; n++) {
+                    (function (num) {
+                        var b = document.createElement('button');
+                        b.className = 'mark-unitpop-btn';
+                        b.textContent = num;
+                        on(b, 'click', function (ev) {
+                            if (ev && ev.stopPropagation) ev.stopPropagation();
+                            window.ahkCmd = 'mark-unit-num/' + pendingSlot.x + '/' + pendingSlot.y + '/' + num;
+                            closeUnitPop();
+                        });
+                        gridEl.appendChild(b);
+                    })(n);
+                }
+                popEl.appendChild(gridEl);
+                // Сначала добавляем, чтобы получить реальные размеры попапа,
+                // потом корректируем позицию — иначе у края канваса цифры
+                // уйдут за рамку .mark-canvas-wrap (overflow:hidden) и не будут видны.
+                overlay.appendChild(popEl);
+                var popW = popEl.offsetWidth;
+                var popH = popEl.offsetHeight;
+                var wrapRect = wrap.getBoundingClientRect();
+                var wrapW = wrapRect.width;
+                var wrapH = wrapRect.height;
+                // По умолчанию — правее/ниже точки клика, чтобы не закрывать её.
+                var px = c.x + 12;
+                var py = c.y + 12;
+                // Не вылезать за правый край — прижимаем влево от точки.
+                if (px + popW > wrapW - 4)
+                    px = (c.x - 12 - popW >= 4) ? (c.x - 12 - popW) : (wrapW - 4 - popW);
+                // Не вылезать за нижний край — прижимаем вверх от точки.
+                if (py + popH > wrapH - 4)
+                    py = (c.y - 12 - popH >= 4) ? (c.y - 12 - popH) : (wrapH - 4 - popH);
+                if (px < 4) px = 4;
+                if (py < 4) py = 4;
+                popEl.style.left = px + 'px';
+                popEl.style.top = py + 'px';
+            });
+            // Закрытие попапа кликом мимо / Esc
+            on(document, 'mousedown', function (e) {
+                e = e || window.event;
+                if (!popEl) return;
+                var tgt = e.target || e.srcElement;
+                while (tgt && tgt !== popEl) tgt = tgt.parentNode;
+                if (!tgt) closeUnitPop();
+            });
+            on(document, 'keydown', function (e) {
+                e = e || window.event;
+                if (e.keyCode === 27) closeUnitPop();
+            });
         }
     }
-    // AHK → JS: задаёт режим модалки ('slots' / 'template') и путь к картинке
+    // AHK → JS: задаёт режим модалки ('slots' / 'template' / 'calib') и путь к картинке
     window.ahkLoadMark = function(imgUrl, mode, prompt) {
         var img = $('#markImg');
         if (img) img.src = imgUrl;
@@ -1550,8 +1690,12 @@ body.modal-only .modal-foot {
         var pEl = $('#markPrompt');
         if (pEl && prompt) pEl.textContent = prompt;
         var tEl = $('#markTitle');
-        if (tEl) tEl.textContent = (mode === 'template') ? 'Capture Template' : 'Mark Slots';
-        // Режим теперь известен — ставим drag-select (template) или клик (slots).
+        if (tEl) {
+            if (mode === 'template') tEl.textContent = 'Capture Template';
+            else if (mode === 'calib') tEl.textContent = 'Calibrate';
+            else tEl.textContent = 'Mark Slots';
+        }
+        // Режим теперь известен — ставим drag-select (template) или клик (slots/calib).
         // Делается здесь, а не в initMarkModal(), т.к. ahkLoadMark вызывается уже
         // после загрузки страницы и задаёт реальный режим.
         setupMarkMode();
@@ -1589,6 +1733,8 @@ body.modal-only .modal-foot {
                 overlay.appendChild(dot);
             }
         }
+        // Trident: перестройка innerHTML не перерисовывается без reflow
+        if (overlay) { var _r = overlay.offsetHeight; } /* reflow */
     };
 
     /* ---- Snap Modal Init ---- */

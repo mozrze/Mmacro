@@ -100,7 +100,6 @@
         sendCmd('select-map/' + (val || '__none__'));
     });
     on($('#btnSnapshot'), 'click', function () {
-        if (!state.map) return log('Select a map first!', 'warn');
         sendCmd('snapshot');
     });
     on($('#btnMark'), 'click', function () {

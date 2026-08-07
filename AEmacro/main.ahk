@@ -1045,7 +1045,16 @@ OpenMarkGui(promptText) {
     shotPath := TempShot
     StringReplace, shotPath, shotPath, \, /, All
     shotURL := "file:///" . shotPath . "?_=" . A_TickCount
-    mode := (MarkMode = "template") ? "template" : "slots"
+    ; Режим модалки: 'template' — обвод области, 'slots' — расстановка юнитов
+    ; (с попапом выбора номера), 'calib' — калибровка кнопок (просто клик-точка,
+    ; без номера юнита). Раньше calib шёл как 'slots', но с попапом номера это
+    ; сломало бы калибровку.
+    if (MarkMode = "template")
+        mode := "template"
+    else if (InStr(MarkMode, "abs_"))
+        mode := "calib"
+    else
+        mode := "slots"
     safePrompt := StrReplace(promptText, "'", "\'")
     safePrompt := StrReplace(safePrompt, """", "\""")
     PushModalData("mark")
@@ -1070,22 +1079,15 @@ SendMarkSlotsToModal() {
 
 
 ; ---- Команды mark-* из HTML-модалки ----
-; arg = "x/y" (координаты в пикселях исходного изображения 1280x720)
+; mark-click: arg = "x/y" — калибровка кнопок (abs_*). Слоты теперь идут
+; через отдельную команду mark-unit-num (номер выбирается в HTML-попапе,
+; а не системным InputBox).
 MarkClick:
     px := 0, py := 0
     StringSplit, mp, arg, /
     px := mp1
     py := mp2
-    if (MarkMode = "slots") {
-        InputBox, num, Номер юнита, Какой цифрой (1-6) ставится юнит в эту точку?, , 260, 130
-        if (ErrorLevel || num = "" || num < 1 || num > 6) {
-            AddLog("Отменено: номер юнита не указан")
-            return
-        }
-        MarkList.Push({num: num, x: px, y: py})
-        SendMarkSlotsToModal()
-    }
-    else if (MarkMode = "abs_upgrade") {
+    if (MarkMode = "abs_upgrade") {
         UpgradeX := px
         UpgradeY := py
         ModalCallJS("ahkSetMarkSlots('" px "," py ",0')")
@@ -1099,6 +1101,17 @@ MarkClick:
         RepeatStageX := px
         RepeatStageY := py
         ModalCallJS("ahkSetMarkSlots('" px "," py ",0')")
+    }
+return
+
+; ---- mark-unit-num: добавление слота (номер выбран в HTML-попапе) ----
+; arg = "x/y/n" — координаты в пикселях исходника + номер юнита 1-6
+MarkUnitNum:
+    StringSplit, un, arg, /
+    unX := un1, unY := un2, unN := un3
+    if (MarkMode = "slots") {
+        MarkList.Push({num: unN, x: unX, y: unY})
+        SendMarkSlotsToModal()
     }
 return
 
@@ -2109,6 +2122,13 @@ OpenModalWindow(name, title, w, h) {
     
     Gui, Modal:Show, x%cx% y%cy% w%w% h%h%, %title%
     
+    ; Trident (Shell.Explorer) не всегда перерисовывает DOM после показа окна —
+    ; из-за этого модалка (особенно пресеты) видна «пустой», пока курсор не наведут
+    ; на поле. Принудительный reflow + отложенный пустой execScript заставляют
+    ; движок отрисовать содержимое сразу после Show.
+    ModalCallJS("try{var _p=document.querySelector('.modal.show .modal-panel')||document.querySelector('.modal-panel');if(_p){var _r=_p.offsetHeight;}}catch(e){}")
+    ModalCallJS("0")
+    
     ; Таймер для опроса JS-команд (закрыть, свернуть, драг)
     SetTimer, PollModalClose, 20
 }
@@ -2263,6 +2283,10 @@ PollModalClose:
     }
     else if (action = "mark-undo") {
         GoSub, MarkUndo
+    }
+    else if (action = "mark-unit-num") {
+        ; arg = x/y/n — добавление слота с номером юнита (из HTML-попапа)
+        GoSub, MarkUnitNum
     }
     else if (action = "mark-done") {
         GoSub, MarkDone
