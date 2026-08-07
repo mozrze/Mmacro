@@ -820,7 +820,7 @@ body.modal-only .modal-foot {
                     <legend class="fieldset-legend">Button positions (click a card)</legend>
                     <div class="calib-grid">
                         <div class="calib-card" data-action="calibrate-upgrade"><div class="calib-card-head"><span class="calib-key">Upgrade</span><span class="calib-val" id="calibValUpgrade">—</span></div><div class="calib-preview"><svg viewBox="0 0 80 40" fill="none"><rect x="10" y="5" width="60" height="30" rx="4" stroke="currentColor" stroke-width="1" stroke-dasharray="4 3"/><text x="40" y="23" text-anchor="middle" fill="currentColor" font-size="9">Click to set</text></svg></div></div>
-                        <div class="calib-card" data-action="calibrate-startgame"><div class="calib-card-head"><span class="calib-key">Start Game</span><span class="calib-val" id="calibValStartGame">—</span></div><div class="calib-preview"><svg viewBox="0 0 80 40" fill="none"><rect x="10" y="5" width="60" height="30" rx="4" stroke="currentColor" stroke-width="1" stroke-dasharray="4 3"/><text x="40" y="23" text-anchor="middle" fill="currentColor" font-size="9">Click to set</text></svg></div></div>
+                        <div class="calib-card" data-action="calibrate-startgame"><div class="calib-card-head"><span class="calib-key">Start Game/span><span class="calib-val" id="calibValStartGame">—</span></div><div class="calib-preview"><svg viewBox="0 0 80 40" fill="none"><rect x="10" y="5" width="60" height="30" rx="4" stroke="currentColor" stroke-width="1" stroke-dasharray="4 3"/><text x="40" y="23" text-anchor="middle" fill="currentColor" font-size="9">Click to set</text></svg></div></div>
                         <div class="calib-card" data-action="calibrate-repeatstage"><div class="calib-card-head"><span class="calib-key">Repeat Stage</span><span class="calib-val" id="calibValRepeatStage">—</span></div><div class="calib-preview"><svg viewBox="0 0 80 40" fill="none"><rect x="10" y="5" width="60" height="30" rx="4" stroke="currentColor" stroke-width="1" stroke-dasharray="4 3"/><text x="40" y="23" text-anchor="middle" fill="currentColor" font-size="9">Click to set</text></svg></div></div>
                         <div class="calib-card" data-action="calibrate-autoupgrade"><div class="calib-card-head"><span class="calib-key">AutoUpgrade</span><span class="calib-val" id="calibValAutoUpgrade">—</span></div><div class="calib-preview"><svg viewBox="0 0 80 40" fill="none"><rect x="10" y="5" width="60" height="30" rx="4" stroke="currentColor" stroke-width="1" stroke-dasharray="4 3"/><text x="40" y="23" text-anchor="middle" fill="currentColor" font-size="9">Click to set</text></svg></div></div>
                     </div>
@@ -1132,11 +1132,11 @@ body.modal-only .modal-foot {
     function setFarmUI(running) {
         if (running) {
             btnFarm.className = 'btn btn-start running';
-            btnFarm.querySelector('span').textContent = 'Stop Farm';
+            btnFarm.querySelector('span').textContent = 'Stop Farm F9';
             btnFarm.querySelector('svg').innerHTML = '<rect x="4" y="3.5" width="3.5" height="9" rx="1" fill="currentColor"/><rect x="8.5" y="3.5" width="3.5" height="9" rx="1" fill="currentColor"/>';
         } else {
             btnFarm.className = 'btn btn-start';
-            btnFarm.querySelector('span').textContent = 'Start Farm';
+            btnFarm.querySelector('span').textContent = 'Start Farm F9';
             btnFarm.querySelector('svg').innerHTML = '<path d="M5 3.5 13 8l-8 4.5v-9Z"/>';
         }
     }
