@@ -75,6 +75,14 @@ StartGameCenterX := 640
 StartGameCenterY := 500
 StartGameRadius := 200
 
+; ---- автоматический реконнект при вылете/ошибке игры ----
+RejoinEnabled       := false
+RejoinShareLink     := ""   ; полная ссылка вида https://www.roblox.com/share?code=...&type=Server
+RejoinMaxAttempts   := 3
+RejoinWaitTimeout   := 40   ; сек, сколько ждать появления окна Roblox после запуска ссылки
+RejoinPostJoinDelay := 6    ; сек, пауза после появления окна перед продолжением фарма
+RejoinPostActionsDelay := 3  ; сек, пауза после выполнения Post-Rejoin действий
+
 Running := false
 Embedded := false
 GameHwnd := 0
@@ -109,8 +117,22 @@ WinDragActive := false
 WinDragStartMX := 0, WinDragStartMY := 0
 WinDragStartWX := 0, WinDragStartWY := 0
 
+; ---- запись действий после Rejoin (Post-Rejoin Actions) ----
+RejoinRecordActive := false
+RejoinActions := []          ; [{x, y, delayMs}, ...]
+RejoinRecordLastTime := 0
+RejoinRecordLastX := 0
+RejoinRecordLastY := 0
+RejoinRecordPending := false ; ждём отпускания кнопки мыши
+
 ; Drag-select шаблонов (MarkMode = "template") теперь полностью в HTML-модалке.
 ; Глобальные OnMessage-перехваты больше не используются.
+
+; ---- Горячие клавиши для записи Post-Rejoin действий ----
+; F1 — старт/стоп записи, WheelUp/Down включаются только во время записи
+Hotkey, ~WheelUp, RejoinWheelUp, Off
+Hotkey, ~WheelDown, RejoinWheelDown, Off
+Hotkey, F1, RejoinF1, On
 ; Функции OnTemplateLButtonDown/Move/Up оставлены в drag_select.ahk как запасные заглушки.
 ; =======================================================
 
@@ -141,13 +163,48 @@ htmlDir := A_ScriptDir . "\..\UI"
 Loop, %htmlDir%, 0, 0
     htmlDir := A_LoopFileLongPath
 htmlPath := htmlDir . "\index.html"
+
+; ---- Если index.html не найден по стандартному пути (A_ScriptDir\..\UI) —
+; ищем в паре других вероятных мест, чтобы не зависеть от точной структуры
+; папок на диске у конкретного пользователя.
+if !FileExist(htmlPath) {
+    altCandidates := [A_ScriptDir . "\UI\index.html"
+                     , A_ScriptDir . "\..\..\UI\index.html"
+                     , A_ScriptDir . "\index.html"]
+    for i, cand in altCandidates {
+        if FileExist(cand) {
+            SplitPath, cand, , candDir
+            htmlDir := candDir
+            htmlPath := cand
+            break
+        }
+    }
+}
+
 StringReplace, htmlPath, htmlPath, \, /, All
 htmlURL := "file:///" . htmlPath
+
+; Пишем реальный путь в файл рядом с main.ahk — чтобы сразу видеть в
+; Проводнике/блокноте, какой именно index.html макрос пытается открыть,
+; без необходимости лезть в лог приложения.
+try {
+    FileDelete, %A_ScriptDir%\_last_loaded_html_path.txt
+    FileAppend, % htmlPath . "`r`nExists: " . (FileExist(htmlPath) ? "YES" : "NO — ФАЙЛ НЕ НАЙДЕН"), %A_ScriptDir%\_last_loaded_html_path.txt
+} catch e {
+}
+
+if !FileExist(htmlPath) {
+    MsgBox, 16, index.html не найден, Не удалось найти UI\index.html.`n`nПроверенные пути:`n%htmlPath%`n`nПоложи index.html/script.js/style.css рядом с main.ahk в подпапку UI, либо смотри файл _last_loaded_html_path.txt рядом с main.ahk.
+}
 
 Gui, Add, ActiveX, x0 y0 w%SidebarTotalW% h%SidebarTotalH% vWB, Shell.Explorer
 WB.Silent := true
 ComObjConnect(WB, "WB_")
-WB.Navigate(htmlURL . "?_=" . A_TickCount)
+; Flags=12 (4+8) — navNoReadFromCache|navNoWriteToCache: заставляет IE ActiveX
+; всегда брать файл заново с диска, а не отдавать закэшированную версию
+; (это была вероятная причина, почему после замены index.html/script.js
+; в приложении продолжал грузиться старый контент).
+WB.Navigate(htmlURL . "?_=" . A_TickCount, 12)
 
 ; Ждём загрузки HTML
 WBWaitStart := A_TickCount
@@ -175,6 +232,49 @@ SetTimer, PollJSCmd, 20
 ; Отправляем начальное состояние в HTML
 SetTimer, PushStateToHTML, -300
 return
+
+; ===================== CTRL+A / CTRL+V В HTML-ПОЛЯХ =====================
+; ActiveX-контрол Shell.Explorer, встроенный в GUI, не реализует
+; IOleInPlaceFrame::TranslateAccelerator — поэтому такие комбинации, как
+; Ctrl+A (выделить всё) и Ctrl+V (вставить), в HTML-полях ввода (сайдбар,
+; модалки настроек/пресетов и т.д.) просто ничего не делают, хотя обычный
+; ввод текста работает нормально. Эмулируем эти комбинации вручную:
+; для нативных Win32-полей (Edit в Mark/InputBox и т.п.) пропускаем
+; комбинацию как есть, а для полей внутри "Internet Explorer_Server"
+; подменяем её на Home/Shift+End (выделить всё) и посимвольный ввод
+; буфера обмена (вставить).
+#If IsOurWindowActive()
+^a::HandleCtrlA()
+^v::HandleCtrlV()
+#If
+
+IsOurWindowActive() {
+    return WinActive("ahk_pid " . DllCall("GetCurrentProcessId", "uint"))
+}
+
+HandleCtrlA() {
+    ControlGetFocus, fctl, A
+    if InStr(fctl, "Internet Explorer_Server") {
+        Send, {Home}
+        Send, +{End}
+    } else {
+        Send, {Blind}^a
+    }
+}
+
+HandleCtrlV() {
+    ControlGetFocus, fctl, A
+    if InStr(fctl, "Internet Explorer_Server") {
+        if (Clipboard = "")
+            return
+        pasteText := Clipboard
+        StringReplace, pasteText, pasteText, `r`n, %A_Space%, All
+        StringReplace, pasteText, pasteText, `n, %A_Space%, All
+        SendRaw, %pasteText%
+    } else {
+        Send, {Blind}^v
+    }
+}
 
 ; ===================== ЛОГ =====================
 AddLog(msg, cls := "") {
@@ -236,7 +336,9 @@ LoadSettings() {
     global SettingsFile, ClickDelay, SlotClickDelay, UpgradeClickDelay
     global AutoClickDelay, UnitSleepDelay, StartGameDelay, HoverDelay, MouseSpeed, ImgVariation
     global StartGameColor, StartGameColorVar, StartGameCenterX, StartGameCenterY, StartGameRadius
-    global AutoUpgradePriority, AutoUpgradeUnitOffsetY
+    global AutoUpgradePriority, AutoUpgradeUnitOffsetY, AutoUpgradeEnabled
+    global RejoinEnabled, RejoinShareLink, RejoinMaxAttempts, RejoinWaitTimeout, RejoinPostJoinDelay
+    global RejoinPostActionsDelay
     if !FileExist(SettingsFile)
         return
     IniRead, v, %SettingsFile%, Delays, ClickDelay, %ClickDelay%
@@ -275,13 +377,30 @@ LoadSettings() {
     }
     IniRead, v, %SettingsFile%, AutoUpgrade, UnitOffsetY, %AutoUpgradeUnitOffsetY%
     AutoUpgradeUnitOffsetY := v
+    IniRead, v, %SettingsFile%, AutoUpgrade, Enabled, %AutoUpgradeEnabled%
+    AutoUpgradeEnabled := (v = 1 || v = "true") ? true : false
+
+    IniRead, v, %SettingsFile%, Rejoin, Enabled, %RejoinEnabled%
+    RejoinEnabled := (v = 1 || v = "true") ? true : false
+    IniRead, v, %SettingsFile%, Rejoin, ShareLink, %RejoinShareLink%
+    RejoinShareLink := (v = "ERROR") ? "" : v
+    IniRead, v, %SettingsFile%, Rejoin, MaxAttempts, %RejoinMaxAttempts%
+    RejoinMaxAttempts := v
+    IniRead, v, %SettingsFile%, Rejoin, WaitTimeout, %RejoinWaitTimeout%
+    RejoinWaitTimeout := v
+    IniRead, v, %SettingsFile%, Rejoin, PostJoinDelay, %RejoinPostJoinDelay%
+    RejoinPostJoinDelay := v
+    IniRead, v, %SettingsFile%, Rejoin, PostActionsDelay, %RejoinPostActionsDelay%
+    RejoinPostActionsDelay := v
 }
 
 SaveSettings() {
     global SettingsFile, ClickDelay, SlotClickDelay, UpgradeClickDelay
     global AutoClickDelay, UnitSleepDelay, StartGameDelay, HoverDelay, MouseSpeed, ImgVariation
     global StartGameColor, StartGameColorVar, StartGameCenterX, StartGameCenterY, StartGameRadius
-    global AutoUpgradePriority, AutoUpgradeUnitOffsetY
+    global AutoUpgradePriority, AutoUpgradeUnitOffsetY, AutoUpgradeEnabled
+    global RejoinEnabled, RejoinShareLink, RejoinMaxAttempts, RejoinWaitTimeout, RejoinPostJoinDelay
+    global RejoinPostActionsDelay
     IniWrite, %ClickDelay%, %SettingsFile%, Delays, ClickDelay
     IniWrite, %SlotClickDelay%, %SettingsFile%, Delays, SlotClickDelay
     IniWrite, %UpgradeClickDelay%, %SettingsFile%, Delays, UpgradeClickDelay
@@ -299,6 +418,14 @@ SaveSettings() {
     Loop, 6
         IniWrite, % AutoUpgradePriority[A_Index], %SettingsFile%, AutoUpgrade, Priority%A_Index%
     IniWrite, %AutoUpgradeUnitOffsetY%, %SettingsFile%, AutoUpgrade, UnitOffsetY
+    IniWrite, % (AutoUpgradeEnabled ? 1 : 0), %SettingsFile%, AutoUpgrade, Enabled
+
+    IniWrite, % (RejoinEnabled ? 1 : 0), %SettingsFile%, Rejoin, Enabled
+    IniWrite, %RejoinShareLink%, %SettingsFile%, Rejoin, ShareLink
+    IniWrite, %RejoinMaxAttempts%, %SettingsFile%, Rejoin, MaxAttempts
+    IniWrite, %RejoinWaitTimeout%, %SettingsFile%, Rejoin, WaitTimeout
+    IniWrite, %RejoinPostJoinDelay%, %SettingsFile%, Rejoin, PostJoinDelay
+    IniWrite, %RejoinPostActionsDelay%, %SettingsFile%, Rejoin, PostActionsDelay
 }
 
 ; ===================== КООРДИНАТЫ КАРТ (слоты) =====================
@@ -312,6 +439,57 @@ SafeMapName(name) {
 MapSlotsFile(mapName) {
     global MapsDir
     return MapsDir . "\" . SafeMapName(mapName) . "_slots.ini"
+}
+
+; ---- Файл с Post-Rejoin Actions для конкретной карты ----
+RejoinActionsFile(mapName) {
+    global MapsDir
+    return MapsDir . "\" . SafeMapName(mapName) . "_rejoin.ini"
+}
+
+; ---- Загрузка записанных Post-Rejoin действий для карты ----
+LoadRejoinActions(mapName) {
+    global RejoinActions
+    RejoinActions := []
+    f := RejoinActionsFile(mapName)
+    if !FileExist(f)
+        return
+    IniRead, count, %f%, Actions, Count, 0
+    if (count < 1)
+        return
+    Loop, %count% {
+        IniRead, raw, %f%, Actions, %A_Index%, -
+        if (raw = "-")
+            continue
+        if (InStr(raw, "wheel,") = 1) {
+            ; Формат: wheel,DELTA,delay
+            rest := SubStr(raw, 7)
+            StringSplit, wp, rest, `,
+            if (wp0 >= 2)
+                RejoinActions.Push({isWheel: true, delta: wp1, delay: wp2})
+        } else {
+            ; Формат: x,y,delay
+            StringSplit, parts, raw, `,
+            if (parts0 >= 3)
+                RejoinActions.Push({x: parts1, y: parts2, delay: parts3})
+        }
+    }
+}
+
+; ---- Сохранение Post-Rejoin действий для карты ----
+SaveRejoinActions(mapName) {
+    global RejoinActions
+    f := RejoinActionsFile(mapName)
+    FileDelete, %f%
+    count := RejoinActions.Length()
+    IniWrite, %count%, %f%, Actions, Count
+    Loop, %count% {
+        a := RejoinActions[A_Index]
+        if (a.isWheel)
+            IniWrite, % "wheel," . a.delta . "," . a.delay, %f%, Actions, %A_Index%
+        else
+            IniWrite, % a.x . "," . a.y . "," . a.delay, %f%, Actions, %A_Index%
+    }
 }
 
 LoadAllMapCoords() {
@@ -649,6 +827,9 @@ MapChanged:
         AddLog("Карта """ SelectedMapCtl """: " MapCoords[SelectedMapCtl].Length() " слот(ов) размечено")
     else
         AddLog("Карта """ SelectedMapCtl """ ещё НЕ размечена")
+    ; Загружаем Post-Rejoin действия для выбранной карты
+    if (SelectedMapCtl != "")
+        LoadRejoinActions(SelectedMapCtl)
 return
 
 BtnClearMap:
@@ -1163,7 +1344,7 @@ return
 
 ; ===================== НАСТРОЙКИ (диалог) =====================
 BtnSettings:
-    OpenModalWindow("settings", "Settings", 480, 530)
+    OpenModalWindow("settings", "Settings", 480, 660)
 return
 
 ; ===================== ПРЕСЕТЫ (отдельное окно) =====================
@@ -1428,6 +1609,42 @@ BtnTestAutoUpgrade:
         AddLog("Проверка: AutoUpgrade НЕ найден. Открой экран где видна кнопка AutoUpgrade.")
 return
 
+; ===================== СНЯТИЕ ШАБЛОНА ЭКРАНА DISCONNECTED =====================
+; Тот же механизм, что и Start Game — заранее заданное имя (Disconnected),
+; без запроса имени. Потом этот шаблон ищет DetectDisconnected() в WatchNextStage,
+; чтобы 100% ловить именно диалог "Disconnected / Error Code: 277", а не полагаться
+; только на исчезновение окна (диалог показывается ВНУТРИ ещё живого окна Roblox).
+BtnCaptureDisconnected:
+    if !WinExist(WinTitle) {
+        AddLog("Игра не найдена — сначала встрой Roblox")
+        return
+    }
+    CaptureForMarking(TempShot)
+    MarkMode := "template"
+    TemplateName := "Disconnected"
+    MarkList := []
+    OpenMarkGui("Дождись экрана ""Disconnected"" (Error Code: 277) и обведи слово Disconnected или Reconnect, БЕЗ лишнего фона. Отпусти — шаблон сохранится как Disconnected.bmp.")
+return
+
+BtnTestDisconnected:
+    global ImagesDir
+    full := ImagesDir . "\Disconnected.bmp"
+    if !FileExist(full)
+        full := ImagesDir . "\Disconnected.png"
+    if !FileExist(full) {
+        AddLog("Проверка: Disconnected-шаблон отсутствует в images\ — сначала сними его кнопкой «Capture Disconnected Screen».")
+        return
+    }
+    if (IsTemplateTooBig(full)) {
+        AddLog("Проверка: Disconnected-шаблон слишком большой — ImageSearch его не найдёт. Сними шаблон поменьше.")
+        return
+    }
+    if (FindGameButton(full, bx, by))
+        AddLog("Проверка: экран Disconnected найден на экране в (" bx "," by ") — детект будет работать!")
+    else
+        AddLog("Проверка: экран Disconnected НЕ найден. Открой в игре диалог Disconnected и попробуй снова.")
+return
+
 ; ===================== СТАРТ / СТОП ФАРМА =====================
 BtnStartStop:
 F9::
@@ -1518,7 +1735,7 @@ IsColorMatch(col, target, var) {
 ; Перед повторной попыткой клика уводим курсор в нейтральную точку
 ; (левый нижний угол GameArea), чтобы кнопка «отпустила» hover.
 MoveMouseAway() {
-    global GameAreaW, GameAreaH
+    global GameAreaW, GameAreaH, TS_X, TS_Y
     ToScreen(30, GameAreaH - 30)
     MouseMove, % TS_X, % TS_Y, 0
     Sleep, 400
@@ -1684,13 +1901,243 @@ DoAutoUpgradeClick:
     }
 return
 
+; ---- Таймер записи Post-Rejoin действий (опрос состояния мыши) ----
+RejoinRecordTimer:
+    if (!RejoinRecordActive)
+        return
+    MouseGetPos, mx, my
+    lDown := GetKeyState("LButton", "P")
+    if (lDown && !RejoinRecordPending) {
+        ; Нажатие — запоминаем позицию, ждём отпускания
+        RejoinRecordPending := true
+        RejoinRecordLastX := mx
+        RejoinRecordLastY := my
+    }
+    if (!lDown && RejoinRecordPending) {
+        ; Отпускание — фиксируем клик (в игровых координатах!)
+        RejoinRecordPending := false
+        delayMs := 0
+        if (RejoinRecordLastTime > 0)
+            delayMs := A_TickCount - RejoinRecordLastTime
+        ; Всегда берём origin ОКНА ROBLOX, а не сайдбара
+        gx := mx
+        gy := my
+        if (WinExist(WinTitle)) {
+            robloxHwnd := WinExist(WinTitle)
+            VarSetCapacity(pt, 8, 0)
+            NumPut(0, pt, 0, "Int"), NumPut(0, pt, 4, "Int")
+            DllCall("ClientToScreen", "ptr", robloxHwnd, "ptr", &pt)
+            gx := mx - NumGet(pt, 0, "Int")
+            gy := my - NumGet(pt, 4, "Int")
+        }
+        RejoinActions.Push({x: gx, y: gy, delay: delayMs})
+        RejoinRecordLastTime := A_TickCount
+        AddLog("RejoinAction записан: клик " gx "," gy " (задержка " delayMs " мс)")
+        PushRejoinActionCount()
+    }
+return
+
+; ---- Колёсико мыши (горячие клавиши, включаются при записи) ----
+RejoinWheelUp:
+    if (!RejoinRecordActive)
+        return
+    delayMs := 0
+    if (RejoinRecordLastTime > 0)
+        delayMs := A_TickCount - RejoinRecordLastTime
+    RejoinActions.Push({isWheel: true, delta: 120, delay: delayMs})
+    RejoinRecordLastTime := A_TickCount
+    AddLog("RejoinAction записан: колесо вверх (задержка " delayMs " мс)")
+    PushRejoinActionCount()
+return
+
+RejoinWheelDown:
+    if (!RejoinRecordActive)
+        return
+    delayMs := 0
+    if (RejoinRecordLastTime > 0)
+        delayMs := A_TickCount - RejoinRecordLastTime
+    RejoinActions.Push({isWheel: true, delta: -120, delay: delayMs})
+    RejoinRecordLastTime := A_TickCount
+    AddLog("RejoinAction записан: колесо вниз (задержка " delayMs " мс)")
+    PushRejoinActionCount()
+return
+
+; ---- Воспроизведение записанных Post-Rejoin действий ----
+PlayRejoinActions(mapName) {
+    global RejoinActions, Running, WinTitle, TS_X, TS_Y
+    LoadRejoinActions(mapName)
+    count := RejoinActions.Length()
+    if (count < 1) {
+        AddLog("RejoinActions: для карты """ mapName """ нет записанных действий")
+        return
+    }
+    AddLog("RejoinActions: воспроизвожу " count " действи(я) для """ mapName """...")
+    Loop, %count% {
+        if (!Running)
+            return
+        a := RejoinActions[A_Index]
+        if (a.delay > 0)
+            Sleep, % a.delay
+        if (!Running)
+            return
+        if (a.isWheel) {
+            notches := Abs(a.delta) // 120
+            Loop, %notches% {
+                if (a.delta > 0)
+                    MouseClick, WheelUp
+                else
+                    MouseClick, WheelDown
+                Sleep, 30
+            }
+            AddLog("RejoinAction: колесо " (a.delta > 0 ? "вверх" : "вниз") " x" notches)
+        } else {
+            ; Конвертируем игровые координаты в экранные и кликаем
+            ToScreen(a.x, a.y)
+            AddLog("RejoinAction: клик game(" a.x "," a.y ") → screen(" TS_X "," TS_Y ")")
+            SmoothClick(TS_X, TS_Y, 80)
+        }
+    }
+    AddLog("RejoinActions: воспроизведение завершено")
+}
+
+; ---- Отправка количества записанных действий в UI модалки ----
+PushRejoinActionCount() {
+    global RejoinActions, WB_Modal
+    count := RejoinActions.Length()
+    try {
+        WB_Modal.Document.parentWindow.execScript("ahkRejoinActionCount(" count ")")
+    }
+}
+
+; ---- Старт / стоп записи Post-Rejoin действий ----
+ToggleRejoinRecord:
+    global RejoinRecordActive, RejoinActions, RejoinRecordLastTime, RejoinRecordPending, SelectedMapCtl, WinTitle
+    if (SelectedMapCtl = "") {
+        AddLog("RejoinRecord: сначала выбери карту!", "warn")
+        return
+    }
+    if (RejoinRecordActive) {
+        ; Стоп записи
+        RejoinRecordActive := false
+        RejoinRecordPending := false
+        SetTimer, RejoinRecordTimer, Off
+        ; Отключаем wheel-хоткеи
+        Hotkey, ~WheelUp, Off
+        Hotkey, ~WheelDown, Off
+        SaveRejoinActions(SelectedMapCtl)
+        count := RejoinActions.Length()
+        AddLog("RejoinRecord: запись остановлена, сохранено " count " действий для """ SelectedMapCtl """")
+        PushRejoinActionCount()
+        try {
+            WB_Modal.Document.parentWindow.execScript("ahkRejoinRecordState(false)")
+        }
+    } else {
+        ; Старт записи
+        LoadRejoinActions(SelectedMapCtl)
+        RejoinRecordActive := true
+        RejoinRecordPending := false
+        RejoinRecordLastTime := A_TickCount
+        SetTimer, RejoinRecordTimer, 50
+        ; Включаем wheel-хоткеи
+        Hotkey, ~WheelUp, On
+        Hotkey, ~WheelDown, On
+        ; Активируем окно Roblox чтобы сразу кликать
+        if (WinExist(WinTitle)) {
+            WinActivate, %WinTitle%
+            WinWaitActive, %WinTitle%,, 2
+        }
+        AddLog("RejoinRecord: запись начата для """ SelectedMapCtl """ — кликай/крути в Roblox (F1 = стоп)")
+        try {
+            WB_Modal.Document.parentWindow.execScript("ahkRejoinRecordState(true)")
+        }
+    }
+return
+
+; ---- F1 — старт/стоп записи Post-Rejoin действий ----
+RejoinF1:
+    global RejoinRecordActive, SelectedMapCtl
+    if (RejoinRecordActive) {
+        GoSub, ToggleRejoinRecord
+    } else {
+        ; Проверяем что выбрана карта и роблокс на месте
+        if (SelectedMapCtl = "") {
+            AddLog("RejoinRecord: сначала выбери карту в сайдбаре!", "warn")
+            return
+        }
+        if (!WinExist(WinTitle)) {
+            AddLog("RejoinRecord: окно Roblox не найдено!", "warn")
+            return
+        }
+        GoSub, ToggleRejoinRecord
+    }
+return
+
+; ---- Тестовое воспроизведение Post-Rejoin действий ----
+TestRejoinActions:
+    global SelectedMapCtl
+    if (SelectedMapCtl = "") {
+        AddLog("RejoinTest: сначала выбери карту!", "warn")
+        return
+    }
+    AddLog("RejoinTest: воспроизвожу действия для """ SelectedMapCtl """...")
+    PlayRejoinActions(SelectedMapCtl)
+return
+
+; ---- Очистка Post-Rejoin действий для текущей карты ----
+ClearRejoinActions:
+    global SelectedMapCtl, RejoinActions
+    if (SelectedMapCtl = "") {
+        AddLog("RejoinClear: сначала выбери карту!", "warn")
+        return
+    }
+    RejoinActions := []
+    SaveRejoinActions(SelectedMapCtl)
+    AddLog("RejoinClear: действия для """ SelectedMapCtl """ удалены")
+    PushRejoinActionCount()
+return
+
 ; ---- Наблюдение за окончанием волны / победы / поражения ----
 WatchNextStage:
-    if !WinExist(WinTitle) {
+    ; Диалог Disconnected ловим ОТДЕЛЬНО от WinExist: окно Roblox зачастую
+    ; остаётся открытым, просто поверх игры висит попап с ошибкой соединения.
+    disconnected := DetectDisconnected()
+    if (disconnected || !WinExist(WinTitle)) {
+        SetTimer, WatchNextStage, Off
+        if (RejoinEnabled && RejoinShareLink != "" && Running) {
+            reason := disconnected ? "обнаружен экран Disconnected" : "окно Roblox пропало"
+            AddLog("Rejoin: " reason " — пробую автопереподключение...", "warn")
+            WBH_CallJS("ahkUpdateStatus('Reconnecting...', 'warn')")
+            if (AttemptRejoin(disconnected)) {
+                AddLog("Переподключение успешно, продолжаю фарм")
+                WBH_CallJS("ahkUpdateStatus('Reconnected, resuming...', 'running')")
+                Sleep, % RejoinPostJoinDelay * 1000
+
+                ; Если был вылет (окно пропало) и до этого роблокс был встроен —
+                ; перевстраиваем новое окно автоматически
+                if (!disconnected && Embedded) {
+                    AddLog("Rejoin: перевстраиваю новое окно Roblox...")
+                    Embedded := false   ; сбрасываем флаг, чтобы BtnEmbed сработал на встраивание
+                    Gosub, BtnEmbed
+                }
+
+                ; Воспроизводим записанные Post-Rejoin действия для текущей карты
+                if (SelectedMapCtl != "") {
+                    PlayRejoinActions(SelectedMapCtl)
+                    if (RejoinPostActionsDelay > 0) {
+                        AddLog("Rejoin: жду " RejoinPostActionsDelay " сек после действий...")
+                        Sleep, % RejoinPostActionsDelay * 1000
+                    }
+                }
+
+                if (Running)
+                    SetTimer, RunPlacementSequence, -100
+                return
+            }
+            AddLog("Переподключение не удалось за " RejoinMaxAttempts " попыток(ки)", "error")
+        }
         WBH_CallJS("ahkUpdateFarm(false)")
         WBH_CallJS("ahkUpdateStatus('Game lost', 'error')")
-        AddLog("Окно Roblox пропало, остановка")
-        SetTimer, WatchNextStage, Off
+        AddLog(disconnected ? "Экран Disconnected обнаружен, остановка" : "Окно Roblox пропало, остановка")
         Running := false
         return
     }
@@ -1723,6 +2170,129 @@ RestartFarmLoop:
     if (Running)
         SetTimer, RunPlacementSequence, -100
 return
+
+; ---- Переподключение к VIP/приватному серверу через deeplink ----
+; Два сценария, оба через roblox:// deeplink (browser-фолбэк если нет обработчика):
+;   Disconnected: роблокс жив → просто deeplink (роблокс подхватит и перезайдёт)
+;   Crash:        kill остатков → deeplink (запустит новый роблокс)
+; Ждёт появления/восстановления окна до RejoinWaitTimeout сек, повторяет
+; до RejoinMaxAttempts раз. Возвращает true при успехе.
+AttemptRejoin(isDisconnected) {
+    global WinTitle, RejoinShareLink, RejoinMaxAttempts, RejoinWaitTimeout, Running
+
+    ; Строим deeplink (и фолбэк-ссылку) из share-ссылки пользователя
+    links := BuildRejoinLinks(RejoinShareLink)
+    if (links.deeplink = "" && links.browser = "") {
+        AddLog("Rejoin: не удалось извлечь code из ссылки", "error")
+        return false
+    }
+
+    ; Проверяем, зарегистрирован ли обработчик roblox:// в системе
+    RegRead, robloxHandler, HKEY_CLASSES_ROOT, roblox\shell\open\command
+    useDeeplink := (ErrorLevel = 0 && robloxHandler != "")
+    launchURL := useDeeplink ? links.deeplink : links.browser
+    AddLog("Rejoin: " (useDeeplink ? "deeplink" : "browser") " — " launchURL)
+
+    if (isDisconnected) {
+        ; Роблокс жив, висит Disconnected — просто шлём deeplink,
+        ; живой роблокс подхватит и перезайдёт на сервер (как в RVL).
+        AddLog("Rejoin: роблокс жив (Disconnected), запускаю deeplink...")
+    } else {
+        ; Вылет — гасим остатки процесса, если висят
+        Process, Exist, RobloxPlayerBeta.exe
+        if (ErrorLevel) {
+            Process, Close, %ErrorLevel%
+            Sleep, 2000
+        }
+        AddLog("Rejoin: процесс сброшен, запускаю " (useDeeplink ? "deeplink" : "браузер") "...")
+    }
+
+    attempts := RejoinMaxAttempts
+    if (attempts < 1)
+        attempts := 1
+
+    Loop, %attempts% {
+        if (!Running)
+            return false
+        AddLog("Rejoin попытка " A_Index "/" attempts "...")
+        try {
+            Run, % launchURL
+        } catch e {
+            AddLog("Rejoin: ошибка запуска — " e.Message, "error")
+        }
+
+        waitStart := A_TickCount
+        timeoutMs := RejoinWaitTimeout * 1000
+        while (A_TickCount - waitStart < timeoutMs) {
+            if (!Running)
+                return false
+            ; Disconnected: ждём пока ИСЧЕЗНЕТ экран ошибки (роблокс жив, заходит)
+            ; Crash:        ждём пока ПОЯВИТСЯ окно роблокса
+            if (isDisconnected) {
+                if (WinExist(WinTitle) && !DetectDisconnected()) {
+                    AddLog("Rejoin: экран Disconnected пропал — игра загрузилась!")
+                    WinWaitActive, %WinTitle%,, 5
+                    return true
+                }
+            } else {
+                if (WinExist(WinTitle)) {
+                    WinWaitActive, %WinTitle%,, 5
+                    return true
+                }
+            }
+            Sleep, 500
+        }
+        AddLog("Rejoin попытка " A_Index ": не дождались за " RejoinWaitTimeout " сек")
+
+        ; Если deeplink не сработал — пробуем браузерный фолбэк
+        if (useDeeplink && links.browser != "" && A_Index = 1) {
+            AddLog("Rejoin: deeplink не дал результата, пробую браузер...")
+            launchURL := links.browser
+            useDeeplink := false
+        }
+        Sleep, 1500
+    }
+    return false
+}
+
+; ---- Строим deeplink и браузерную ссылку из share-ссылки ----
+; Вход:  https://www.roblox.com/share?code=ABC123&type=Server
+; Выход: { deeplink: "roblox://navigation/share_links?code=ABC123&type=Server",
+;           browser:  "https://www.roblox.com/share?code=ABC123&type=Server" }
+BuildRejoinLinks(url) {
+    result := { deeplink: "", browser: "" }
+
+    ; Извлекаем полный code (включая &type=Server если есть)
+    code := ""
+    qPos := InStr(url, "?")
+    if (qPos) {
+        query := SubStr(url, qPos + 1)
+        codePos := InStr(query, "code=")
+        if (codePos) {
+            code := SubStr(query, codePos + 5)  ; всё после "code="
+        }
+    }
+    if (code = "") {
+        ; Может быть пользователь вставил просто код (без URL)
+        if (InStr(url, "&type=Server") || InStr(url, "&type=server"))
+            code := url
+        else if (RegExMatch(url, "^[A-Za-z0-9]{20,}$"))
+            code := url . "&type=Server"
+        else
+            return result
+    }
+
+    ; Deeplink: roblox://navigation/share_links?code=КОД
+    result.deeplink := "roblox://navigation/share_links?code=" . code
+
+    ; Браузерный фолбэк
+    if (InStr(url, "https://") = 1 || InStr(url, "http://") = 1)
+        result.browser := url
+    else
+        result.browser := "https://www.roblox.com/share?code=" . code
+
+    return result
+}
 
 ; ---- Проверка: шаблон слишком большой для быстрого ImageSearch ----
 ; ImageSearch по шаблону > 300x300 в области 1280x720 занимает секунды
@@ -1800,6 +2370,32 @@ DetectVictory() {
             if (!WarnedVictory) {
                 WarnedVictory := true
                 AddLog("Victory-шаблон слишком большой — ImageSearch вешает макрос. Сними маленький шаблон (Калибровка → Снять шаблон, имя Victory).")
+            }
+            return false
+        }
+        if (FindGameButton(full, bx, by))
+            return true
+    }
+    return false
+}
+
+; ---- Детект диалога "Disconnected" (Error Code: 277 и т.п.) ----
+; Использует шаблон Disconnected.bmp/png, снятый через "Capture Disconnected Screen".
+; В отличие от WinExist(WinTitle) это ловит разрыв соединения даже если сам
+; процесс/окно Roblox остаётся открытым (просто показывает диалог поверх игры).
+DetectDisconnected() {
+    global Embedded, ImagesDir
+    if (!Embedded)
+        return false
+    full := ImagesDir . "\Disconnected.bmp"
+    if !FileExist(full)
+        full := ImagesDir . "\Disconnected.png"
+    if (FileExist(full)) {
+        if (IsTemplateTooBig(full)) {
+            global WarnedDisconnected
+            if (!WarnedDisconnected) {
+                WarnedDisconnected := true
+                AddLog("Disconnected-шаблон слишком большой — ImageSearch вешает макрос. Сними шаблон поменьше.")
             }
             return false
         }
@@ -1952,7 +2548,7 @@ ProcessJSCmd(cmd) {
         return
     }
     if (action = "settings") {
-        OpenModalWindow("settings", "Settings", 480, 530)
+        OpenModalWindow("settings", "Settings", 480, 660)
         return
     }
     if (action = "presets") {
@@ -2101,7 +2697,7 @@ OpenModalWindow(name, title, w, h) {
     Gui, Modal:Add, ActiveX, x0 y0 w%w% h%h% vWB_Modal, Shell.Explorer
     WB_Modal.Silent := true
     navURL := htmlURL . "?_=" . A_TickCount . "#" . name
-    WB_Modal.Navigate(navURL)
+    WB_Modal.Navigate(navURL, 12)
     
     ; Ждём загрузки
     waitStart := A_TickCount
@@ -2128,6 +2724,13 @@ OpenModalWindow(name, title, w, h) {
     ; движок отрисовать содержимое сразу после Show.
     ModalCallJS("try{var _p=document.querySelector('.modal.show .modal-panel')||document.querySelector('.modal-panel');if(_p){var _r=_p.offsetHeight;}}catch(e){}")
     ModalCallJS("0")
+
+    ; Повторный пуш данных на случай, если при первом PushModalData JS-обработчики
+    ; (window.ahkLoadSettings и т.п.) ещё не были готовы — такое бывает, когда
+    ; document.readyState уже "complete", а скрипты в самом низу страницы
+    ; выполнились на пару кадров позже. Без этого повторного пуша поля в
+    ; модалке выглядят как "сброшенные" на дефолт.
+    PushModalData(name)
     
     ; Таймер для опроса JS-команд (закрыть, свернуть, драг)
     SetTimer, PollModalClose, 20
@@ -2258,6 +2861,31 @@ PollModalClose:
         ModalHwnd := 0
         GoSub, BtnCaptureAutoUpgrade
     }
+    else if (action = "capture-disconnected") {
+        ; Снятие шаблона экрана Disconnected (для авто-реконнекта)
+        AddLog("Команда: Capture Disconnected получена")
+        SetTimer, PollModalClose, Off
+        Gui, Modal:Destroy
+        ModalHwnd := 0
+        GoSub, BtnCaptureDisconnected
+    }
+    else if (action = "test-disconnected") {
+        ; Проверка детекта экрана Disconnected (модалку не закрываем)
+        AddLog("Команда: Test Disconnected получена")
+        GoSub, BtnTestDisconnected
+    }
+    else if (action = "record-rejoin") {
+        ; Старт/стоп записи Post-Rejoin действий
+        GoSub, ToggleRejoinRecord
+    }
+    else if (action = "test-rejoin") {
+        ; Тестовое воспроизведение записанных действий
+        GoSub, TestRejoinActions
+    }
+    else if (action = "clear-rejoin") {
+        ; Очистка записанных действий для текущей карты
+        GoSub, ClearRejoinActions
+    }
     else if (action = "test-autoupgrade") {
         ; Проверка детекта AutoUpgrade (модалку не закрываем)
         GoSub, BtnTestAutoUpgrade
@@ -2326,12 +2954,22 @@ PushModalData(name) {
     global
     if (name = "settings") {
         colorHex := SubStr(StartGameColor, 3)  ; убираем "0x"
+        rjLink := StrReplace(RejoinShareLink, "\", "\\")
+        rjLink := StrReplace(rjLink, "'", "\'")
         ModalCallJS("ahkLoadSettings("
             . ClickDelay . "," . SlotClickDelay . "," . UpgradeClickDelay . ","
             . AutoClickDelay . "," . UnitSleepDelay . "," . StartGameDelay . ","
             . HoverDelay . "," . MouseSpeed . "," . ImgVariation . ",'"
             . colorHex . "'," . StartGameColorVar . ","
-            . StartGameCenterX . "," . StartGameCenterY . "," . StartGameRadius . ")")
+            . StartGameCenterX . "," . StartGameCenterY . "," . StartGameRadius . ","
+            . (RejoinEnabled ? 1 : 0) . ",'" . rjLink . "',"
+            . RejoinMaxAttempts . "," . RejoinWaitTimeout . "," . RejoinPostJoinDelay . ","
+            . RejoinPostActionsDelay . ")")
+        AddLog("Settings пушнуты в модалку (Rejoin: " (RejoinEnabled ? "on" : "off") ", link len=" StrLen(RejoinShareLink) ")")
+        ; Также пушим количество записанных Post-Rejoin действий
+        count := RejoinActions.Length()
+        ModalCallJS("ahkRejoinActionCount(" count ")")
+        ModalCallJS("ahkRejoinRecordState(" (RejoinRecordActive ? "true" : "false") ")")
     }
     else if (name = "presets") {
         ; Собираем список пресетов из presets.ini
@@ -2374,8 +3012,9 @@ PushModalData(name) {
 
 ; ---- Сохранение настроек из модального окна Settings ----
 ModalSaveSettings:
-    ; arg = clickDelay/slotClickDelay/upgradeClickDelay/autoClickDelay/unitSleepDelay/startGameDelay/hoverDelay/mouseSpeed/imgVariation/startGameColor/startGameColorVar/startGameCenterX/startGameCenterY/startGameRadius
+    ; arg = clickDelay/slotClickDelay/upgradeClickDelay/autoClickDelay/unitSleepDelay/startGameDelay/hoverDelay/mouseSpeed/imgVariation/startGameColor/startGameColorVar/startGameCenterX/startGameCenterY/startGameRadius/rejoinEnabled/rejoinShareLink(urlencoded)/rejoinMaxAttempts/rejoinWaitTimeout/rejoinPostJoinDelay
     StringSplit, vals, arg, /
+    AddLog("Команда: Save Settings получена (полей: " vals0 ")")
     if (vals0 < 14)
         return
     ClickDelay        := vals1
@@ -2392,6 +3031,16 @@ ModalSaveSettings:
     StartGameCenterX  := vals12
     StartGameCenterY  := vals13
     StartGameRadius   := vals14
+    if (vals0 >= 19) {
+        RejoinEnabled       := (vals15 = "1") ? true : false
+        RejoinShareLink     := UriDecode(vals16)
+        RejoinMaxAttempts   := vals17
+        RejoinWaitTimeout   := vals18
+        RejoinPostJoinDelay := vals19
+    }
+    if (vals0 >= 20) {
+        RejoinPostActionsDelay := vals20
+    }
     SaveSettings()
     AddLog("Settings saved from modal")
 return

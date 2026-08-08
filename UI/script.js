@@ -194,6 +194,11 @@
         setFarmUI(running);
     };
 
+    window.ahkUpdateAutoUpgrade = function (enabled) {
+        var cb = document.getElementById('chkAutoUpgrade');
+        if (cb) cb.checked = (enabled === true || enabled === 'true' || enabled == '1');
+    };
+
     window.ahkUpdateCoords = function (up, st, rp, au) {
         var items = $$('.coord-val');
         var vals = [up, st, rp, au];
@@ -333,7 +338,13 @@
                 $('#setStartGameColorVar').value,
                 $('#setStartGameCenterX').value,
                 $('#setStartGameCenterY').value,
-                $('#setStartGameRadius').value
+                $('#setStartGameRadius').value,
+                $('#setRejoinEnabled').checked ? '1' : '0',
+                encodeURIComponent($('#setRejoinShareLink').value || ''),
+                $('#setRejoinMaxAttempts').value,
+                $('#setRejoinWaitTimeout').value,
+                $('#setRejoinPostJoinDelay').value,
+                $('#setRejoinPostActionsDelay').value
             ];
             window.ahkCmd = 'settings-save/' + vals.join('/');
         });
@@ -349,8 +360,56 @@
                     picker.value = '#' + text.value;
             });
         }
+        // Auto-Rejoin: capture / test Disconnected screen template
+        var btnCapDc = document.getElementById('btnCaptureDisconnected');
+        if (btnCapDc) on(btnCapDc, 'click', function () {
+            window.ahkCmd = 'capture-disconnected';
+        });
+        var btnTestDc = document.getElementById('btnTestDisconnected');
+        if (btnTestDc) on(btnTestDc, 'click', function () {
+            window.ahkCmd = 'test-disconnected';
+        });
+        // Rejoin help guide toggle
+        var btnHelp = document.getElementById('btnRejoinHelp');
+        var guideEl = document.getElementById('rejoinGuide');
+        if (btnHelp && guideEl) {
+            on(btnHelp, 'click', function () {
+                if (guideEl.style.display === 'none' || guideEl.style.display === '') {
+                    guideEl.style.display = 'block';
+                    btnHelp.textContent = '×';
+                    btnHelp.style.background = '#ef4444';
+                    btnHelp.style.borderColor = '#ef4444';
+                } else {
+                    guideEl.style.display = 'none';
+                    btnHelp.textContent = '?';
+                    btnHelp.style.background = '#2a2a2a';
+                    btnHelp.style.borderColor = '#3a3a3a';
+                }
+            });
+            var btnGuideClose = document.getElementById('rejoinGuideClose');
+            if (btnGuideClose) on(btnGuideClose, 'click', function () {
+                guideEl.style.display = 'none';
+                btnHelp.textContent = '?';
+                btnHelp.style.background = '#2a2a2a';
+                btnHelp.style.borderColor = '#3a3a3a';
+            });
+        }
+        // Post-Rejoin Actions: Record / Test / Clear
+        var btnRec = document.getElementById('btnRejoinRecord');
+        if (btnRec) on(btnRec, 'click', function () {
+            window.ahkCmd = 'record-rejoin';
+        });
+        var btnTest2 = document.getElementById('btnRejoinTest');
+        if (btnTest2) on(btnTest2, 'click', function () {
+            window.ahkCmd = 'test-rejoin';
+        });
+        var btnClear2 = document.getElementById('btnRejoinClear');
+        if (btnClear2) on(btnClear2, 'click', function () {
+            window.ahkCmd = 'clear-rejoin';
+        });
     }
-    window.ahkLoadSettings = function(cd, scd, ucd, acd, usd, sgd, hd, ms, iv, sgc, sgcv, sgcx, sgcy, sgr) {
+    window.ahkLoadSettings = function(cd, scd, ucd, acd, usd, sgd, hd, ms, iv, sgc, sgcv, sgcx, sgcy, sgr,
+                                       rjEnabled, rjLink, rjMaxAttempts, rjWaitTimeout, rjPostJoinDelay, rjPostActionsDelay) {
         var set = function(id, v) { var el = $(id); if (el) el.value = v; };
         set('#setClickDelay', cd); set('#setSlotClickDelay', scd);
         set('#setUpgradeClickDelay', ucd); set('#setAutoClickDelay', acd);
@@ -364,6 +423,13 @@
         set('#setStartGameColorVar', sgcv);
         set('#setStartGameCenterX', sgcx); set('#setStartGameCenterY', sgcy);
         set('#setStartGameRadius', sgr);
+        var rjChk = $('#setRejoinEnabled');
+        if (rjChk) rjChk.checked = (rjEnabled == '1' || rjEnabled === true);
+        set('#setRejoinShareLink', rjLink || '');
+        set('#setRejoinMaxAttempts', rjMaxAttempts);
+        set('#setRejoinWaitTimeout', rjWaitTimeout);
+        set('#setRejoinPostJoinDelay', rjPostJoinDelay);
+        set('#setRejoinPostActionsDelay', rjPostActionsDelay || '3');
     };
 
     /* ---- Presets Modal Init ---- */
@@ -471,8 +537,24 @@
         if (offEl) offEl.value = offset || '20';
     };
 
+    /* ---- Post-Rejoin Actions bridge (called from AHK via PushModalData / execScript) ---- */
+    window.ahkRejoinActionCount = function (count) {
+        var el = document.getElementById('rejoinActionCount');
+        if (el) {
+            el.textContent = count + ' action' + (count !== 1 ? 's' : '');
+        }
+    };
+    window.ahkRejoinRecordState = function (active) {
+        var btn = document.getElementById('btnRejoinRecord');
+        if (btn) {
+            btn.textContent = active ? 'Stop' : 'Record';
+            btn.style.background = active ? '#ef4444' : '';
+            btn.style.borderColor = active ? '#ef4444' : '';
+        }
+    };
+
     /* ---- Init ---- */
-    log('TD Macro v1.0 ready.');
+    log('TD Macro v1.0 ready. [build: rejoin-fix-3-nocache]');
 
     /* ---- Auto-show modal if URL has hash ---- */
     (function () {

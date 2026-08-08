@@ -349,7 +349,37 @@ html, body {
 .fieldset-legend {
     font-size: 11px; text-transform: uppercase; letter-spacing: 1px;
     color: #999; font-weight: 600; padding: 0 6px;
+    display: -ms-flexbox; display: flex; -ms-flex-align: center; align-items: center; gap: 8px;
 }
+
+/* ---- Rejoin help button and guide ---- */
+.btn-help-inline {
+    display: -ms-inline-flexbox; display: inline-flex;
+    -ms-flex-align: center; align-items: center; -ms-flex-pack: center; justify-content: center;
+    width: 18px; height: 18px; border-radius: 50%;
+    background: #2a2a2a; border: 1px solid #3a3a3a;
+    color: #888; font-size: 11px; font-weight: 700; cursor: pointer;
+    line-height: 1; padding: 0;
+}
+.btn-help-inline:hover { background: #3b82f6; border-color: #3b82f6; color: #fff; }
+
+.rejoin-guide {
+    margin-top: 10px; background: #1a1a1a; border: 1px solid #333;
+    border-radius: 8px; padding: 10px 12px;
+}
+.rejoin-guide-inner { }
+.rejoin-guide-head {
+    display: -ms-flexbox; display: flex; -ms-flex-align: center; align-items: center;
+    -ms-flex-pack: justify; justify-content: space-between;
+    margin-bottom: 8px; color: #ccc; font-size: 12px;
+}
+.rejoin-guide-body { font-size: 11px; color: #999; line-height: 1.6; }
+.rejoin-guide-body p { margin: 4px 0; }
+.rejoin-guide-body code {
+    background: #252525; padding: 1px 5px; border-radius: 3px;
+    font-family: 'Consolas', monospace; font-size: 10px; color: #ccc; word-break: break-all;
+}
+.rejoin-guide-body b { color: #ccc; }
 
 /* ---- Form Grid ---- */
 .form-grid { display: -ms-flexbox; display: flex; -ms-flex-wrap: wrap; flex-wrap: wrap; }
@@ -760,6 +790,55 @@ body.modal-only .modal-foot {
                         <div class="field"><label class="field-label">Color Var</label><input type="number" class="input" id="setStartGameColorVar" value="30"></div>
                     </div>
                 </fieldset>
+                <fieldset class="fieldset">
+                    <legend class="fieldset-legend">
+                        Auto-Rejoin (on crash/error)
+                        <button class="btn-help-inline" id="btnRejoinHelp" title="How to get VIP share link">?</button>
+                    </legend>
+                    <label class="check-label" style="margin-bottom:10px">
+                        <input type="checkbox" id="setRejoinEnabled" class="check">
+                        <span class="check-custom"></span>
+                        <span>Enabled</span>
+                    </label>
+                    <div class="form-grid">
+                        <div class="field" style="grid-column: span 2;">
+                            <label class="field-label">VIP Share Link</label>
+                            <input type="text" class="input" id="setRejoinShareLink" placeholder="https://www.roblox.com/share?code=...&amp;type=Server">
+                        </div>
+                        <div class="field"><label class="field-label">Max Attempts</label><input type="number" class="input" id="setRejoinMaxAttempts" value="3" min="1" max="10"></div>
+                        <div class="field"><label class="field-label">Wait Timeout (s)</label><input type="number" class="input" id="setRejoinWaitTimeout" value="40" min="5"></div>
+                        <div class="field"><label class="field-label">Resume Delay (s)</label><input type="number" class="input" id="setRejoinPostJoinDelay" value="6" min="0"></div>
+                        <div class="field"><label class="field-label">Post-Actions Delay (s)</label><input type="number" class="input" id="setRejoinPostActionsDelay" value="3" min="0"></div>
+                    </div>
+                    <div class="row" style="margin-top:10px; gap:8px; flex-wrap:wrap;">
+                        <button class="btn btn-primary btn-sm" id="btnCaptureDisconnected">Capture Disconnected</button>
+                        <button class="btn btn-ghost btn-sm" id="btnTestDisconnected">Test Detection</button>
+                    </div>
+                    <div class="rejoin-actions-row" style="margin-top:8px;">
+                        <span class="field-label" style="display:inline; margin-right:6px;">Post-Rejoin:</span>
+                        <button class="btn btn-primary btn-sm" id="btnRejoinRecord">Record</button>
+                        <button class="btn btn-ghost btn-sm" id="btnRejoinTest">Test</button>
+                        <button class="btn btn-ghost btn-sm" id="btnRejoinClear">Clear</button>
+                        <span class="rejoin-action-count" id="rejoinActionCount" style="color:#666; font-size:10px; margin-left:6px;">0 actions</span>
+                    </div>
+                </fieldset>
+
+                <!-- Rejoin Guide popup -->
+                <div class="rejoin-guide" id="rejoinGuide" style="display:none">
+                    <div class="rejoin-guide-inner">
+                        <div class="rejoin-guide-head">
+                            <strong>How to get VIP Share Link</strong>
+                            <button class="modal-btn modal-cls" id="rejoinGuideClose">&times;</button>
+                        </div>
+                        <div class="rejoin-guide-body">
+                            <p><b>1.</b> Open Roblox → game page → <b>⋮</b> (three dots) → <b>Configure Private Servers</b></p>
+                            <p><b>2.</b> Click <b>Regenerate</b> to create a new link (or use existing one)</p>
+                            <p><b>3.</b> Copy the full link — it looks like:<br><code>https://www.roblox.com/share?code=abc123...&amp;type=Server</code></p>
+                            <p><b>4.</b> Paste it into the <b>VIP Share Link</b> field above</p>
+                            <p><b>5.</b> Check <b>Enabled</b> and click <b>Save</b></p>
+                        </div>
+                    </div>
+                </div>
             </div>
             <div class="modal-foot">
                 <button class="btn btn-ghost btn-sm" data-close>Cancel</button>
@@ -1202,10 +1281,15 @@ body.modal-only .modal-foot {
         }
     };
 
-    window.ahkUpdateFarm = function (running) {
-        state.farming = running;
-        setFarmUI(running);
-    };
+window.ahkUpdateFarm = function (running) {
+	        state.farming = running;
+	        setFarmUI(running);
+	    };
+
+	    window.ahkUpdateAutoUpgrade = function (enabled) {
+	        var cb = document.getElementById('chkAutoUpgrade');
+	        if (cb) cb.checked = (enabled === true || enabled === 'true' || enabled == '1');
+	    };
 
     window.ahkUpdateCoords = function (up, st, rp, au) {
         var items = $$('.coord-val');
@@ -1344,55 +1428,116 @@ body.modal-only .modal-foot {
     };
 
     /* ---- Settings Modal Init ---- */
-    function initSettingsModal(m) {
-        var btnSave = document.getElementById('btnSettingsSave');
-        if (btnSave) on(btnSave, 'click', function () {
-            var vals = [
-                $('#setClickDelay').value,
-                $('#setSlotClickDelay').value,
-                $('#setUpgradeClickDelay').value,
-                $('#setAutoClickDelay').value,
-                $('#setUnitSleepDelay').value,
-                $('#setStartGameDelay').value,
-                $('#setHoverDelay').value,
-                $('#setMouseSpeed').value,
-                $('#setImgVariation').value,
-                $('#setStartGameColor').value,
-                $('#setStartGameColorVar').value,
-                $('#setStartGameCenterX').value,
-                $('#setStartGameCenterY').value,
-                $('#setStartGameRadius').value
-            ];
-            window.ahkCmd = 'settings-save/' + vals.join('/');
+function initSettingsModal(m) {
+	        var btnSave = document.getElementById('btnSettingsSave');
+	        if (btnSave) on(btnSave, 'click', function () {
+	            var vals = [
+	                $('#setClickDelay').value,
+	                $('#setSlotClickDelay').value,
+	                $('#setUpgradeClickDelay').value,
+	                $('#setAutoClickDelay').value,
+	                $('#setUnitSleepDelay').value,
+	                $('#setStartGameDelay').value,
+	                $('#setHoverDelay').value,
+	                $('#setMouseSpeed').value,
+	                $('#setImgVariation').value,
+	                $('#setStartGameColor').value,
+	                $('#setStartGameColorVar').value,
+	                $('#setStartGameCenterX').value,
+	                $('#setStartGameCenterY').value,
+	                $('#setStartGameRadius').value,
+	                $('#setRejoinEnabled').checked ? '1' : '0',
+	                encodeURIComponent($('#setRejoinShareLink').value || ''),
+	                $('#setRejoinMaxAttempts').value,
+$('#setRejoinWaitTimeout').value,
+		                $('#setRejoinPostJoinDelay').value,
+		                $('#setRejoinPostActionsDelay').value
+	            ];
+	            window.ahkCmd = 'settings-save/' + vals.join('/');
+	        });
+	        // Sync color picker <-> text
+	        var picker = $('#setStartGameColorPicker');
+	        var text = $('#setStartGameColor');
+	        if (picker && text) {
+	            on(picker, 'input', function () {
+	                text.value = picker.value.replace('#', '');
+	            });
+	            on(text, 'input', function () {
+	                if (/^[0-9A-Fa-f]{6}$/.test(text.value))
+	                    picker.value = '#' + text.value;
+	            });
+	        }
+	        // Auto-Rejoin: capture / test Disconnected screen template
+	        var btnCapDc = document.getElementById('btnCaptureDisconnected');
+	        if (btnCapDc) on(btnCapDc, 'click', function () {
+	            window.ahkCmd = 'capture-disconnected';
+	        });
+var btnTestDc = document.getElementById('btnTestDisconnected');
+        if (btnTestDc) on(btnTestDc, 'click', function () {
+            window.ahkCmd = 'test-disconnected';
         });
-        // Sync color picker <-> text
-        var picker = $('#setStartGameColorPicker');
-        var text = $('#setStartGameColor');
-        if (picker && text) {
-            on(picker, 'input', function () {
-                text.value = picker.value.replace('#', '');
+        // Rejoin help guide toggle
+        var btnHelp = document.getElementById('btnRejoinHelp');
+        var guideEl = document.getElementById('rejoinGuide');
+        if (btnHelp && guideEl) {
+            on(btnHelp, 'click', function () {
+                if (guideEl.style.display === 'none' || guideEl.style.display === '') {
+                    guideEl.style.display = 'block';
+                    btnHelp.textContent = '×';
+                    btnHelp.style.background = '#ef4444';
+                    btnHelp.style.borderColor = '#ef4444';
+                } else {
+                    guideEl.style.display = 'none';
+                    btnHelp.textContent = '?';
+                    btnHelp.style.background = '#2a2a2a';
+                    btnHelp.style.borderColor = '#3a3a3a';
+                }
             });
-            on(text, 'input', function () {
-                if (/^[0-9A-Fa-f]{6}$/.test(text.value))
-                    picker.value = '#' + text.value;
+            var btnGuideClose = document.getElementById('rejoinGuideClose');
+            if (btnGuideClose) on(btnGuideClose, 'click', function () {
+                guideEl.style.display = 'none';
+                btnHelp.textContent = '?';
+                btnHelp.style.background = '#2a2a2a';
+                btnHelp.style.borderColor = '#3a3a3a';
             });
         }
+        // Post-Rejoin Actions: Record / Test / Clear
+        var btnRec = document.getElementById('btnRejoinRecord');
+        if (btnRec) on(btnRec, 'click', function () {
+            window.ahkCmd = 'record-rejoin';
+        });
+        var btnTest2 = document.getElementById('btnRejoinTest');
+        if (btnTest2) on(btnTest2, 'click', function () {
+            window.ahkCmd = 'test-rejoin';
+        });
+        var btnClear2 = document.getElementById('btnRejoinClear');
+        if (btnClear2) on(btnClear2, 'click', function () {
+            window.ahkCmd = 'clear-rejoin';
+        });
     }
-    window.ahkLoadSettings = function(cd, scd, ucd, acd, usd, sgd, hd, ms, iv, sgc, sgcv, sgcx, sgcy, sgr) {
-        var set = function(id, v) { var el = $(id); if (el) el.value = v; };
-        set('#setClickDelay', cd); set('#setSlotClickDelay', scd);
-        set('#setUpgradeClickDelay', ucd); set('#setAutoClickDelay', acd);
-        set('#setUnitSleepDelay', usd); set('#setStartGameDelay', sgd);
-        set('#setHoverDelay', hd); set('#setMouseSpeed', ms);
-        set('#setImgVariation', iv);
-        var colorHex = (sgc || '').replace('0x', '');
-        set('#setStartGameColor', colorHex);
-        var picker = $('#setStartGameColorPicker');
-        if (picker && colorHex) picker.value = '#' + colorHex;
-        set('#setStartGameColorVar', sgcv);
-        set('#setStartGameCenterX', sgcx); set('#setStartGameCenterY', sgcy);
-        set('#setStartGameRadius', sgr);
-    };
+window.ahkLoadSettings = function(cd, scd, ucd, acd, usd, sgd, hd, ms, iv, sgc, sgcv, sgcx, sgcy, sgr,
+	                                       rjEnabled, rjLink, rjMaxAttempts, rjWaitTimeout, rjPostJoinDelay, rjPostActionsDelay) {
+	        var set = function(id, v) { var el = $(id); if (el) el.value = v; };
+	        set('#setClickDelay', cd); set('#setSlotClickDelay', scd);
+	        set('#setUpgradeClickDelay', ucd); set('#setAutoClickDelay', acd);
+	        set('#setUnitSleepDelay', usd); set('#setStartGameDelay', sgd);
+	        set('#setHoverDelay', hd); set('#setMouseSpeed', ms);
+	        set('#setImgVariation', iv);
+	        var colorHex = (sgc || '').replace('0x', '');
+	        set('#setStartGameColor', colorHex);
+	        var picker = $('#setStartGameColorPicker');
+	        if (picker && colorHex) picker.value = '#' + colorHex;
+	        set('#setStartGameColorVar', sgcv);
+	        set('#setStartGameCenterX', sgcx); set('#setStartGameCenterY', sgcy);
+	        set('#setStartGameRadius', sgr);
+	        var rjChk = $('#setRejoinEnabled');
+	        if (rjChk) rjChk.checked = (rjEnabled == '1' || rjEnabled === true);
+	        set('#setRejoinShareLink', rjLink || '');
+	        set('#setRejoinMaxAttempts', rjMaxAttempts);
+	        set('#setRejoinWaitTimeout', rjWaitTimeout);
+	        set('#setRejoinPostJoinDelay', rjPostJoinDelay);
+	        set('#setRejoinPostActionsDelay', rjPostActionsDelay || '3');
+	    };
 
     /* ---- Presets Modal Init ---- */
     function initPresetsModal(m) {
@@ -1504,6 +1649,22 @@ body.modal-only .modal-foot {
         }
         var offEl = $('#upgYOffset');
         if (offEl) offEl.value = offset || '20';
+    };
+
+    /* ---- Post-Rejoin Actions bridge (called from AHK via PushModalData / execScript) ---- */
+    window.ahkRejoinActionCount = function (count) {
+        var el = document.getElementById('rejoinActionCount');
+        if (el) {
+            el.textContent = count + ' action' + (count !== 1 ? 's' : '');
+        }
+    };
+    window.ahkRejoinRecordState = function (active) {
+        var btn = document.getElementById('btnRejoinRecord');
+        if (btn) {
+            btn.textContent = active ? 'Stop' : 'Record';
+            btn.style.background = active ? '#ef4444' : '';
+            btn.style.borderColor = active ? '#ef4444' : '';
+        }
     };
 
     /* ---- Mark Modal Init (slot marking + template drag-select) ---- */
