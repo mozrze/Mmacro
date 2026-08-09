@@ -43,7 +43,7 @@ PresetsIni := A_ScriptDir . "\ahk\presets.ini"
 TempShot := A_ScriptDir . "\_preview.bmp"
 
 ; ---- Автообновление с GitHub ----
-CURRENT_VERSION := "1.0.2"
+CURRENT_VERSION := "1.0.1"
 GH_REPO := "Miver/Mmacro"           ; пользователь/репозиторий
 GH_TOKEN_FILE := A_ScriptDir . "\ahk\token.ini"
 GH_TOKEN := ""
@@ -3216,7 +3216,7 @@ CheckForUpdate:
         }
         if (status != 200) {
             AddLog("Update: GitHub API вернул статус " status, "error")
-            WBH_CallJS("ahkUpdateVersion('ERR' status, false)")
+            WBH_CallJS("ahkUpdateVersion('ERR " status "', false)")
             return
         }
     } catch e {
@@ -3330,7 +3330,7 @@ CheckUpdateNoAuth:
         }
     } catch e {
         AddLog("Update (no-auth): ошибка — " e.Message, "error")
-        WBH_CallJS("ahkUpdateVersion('ERR')", false)
+        WBH_CallJS("ahkUpdateVersion('ERR')")
     }
 return
 
