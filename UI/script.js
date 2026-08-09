@@ -564,6 +564,41 @@
         if (btn) btn.className = 'hdr-btn hdr-update';
     };
 
+    /* ---- Update confirm modal (called from AHK instead of native MsgBox) ---- */
+    window.ahkUpdateAvailable = function (oldVersion, newVersion) {
+        var oldEl = document.getElementById('umOldVersion');
+        var newEl = document.getElementById('umNewVersion');
+        var modal = document.getElementById('modal-update-confirm');
+        if (oldEl) oldEl.textContent = 'v' + oldVersion;
+        if (newEl) newEl.textContent = 'v' + newVersion;
+        if (modal) modal.className = 'modal update-modal show';
+        var overlay = document.getElementById('overlay');
+        if (overlay) overlay.className = 'overlay show';
+    };
+    (function () {
+        var modal = document.getElementById('modal-update-confirm');
+        var overlay = document.getElementById('overlay');
+        function closeUpdateModal() {
+            if (modal) modal.className = 'modal update-modal';
+            if (overlay) overlay.className = 'overlay';
+        }
+        var btnNow = document.getElementById('btnUpdateNow');
+        var btnLater = document.getElementById('btnUpdateLater');
+        var btnClose = document.getElementById('btnUpdateConfirmClose');
+        if (btnNow) on(btnNow, 'click', function () {
+            window.ahkCmd = 'confirm-update';
+            closeUpdateModal();
+        });
+        if (btnLater) on(btnLater, 'click', function () {
+            window.ahkCmd = 'cancel-update';
+            closeUpdateModal();
+        });
+        if (btnClose) on(btnClose, 'click', function () {
+            window.ahkCmd = 'cancel-update';
+            closeUpdateModal();
+        });
+    })();
+
     /* ---- Init ---- */
     log('TD Macro v1.0 ready. [build: rejoin-fix-3-nocache]');
 

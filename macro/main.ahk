@@ -49,6 +49,7 @@ GH_TOKEN_FILE := A_ScriptDir . "\ahk\token.ini"
 GH_TOKEN := ""
 IniRead, GH_TOKEN, %GH_TOKEN_FILE%, GitHub, Token, ""
 GH_API_URL := "https://api.github.com/repos/" . GH_REPO . "/releases/latest"
+PendingUpdateURL := ""
 IfNotExist, %MapsDir%
     FileCreateDir, %MapsDir%
 IfNotExist, %ImagesDir%
@@ -2567,6 +2568,18 @@ ProcessJSCmd(cmd) {
         GoSub, CheckForUpdate
         return
     }
+    if (action = "confirm-update") {
+        global PendingUpdateURL
+        if (PendingUpdateURL != "") {
+            AddLog("Update: скачиваю " . PendingUpdateURL . "...")
+            RunUpdateScript(PendingUpdateURL)
+        }
+        return
+    }
+    if (action = "cancel-update") {
+        AddLog("Update: отложено пользователем")
+        return
+    }
     if (action = "calibrate") {
         OpenModalWindow("calibrate", "Calibration", 460, 550)
         return
@@ -3252,18 +3265,9 @@ CheckForUpdate:
             dlStart := dlPos + 25
             dlRest := SubStr(body, dlStart)
             StringSplit, dparts, dlRest, "
-            MsgBox, 4, TD Macro Update,
-            (LTrim
-            Доступна новая версия: %latestTag%
-            Текущая: %CURRENT_VERSION%
-
-            Скачать и установить обновление?
-            )
-            IfMsgBox, Yes
-            {
-                AddLog("Update: скачиваю " dparts1 "...")
-                RunUpdateScript(dparts1)
-            }
+            global PendingUpdateURL
+            PendingUpdateURL := dparts1
+            WBH_CallJS("ahkUpdateAvailable('" . CURRENT_VERSION . "', '" . latestTag . "')")
         }
     }
 return
@@ -3318,18 +3322,9 @@ CheckUpdateNoAuth:
             AddLog("Update: доступна новая версия: " latestTag "!", "warn")
             WBH_CallJS("ahkUpdateVersion('" latestTag "', true)")
             zipURL := "https://github.com/" . GH_REPO . "/archive/refs/tags/" . latestTag . ".zip"
-            MsgBox, 4, TD Macro Update,
-            (LTrim
-            Доступна новая версия: %latestTag%
-            Текущая: %CURRENT_VERSION%
-
-            Скачать и установить обновление?
-            )
-            IfMsgBox, Yes
-            {
-                AddLog("Update: скачиваю " zipURL "...")
-                RunUpdateScript(zipURL)
-            }
+            global PendingUpdateURL
+            PendingUpdateURL := zipURL
+            WBH_CallJS("ahkUpdateAvailable('" . CURRENT_VERSION . "', '" . latestTag . "')")
         }
     } catch e {
         AddLog("Update (no-auth): ошибка сети — " e.Message, "error")
@@ -3400,7 +3395,17 @@ RunUpdateScript_Inner(zipURL) {
     script .= "Remove-Item -LiteralPath $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue`r`n"
 
     FileDelete, %psPath%
-    FileAppend, %script%, %psPath%
+
+    f := FileOpen(psPath, "w", "UTF-8")
+    if (!f) {
+        throw Exception("Не удалось создать " . psPath . " (A_LastError=" . A_LastError . ")")
+    }
+    f.Write(script)
+    f.Close()
+
+    if (!FileExist(psPath)) {
+        throw Exception("Файл обновления не создан: " . psPath)
+    }
 
     AddLog("Update: запускаю обновление и выхожу...")
     Run, % "powershell -ExecutionPolicy Bypass -WindowStyle Hidden -File """ . psPath . """", , Hide
