@@ -3368,11 +3368,16 @@ DownloadAndUpdate(url) {
         return
     }
 
-    if (!FileExist(zipPath) || FileGetSize(zipPath) = 0) {
+    if (!FileExist(zipPath)) {
+        AddLog("Update: скачанный файл отсутствует", "error")
+        return
+    }
+    FileGetSize, zipSize, %zipPath%
+    if (zipSize = 0) {
         AddLog("Update: скачанный файл пуст", "error")
         return
     }
-    AddLog("Update: скачано " Round(FileGetSize(zipPath) / 1024) " KB, распаковываю...")
+    AddLog("Update: скачано " Round(zipSize / 1024) " KB, распаковываю...")
 
     ; Распаковываем через PowerShell
     FileRemoveDir, %extractDir%, 1
