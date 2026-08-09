@@ -3337,66 +3337,63 @@ CheckUpdateNoAuth:
     }
 return
 
-; ---- Скачивание файла через WinHttpRequest (бинарный ответ → файл) ----
-; UrlDownloadToFile ненадёжен с GitHub (редиректы, HTTPS), поэтому
-; используем тот же WinHttpRequest, что и для API-запросов.
-DownloadBinary(url, filePath, ByRef outSize := 0) {
-    outSize := 0
-    try {
-        whr := ComObjCreate("WinHttp.WinHttpRequest.5.1")
-        whr.Option(6) := True    ; следовать редиректам (FollowRedirects)
-        whr.Option(9) := 2688    ; TLS 1.2
-        whr.Open("GET", url, False)
-        whr.SetRequestHeader("User-Agent", "TD-Macro-Updater")
-        whr.Send()
-        if (whr.Status != 200) {
-            return false
-        }
-        ; Сохраняем тело ответа как бинарный поток через ADODB.Stream
-        body := whr.ResponseBody
-        stream := ComObjCreate("ADODB.Stream")
-        stream.Type := 1    ; adTypeBinary
-        stream.Open()
-        stream.Write(body)
-        stream.SaveToFile(filePath, 2)   ; 2 = adSaveCreateOverWrite
-        stream.Close()
-        FileGetSize, outSize, %filePath%
-        return (outSize > 1024)   ; zip меньше 1 KB — явно не архив
-    } catch e {
-        return false
-    }
-}
-
-; ---- Скачивание и установка обновления через батник ----
+; ---- Скачивание и распаковка обновления через PowerShell ----
+; WinHttpRequest / UrlDownloadToFile ненадёжны с GitHub (редиректы, TLS),
+; поэтому и скачивание, и распаковку делаем через PowerShell —
+; он уже есть в системе и используется для распаковки.
 DownloadAndUpdate(url) {
     zipPath := A_Temp . "\tdmacro_update.zip"
     extractDir := A_Temp . "\tdmacro_update"
 
-    FileDelete, %zipPath%
-    AddLog("Update: скачиваю " url "...")
+    ; Экранируем одиночные кавычки для PowerShell (в URL их быть не должно, но на всякий случай)
+    safeUrl := StrReplace(url, "'", "''")
+    safeZip := StrReplace(zipPath, "'", "''")
+    safeExtract := StrReplace(extractDir, "'", "''")
 
-    ok := DownloadBinary(url, zipPath, zipSize)
-    if (!ok) {
-        ; Пробуем без префикса v (git теги часто v1.0.1, а в URL может быть 1.0.1)
+    ; Очищаем старые файлы
+    FileDelete, %zipPath%
+    FileRemoveDir, %extractDir%, 1
+
+    ; --- 1. Скачивание ---
+    AddLog("Update: скачиваю " url "...")
+    psDownload := "[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12; "
+    psDownload .= "Invoke-WebRequest -Uri '" . safeUrl . "' -OutFile '" . safeZip . "' -MaximumRedirection 10 -ErrorAction Stop"
+    psFull := "powershell -NoProfile -ExecutionPolicy Bypass -Command """ . psDownload . """"
+    RunWait, %psFull%, , Hide
+
+    if (!FileExist(zipPath)) {
+        ; Пробуем без префикса v (гит-теги могут быть v1.0.1 или 1.0.1)
         StringReplace, altUrl, url, /tags/v, /tags/
-        AddLog("Update: не вышло, пробую " altUrl "...")
-        ok := DownloadBinary(altUrl, zipPath, zipSize)
+        if (altUrl != url) {
+            safeAlt := StrReplace(altUrl, "'", "''")
+            AddLog("Update: не вышло, пробую " altUrl "...")
+            psDl2 := "[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12; "
+            psDl2 .= "Invoke-WebRequest -Uri '" . safeAlt . "' -OutFile '" . safeZip . "' -MaximumRedirection 10 -ErrorAction Stop"
+            RunWait, % "powershell -NoProfile -ExecutionPolicy Bypass -Command """ . psDl2 . """", , Hide
+        }
     }
-    if (!ok) {
-        AddLog("Update: ошибка скачивания", "error")
+
+    if (!FileExist(zipPath)) {
+        AddLog("Update: ошибка скачивания — PowerShell не смог загрузить файл", "error")
         MsgBox, 16, TD Macro Update, Ошибка при скачивании. Проверьте интернет.
         return
     }
 
+    FileGetSize, zipSize, %zipPath%
+    if (zipSize < 1024) {
+        FileDelete, %zipPath%
+        AddLog("Update: скачался повреждённый файл (" zipSize " байт)", "error")
+        MsgBox, 16, TD Macro Update, Ошибка при скачивании. Проверьте интернет.
+        return
+    }
     AddLog("Update: скачано " Round(zipSize / 1024) " KB, распаковываю...")
 
-    ; Распаковываем через PowerShell
-    FileRemoveDir, %extractDir%, 1
+    ; --- 2. Распаковка ---
     FileCreateDir, %extractDir%
-    psCmd := "Expand-Archive -Path '" . zipPath . "' -DestinationPath '" . extractDir . "' -Force"
-    RunWait, % "powershell -Command " . psCmd, , Hide
+    psExtract := "Expand-Archive -Path '" . safeZip . "' -DestinationPath '" . safeExtract . "' -Force"
+    RunWait, % "powershell -NoProfile -ExecutionPolicy Bypass -Command """ . psExtract . """", , Hide
 
-    ; GitHub ZIP кладёт всё в папку — ищем её
+    ; GitHub ZIP кладёт всё в папку repo-tag — ищем её
     srcDir := extractDir
     Loop, %extractDir%\*, 2
     {
@@ -3404,7 +3401,7 @@ DownloadAndUpdate(url) {
         break
     }
 
-    ; Батник
+    ; --- 3. Батник для замены файлов и перезапуска ---
     batPath := A_Temp . "\tdmacro_updater.bat"
     FileDelete, %batPath%
     batContent := "@echo off`r`n"
