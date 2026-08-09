@@ -43,13 +43,15 @@ PresetsIni := A_ScriptDir . "\ahk\presets.ini"
 TempShot := A_ScriptDir . "\_preview.bmp"
 
 ; ---- Автообновление с GitHub ----
-CURRENT_VERSION := "1.0.0"
+CURRENT_VERSION := "1.0.1"
 GH_REPO := "mozrze/Mmacro"           ; пользователь/репозиторий
 GH_TOKEN_FILE := A_ScriptDir . "\ahk\token.ini"
 GH_TOKEN := ""
 IniRead, GH_TOKEN, %GH_TOKEN_FILE%, GitHub, Token, ""
 GH_API_URL := "https://api.github.com/repos/" . GH_REPO . "/releases/latest"
 PendingUpdateURL := ""
+PendingUpdateOldVer := ""
+PendingUpdateNewVer := ""
 IfNotExist, %MapsDir%
     FileCreateDir, %MapsDir%
 IfNotExist, %ImagesDir%
@@ -2581,6 +2583,10 @@ ProcessJSCmd(cmd) {
         AddLog("Update: отложено пользователем")
         return
     }
+    if (action = "debug-log") {
+        AddLog("JS debug: " . arg)
+        return
+    }
     if (action = "calibrate") {
         OpenModalWindow("calibrate", "Calibration", 460, 550)
         return
@@ -2805,6 +2811,21 @@ PollModalClose:
     }
     
     ; ---- Новые команды от модалок ----
+    else if (action = "confirm-update") {
+        SetTimer, PollModalClose, Off
+        Gui, Modal:Destroy
+        ModalHwnd := 0
+        if (PendingUpdateURL != "") {
+            AddLog("Update: скачиваю " . PendingUpdateURL . "...")
+            RunUpdateScript(PendingUpdateURL)
+        }
+    }
+    else if (action = "cancel-update") {
+        SetTimer, PollModalClose, Off
+        Gui, Modal:Destroy
+        ModalHwnd := 0
+        AddLog("Update: отложено пользователем")
+    }
     else if (action = "settings-save") {
         GoSub, ModalSaveSettings
     }
@@ -2979,7 +3000,10 @@ ModalCallJS(js) {
 ; ---- Пуш данных в модальное окно после загрузки ----
 PushModalData(name) {
     global
-    if (name = "settings") {
+    if (name = "update-confirm") {
+        ModalCallJS("ahkSetUpdateInfo('" . PendingUpdateOldVer . "', '" . PendingUpdateNewVer . "')")
+    }
+    else if (name = "settings") {
         colorHex := SubStr(StartGameColor, 3)  ; убираем "0x"
         rjLink := StrReplace(RejoinShareLink, "\", "\\")
         rjLink := StrReplace(rjLink, "'", "\'")
@@ -3260,16 +3284,22 @@ CheckForUpdate:
     } else {
         AddLog("Update: доступна новая версия: " latestTag "!", "warn")
         WBH_CallJS("ahkUpdateVersion('" latestTag "', true)")
-        ; Сохраняем URL для скачивания
+        ; Сохраняем URL для скачивания: сначала пробуем прикреплённый ассет,
+        ; если релиз без ассетов (только тег) — берём автосгенерированный zip GitHub'а
         dlPos := InStr(body, """browser_download_url""")
         if (dlPos) {
             dlStart := dlPos + 25
             dlRest := SubStr(body, dlStart)
             StringSplit, dparts, dlRest, "
-            global PendingUpdateURL
-            PendingUpdateURL := dparts1
-            WBH_CallJS("ahkUpdateAvailable('" . CURRENT_VERSION . "', '" . latestTag . "')")
+            downloadURL := dparts1
+        } else {
+            downloadURL := "https://github.com/" . GH_REPO . "/archive/refs/tags/" . latestTag . ".zip"
         }
+        global PendingUpdateURL, PendingUpdateOldVer, PendingUpdateNewVer
+        PendingUpdateURL := downloadURL
+        PendingUpdateOldVer := CURRENT_VERSION
+        PendingUpdateNewVer := latestTag
+        OpenModalWindow("update-confirm", "Update available", 340, 300)
     }
 return
 
@@ -3323,9 +3353,11 @@ CheckUpdateNoAuth:
             AddLog("Update: доступна новая версия: " latestTag "!", "warn")
             WBH_CallJS("ahkUpdateVersion('" latestTag "', true)")
             zipURL := "https://github.com/" . GH_REPO . "/archive/refs/tags/" . latestTag . ".zip"
-            global PendingUpdateURL
+            global PendingUpdateURL, PendingUpdateOldVer, PendingUpdateNewVer
             PendingUpdateURL := zipURL
-            WBH_CallJS("ahkUpdateAvailable('" . CURRENT_VERSION . "', '" . latestTag . "')")
+            PendingUpdateOldVer := CURRENT_VERSION
+            PendingUpdateNewVer := latestTag
+            OpenModalWindow("update-confirm", "Update available", 340, 300)
         }
     } catch e {
         AddLog("Update (no-auth): ошибка сети — " e.Message, "error")

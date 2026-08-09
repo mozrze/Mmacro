@@ -569,11 +569,20 @@
         var oldEl = document.getElementById('umOldVersion');
         var newEl = document.getElementById('umNewVersion');
         var modal = document.getElementById('modal-update-confirm');
+        var overlay = document.getElementById('overlay');
+        window.ahkCmd = 'debug-log/ahkUpdateAvailable called, modal=' + (!!modal) + ' overlay=' + (!!overlay) + ' old=' + (!!oldEl) + ' new=' + (!!newEl);
         if (oldEl) oldEl.textContent = 'v' + oldVersion;
         if (newEl) newEl.textContent = 'v' + newVersion;
         if (modal) modal.className = 'modal update-modal show';
-        var overlay = document.getElementById('overlay');
         if (overlay) overlay.className = 'overlay show';
+        /* Trident (Shell.Explorer) не всегда перерисовывает DOM после изменений
+           через execScript — форсируем reflow, как в OpenModalWindow. */
+        try {
+            if (modal) { var _r1 = modal.offsetHeight; }
+            if (overlay) { var _r2 = overlay.offsetHeight; }
+            document.body.style.zoom = '99%';
+            setTimeout(function () { document.body.style.zoom = '100%'; }, 0);
+        } catch (e) {}
     };
     (function () {
         var modal = document.getElementById('modal-update-confirm');
