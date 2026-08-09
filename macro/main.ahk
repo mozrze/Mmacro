@@ -3304,9 +3304,10 @@ CheckUpdateNoAuth:
             return
         }
         latestTag := SubStr(location, tagPos + 5)
-        ; Убираем возможный trailing slash
-        if (SubStr(latestTag, 0) = "/")
-            latestTag := SubStr(latestTag, 1, -1)
+        ; Берём только до первого / или конца строки (убираем trailing path)
+        slashPos := InStr(latestTag, "/")
+        if (slashPos)
+            latestTag := SubStr(latestTag, 1, slashPos - 1)
 
         AddLog("Update (no-auth): текущая = " CURRENT_VERSION ", последняя = " latestTag)
 
