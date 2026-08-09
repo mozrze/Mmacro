@@ -43,7 +43,7 @@ PresetsIni := A_ScriptDir . "\ahk\presets.ini"
 TempShot := A_ScriptDir . "\_preview.bmp"
 
 ; ---- Автообновление с GitHub ----
-CURRENT_VERSION := "1.0.1"
+CURRENT_VERSION := "1.0.0"
 GH_REPO := "mozrze/Mmacro"           ; пользователь/репозиторий
 GH_TOKEN_FILE := A_ScriptDir . "\ahk\token.ini"
 GH_TOKEN := ""
@@ -3262,7 +3262,7 @@ CheckForUpdate:
             IfMsgBox, Yes
             {
                 AddLog("Update: скачиваю " dparts1 "...")
-                DownloadAndUpdate(dparts1)
+                RunUpdateScript(dparts1)
             }
         }
     }
@@ -3328,7 +3328,7 @@ CheckUpdateNoAuth:
             IfMsgBox, Yes
             {
                 AddLog("Update: скачиваю " zipURL "...")
-                DownloadAndUpdate(zipURL)
+                RunUpdateScript(zipURL)
             }
         }
     } catch e {
@@ -3337,85 +3337,59 @@ CheckUpdateNoAuth:
     }
 return
 
-; ---- Скачивание и распаковка обновления через PowerShell ----
-; WinHttpRequest / UrlDownloadToFile ненадёжны с GitHub (редиректы, TLS),
-; поэтому и скачивание, и распаковку делаем через PowerShell —
-; он уже есть в системе и используется для распаковки.
-DownloadAndUpdate(url) {
-    zipPath := A_Temp . "\tdmacro_update.zip"
-    extractDir := A_Temp . "\tdmacro_update"
+; ---- Запуск PowerShell-скрипта обновления и выход ----
+; Пишет самодостаточный .ps1 во временную папку и запускает его.
+; Сам скрипт качает zip, распаковывает, копирует файлы и перезапускает AHK.
+; Такой подход исключает любые COM/RunWait-проблемы внутри AHK.
+RunUpdateScript(zipURL) {
+    psPath := A_Temp . "\tdmacro_updater.ps1"
 
-    ; Экранируем одиночные кавычки для PowerShell (в URL их быть не должно, но на всякий случай)
-    safeUrl := StrReplace(url, "'", "''")
-    safeZip := StrReplace(zipPath, "'", "''")
-    safeExtract := StrReplace(extractDir, "'", "''")
+    ; Экранирование: в PowerShell-строках внутри двойных кавычек
+    ; одиночная кавычка безопасна, бэкслеши не являются escape-символами.
+    safeURL    := StrReplace(zipURL, "'", "''")
+    safeTarget := StrReplace(A_ScriptDir, "'", "''")
+    safeMain   := StrReplace(A_ScriptDir . "\main.ahk", "'", "''")
+    safeZip    := StrReplace(A_Temp . "\tdmacro_update.zip", "'", "''")
+    safeExtr   := StrReplace(A_Temp . "\tdmacro_update", "'", "''")
 
-    ; Очищаем старые файлы
-    FileDelete, %zipPath%
-    FileRemoveDir, %extractDir%, 1
+    ; Пишем PowerShell-скрипт
+    script := ""
+    script .= "$ErrorActionPreference = 'Stop'`r`n"
+    script .= "[System.Net.ServicePointManager]::SecurityProtocol = 3072  # TLS 1.2`r`n"
+    script .= "`r`n"
+    script .= "Write-Host 'Downloading...'`r`n"
+    script .= "Invoke-WebRequest -Uri '" . safeURL . "' -OutFile '" . safeZip . "' -MaximumRedirection 10`r`n"
+    script .= "`r`n"
+    script .= "if (-not (Test-Path '" . safeZip . "')) {`r`n"
+    script .= "    Write-Host 'Download failed'`r`n"
+    script .= "    Start-Sleep -Seconds 5`r`n"
+    script .= "    exit 1`r`n"
+    script .= "}`r`n"
+    script .= "`r`n"
+    script .= "Write-Host 'Extracting...'`r`n"
+    script .= "Expand-Archive -Path '" . safeZip . "' -DestinationPath '" . safeExtr . "' -Force`r`n"
+    script .= "`r`n"
+    script .= "# Ищем корневую папку внутри архива`r`n"
+    script .= "$srcDir = Get-ChildItem -Path '" . safeExtr . "' -Directory | Select-Object -First 1`r`n"
+    script .= "if (-not $srcDir) { $srcDir = '" . safeExtr . "' } else { $srcDir = $srcDir.FullName }`r`n"
+    script .= "`r`n"
+    script .= "Write-Host 'Copying files...'`r`n"
+    script .= "$target = '" . safeTarget . "'`r`n"
+    script .= "Copy-Item -Path (Join-Path $srcDir '*') -Destination $target -Recurse -Force`r`n"
+    script .= "`r`n"
+    script .= "Write-Host 'Restarting...'`r`n"
+    script .= "Start-Process -FilePath '" . safeMain . "'`r`n"
+    script .= "`r`n"
+    script .= "# Самоудаление скрипта`r`n"
+    script .= "Start-Sleep -Seconds 2`r`n"
+    script .= "Remove-Item -LiteralPath $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue`r`n"
 
-    ; --- 1. Скачивание ---
-    AddLog("Update: скачиваю " url "...")
-    psDownload := "[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12; "
-    psDownload .= "Invoke-WebRequest -Uri '" . safeUrl . "' -OutFile '" . safeZip . "' -MaximumRedirection 10 -ErrorAction Stop"
-    psFull := "powershell -NoProfile -ExecutionPolicy Bypass -Command """ . psDownload . """"
-    RunWait, %psFull%, , Hide
-
-    if (!FileExist(zipPath)) {
-        ; Пробуем без префикса v (гит-теги могут быть v1.0.1 или 1.0.1)
-        StringReplace, altUrl, url, /tags/v, /tags/
-        if (altUrl != url) {
-            safeAlt := StrReplace(altUrl, "'", "''")
-            AddLog("Update: не вышло, пробую " altUrl "...")
-            psDl2 := "[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12; "
-            psDl2 .= "Invoke-WebRequest -Uri '" . safeAlt . "' -OutFile '" . safeZip . "' -MaximumRedirection 10 -ErrorAction Stop"
-            RunWait, % "powershell -NoProfile -ExecutionPolicy Bypass -Command """ . psDl2 . """", , Hide
-        }
-    }
-
-    if (!FileExist(zipPath)) {
-        AddLog("Update: ошибка скачивания — PowerShell не смог загрузить файл", "error")
-        MsgBox, 16, TD Macro Update, Ошибка при скачивании. Проверьте интернет.
-        return
-    }
-
-    FileGetSize, zipSize, %zipPath%
-    if (zipSize < 1024) {
-        FileDelete, %zipPath%
-        AddLog("Update: скачался повреждённый файл (" zipSize " байт)", "error")
-        MsgBox, 16, TD Macro Update, Ошибка при скачивании. Проверьте интернет.
-        return
-    }
-    AddLog("Update: скачано " Round(zipSize / 1024) " KB, распаковываю...")
-
-    ; --- 2. Распаковка ---
-    FileCreateDir, %extractDir%
-    psExtract := "Expand-Archive -Path '" . safeZip . "' -DestinationPath '" . safeExtract . "' -Force"
-    RunWait, % "powershell -NoProfile -ExecutionPolicy Bypass -Command """ . psExtract . """", , Hide
-
-    ; GitHub ZIP кладёт всё в папку repo-tag — ищем её
-    srcDir := extractDir
-    Loop, %extractDir%\*, 2
-    {
-        srcDir := A_LoopFileFullPath
-        break
-    }
-
-    ; --- 3. Батник для замены файлов и перезапуска ---
-    batPath := A_Temp . "\tdmacro_updater.bat"
-    FileDelete, %batPath%
-    batContent := "@echo off`r`n"
-    batContent .= "chcp 65001 >nul`r`n"
-    batContent .= "echo Updating TD Macro...`r`n"
-    batContent .= "timeout /t 2 /nobreak >nul`r`n"
-    batContent .= "xcopy /Y /E """ . srcDir . "\*.*"" """ . A_ScriptDir . "\""`r`n"
-    batContent .= "echo Done. Restarting...`r`n"
-    batContent .= "start """" """ . A_ScriptDir . "\main.ahk""`r`n"
-    batContent .= "del ""%~f0""`r`n"
-    FileAppend, %batContent%, %batPath%
+    FileDelete, %psPath%
+    FileAppend, %script%, %psPath%
 
     AddLog("Update: запускаю обновление и выхожу...")
-    Run, %batPath%, , Hide
+    Run, % "powershell -ExecutionPolicy Bypass -WindowStyle Hidden -File """ . psPath . """", , Hide
+    Sleep, 500
     ExitApp
 }
 
