@@ -43,7 +43,7 @@ PresetsIni := A_ScriptDir . "\ahk\presets.ini"
 TempShot := A_ScriptDir . "\_preview.bmp"
 
 ; ---- Автообновление с GitHub ----
-CURRENT_VERSION := "1.0.1"
+CURRENT_VERSION := "1.0.0"
 GH_REPO := "mozrze/Mmacro"           ; пользователь/репозиторий
 GH_TOKEN_FILE := A_ScriptDir . "\ahk\token.ini"
 GH_TOKEN := ""
@@ -3332,10 +3332,40 @@ CheckUpdateNoAuth:
             }
         }
     } catch e {
-        AddLog("Update (no-auth): ошибка — " e.Message, "error")
-        WBH_CallJS("ahkUpdateVersion('ERR')")
+        AddLog("Update (no-auth): ошибка сети — " e.Message, "error")
+        WBH_CallJS("ahkUpdateVersion('ERR', false)")
     }
 return
+
+; ---- Скачивание файла через WinHttpRequest (бинарный ответ → файл) ----
+; UrlDownloadToFile ненадёжен с GitHub (редиректы, HTTPS), поэтому
+; используем тот же WinHttpRequest, что и для API-запросов.
+DownloadBinary(url, filePath, ByRef outSize := 0) {
+    outSize := 0
+    try {
+        whr := ComObjCreate("WinHttp.WinHttpRequest.5.1")
+        whr.Option(6) := True    ; следовать редиректам (FollowRedirects)
+        whr.Option(9) := 2688    ; TLS 1.2
+        whr.Open("GET", url, False)
+        whr.SetRequestHeader("User-Agent", "TD-Macro-Updater")
+        whr.Send()
+        if (whr.Status != 200) {
+            return false
+        }
+        ; Сохраняем тело ответа как бинарный поток через ADODB.Stream
+        body := whr.ResponseBody
+        stream := ComObjCreate("ADODB.Stream")
+        stream.Type := 1    ; adTypeBinary
+        stream.Open()
+        stream.Write(body)
+        stream.SaveToFile(filePath, 2)   ; 2 = adSaveCreateOverWrite
+        stream.Close()
+        FileGetSize, outSize, %filePath%
+        return (outSize > 1024)   ; zip меньше 1 KB — явно не архив
+    } catch e {
+        return false
+    }
+}
 
 ; ---- Скачивание и установка обновления через батник ----
 DownloadAndUpdate(url) {
@@ -3344,19 +3374,20 @@ DownloadAndUpdate(url) {
 
     FileDelete, %zipPath%
     AddLog("Update: скачиваю " url "...")
-    UrlDownloadToFile, %url%, %zipPath%
-    if (ErrorLevel || !FileExist(zipPath)) {
-        ; Пробуем с префиксом v (git теги часто v1.0 а в URL 1.0)
-        StringReplace, altUrl, url, /tags/, /tags/v
+
+    ok := DownloadBinary(url, zipPath, zipSize)
+    if (!ok) {
+        ; Пробуем без префикса v (git теги часто v1.0.1, а в URL может быть 1.0.1)
+        StringReplace, altUrl, url, /tags/v, /tags/
         AddLog("Update: не вышло, пробую " altUrl "...")
-        UrlDownloadToFile, %altUrl%, %zipPath%
-        if (ErrorLevel || !FileExist(zipPath)) {
-            AddLog("Update: ошибка скачивания", "error")
-            MsgBox, 16, TD Macro Update, Ошибка при скачивании. Проверьте интернет.
-            return
-        }
+        ok := DownloadBinary(altUrl, zipPath, zipSize)
     }
-    FileGetSize, zipSize, %zipPath%
+    if (!ok) {
+        AddLog("Update: ошибка скачивания", "error")
+        MsgBox, 16, TD Macro Update, Ошибка при скачивании. Проверьте интернет.
+        return
+    }
+
     AddLog("Update: скачано " Round(zipSize / 1024) " KB, распаковываю...")
 
     ; Распаковываем через PowerShell
