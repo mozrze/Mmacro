@@ -43,7 +43,7 @@ PresetsIni := A_ScriptDir . "\ahk\presets.ini"
 TempShot := A_ScriptDir . "\_preview.bmp"
 
 ; ---- Автообновление с GitHub ----
-CURRENT_VERSION := "1.0.1"
+CURRENT_VERSION := "1.0.0"
 GH_REPO := "mozrze/Mmacro"           ; пользователь/репозиторий
 GH_TOKEN_FILE := A_ScriptDir . "\ahk\token.ini"
 GH_TOKEN := ""
@@ -3342,6 +3342,15 @@ return
 ; Сам скрипт качает zip, распаковывает, копирует файлы и перезапускает AHK.
 ; Такой подход исключает любые COM/RunWait-проблемы внутри AHK.
 RunUpdateScript(zipURL) {
+    try {
+        RunUpdateScript_Inner(zipURL)
+    } catch e {
+        AddLog("Update: сбой запуска обновления (не сеть) — " . e.Message . " | " . e.Extra . " (line " . e.Line . ")", "error")
+        WBH_CallJS("ahkUpdateVersion('ERR', false)")
+    }
+}
+
+RunUpdateScript_Inner(zipURL) {
     psPath := A_Temp . "\tdmacro_updater.ps1"
 
     ; Экранирование: в PowerShell-строках внутри двойных кавычек
@@ -3357,12 +3366,18 @@ RunUpdateScript(zipURL) {
     script .= "$ErrorActionPreference = 'Stop'`r`n"
     script .= "[System.Net.ServicePointManager]::SecurityProtocol = 3072  # TLS 1.2`r`n"
     script .= "`r`n"
-    script .= "Write-Host 'Downloading...'`r`n"
-    script .= "Invoke-WebRequest -Uri '" . safeURL . "' -OutFile '" . safeZip . "' -MaximumRedirection 10`r`n"
+    script .= "try {`r`n"
+    script .= "    Write-Host 'Downloading...'`r`n"
+    script .= "    Invoke-WebRequest -Uri '" . safeURL . "' -OutFile '" . safeZip . "' -MaximumRedirection 10 -UserAgent 'TD-Macro-Updater'`r`n"
+    script .= "} catch {`r`n"
+    script .= "    Write-Host ('Download error: ' + $_.Exception.Message)`r`n"
+    script .= "    Start-Sleep -Seconds 8`r`n"
+    script .= "    exit 1`r`n"
+    script .= "}`r`n"
     script .= "`r`n"
     script .= "if (-not (Test-Path '" . safeZip . "')) {`r`n"
     script .= "    Write-Host 'Download failed'`r`n"
-    script .= "    Start-Sleep -Seconds 5`r`n"
+    script .= "    Start-Sleep -Seconds 8`r`n"
     script .= "    exit 1`r`n"
     script .= "}`r`n"
     script .= "`r`n"
