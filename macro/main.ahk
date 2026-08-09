@@ -43,7 +43,7 @@ PresetsIni := A_ScriptDir . "\ahk\presets.ini"
 TempShot := A_ScriptDir . "\_preview.bmp"
 
 ; ---- Автообновление с GitHub ----
-CURRENT_VERSION := "1.0.1"
+CURRENT_VERSION := "1.0.0"
 GH_REPO := "Miver/Mmacro"           ; пользователь/репозиторий
 GH_TOKEN_FILE := A_ScriptDir . "\ahk\token.ini"
 GH_TOKEN := ""
@@ -3249,49 +3249,44 @@ return
 
 ; ---- Скачивание и установка обновления через батник ----
 DownloadAndUpdate(url) {
-    global CURRENT_VERSION
     zipPath := A_Temp . "\tdmacro_update.zip"
     extractDir := A_Temp . "\tdmacro_update"
 
-    ; Скачиваем ZIP
-    try {
-        whr := ComObjCreate("WinHttp.WinHttpRequest.5.1")
-        whr.Option(9) := 2688
-        whr.Open("GET", url, False)
-        whr.SetRequestHeader("User-Agent", "TD-Macro-Updater")
-        whr.Send()
-        if (whr.Status != 200) {
-            AddLog("Update: ошибка скачивания, статус " whr.Status, "error")
-            return
-        }
-        ; Сохраняем ответ (ZIP) в файл
-        FileDelete, %zipPath%
-        file := FileOpen(zipPath, "w")
-        file.RawWrite(whr.ResponseBody, whr.ResponseBody.Length())
-        file.Close()
-    } catch e {
-        AddLog("Update: ошибка скачивания — " e.Message, "error")
+    ; Скачиваем ZIP (UrlDownloadToFile надёжнее для бинарных файлов)
+    FileDelete, %zipPath%
+    AddLog("Update: скачиваю " url "...")
+    UrlDownloadToFile, %url%, %zipPath%
+    if (ErrorLevel || !FileExist(zipPath)) {
+        AddLog("Update: ошибка скачивания", "error")
+        MsgBox, 16, TD Macro Update, Ошибка при скачивании обновления.
         return
     }
+    AddLog("Update: скачано, распаковываю...")
 
     ; Распаковываем через PowerShell
-    AddLog("Update: распаковываю...")
     FileRemoveDir, %extractDir%, 1
     FileCreateDir, %extractDir%
     psCmd := "Expand-Archive -Path '" . zipPath . "' -DestinationPath '" . extractDir . "' -Force"
     RunWait, % "powershell -Command " . psCmd, , Hide
 
+    ; GitHub ZIP кладёт всё в папку типа "Mmacro-1.0.2" — ищем её
+    srcDir := extractDir
+    Loop, %extractDir%\*, 2  ; 2 = только папки
+    {
+        srcDir := A_LoopFileFullPath
+        break
+    }
+
     ; Пишем батник для замены файлов и перезапуска
     batPath := A_Temp . "\tdmacro_updater.bat"
-    scriptPath := A_ScriptDir . "\main.ahk"
     FileDelete, %batPath%
-    batContent := ""
-    batContent .= "@echo off`r`n"
+    batContent := "@echo off`r`n"
+    batContent .= "chcp 65001 >nul`r`n"
     batContent .= "echo Updating TD Macro...`r`n"
     batContent .= "timeout /t 2 /nobreak >nul`r`n"
-    batContent .= "xcopy /Y /E """ . extractDir . "\*.*"" """ . A_ScriptDir . "\""`r`n"
+    batContent .= "xcopy /Y /E """ . srcDir . "\*.*"" """ . A_ScriptDir . "\""`r`n"
     batContent .= "echo Done. Restarting...`r`n"
-    batContent .= "start """" """ . scriptPath . """`r`n"
+    batContent .= "start """" """ . A_ScriptDir . "\main.ahk""`r`n"
     batContent .= "del ""%~f0""`r`n"
     FileAppend, %batContent%, %batPath%
 
