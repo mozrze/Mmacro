@@ -553,6 +553,17 @@
         }
     };
 
+    /* ---- Update status bridge (called from AHK via execScript) ---- */
+    window.ahkUpdateVersion = function (text, isNew) {
+        var vEl = document.getElementById('hdrVersion');
+        var btn = document.getElementById('btnUpdate');
+        if (vEl) {
+            vEl.textContent = text;
+            vEl.className = 'hdr-version' + (isNew ? ' update-available' : '');
+        }
+        if (btn) btn.className = 'hdr-btn hdr-update';
+    };
+
     /* ---- Init ---- */
     log('TD Macro v1.0 ready. [build: rejoin-fix-3-nocache]');
 
@@ -589,6 +600,16 @@
         });
         on(document.getElementById('btnMainClose'), 'click', function () {
             window.ahkCmd = 'close-main';
+        });
+
+        ; /* Update check button */
+        var btnUpd = document.getElementById('btnUpdate');
+        if (btnUpd) on(btnUpd, 'click', function () {
+            var vEl = document.getElementById('hdrVersion');
+            if (vEl) vEl.textContent = '...';
+            if (vEl) vEl.className = 'hdr-version updating';
+            btnUpd.className = 'hdr-btn hdr-update spinning';
+            window.ahkCmd = 'check-update';
         });
     })();
 })();

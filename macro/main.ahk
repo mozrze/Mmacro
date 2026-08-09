@@ -41,6 +41,14 @@ ConfigFile := A_ScriptDir . "\config.ini"
 SettingsFile := A_ScriptDir . "\ahk\settings.ini"
 PresetsIni := A_ScriptDir . "\ahk\presets.ini"
 TempShot := A_ScriptDir . "\_preview.bmp"
+
+; ---- Автообновление с GitHub ----
+CURRENT_VERSION := "1.0.1"
+GH_REPO := "Miver/Mmacro"           ; пользователь/репозиторий
+GH_TOKEN_FILE := A_ScriptDir . "\ahk\token.ini"
+GH_TOKEN := ""
+IniRead, GH_TOKEN, %GH_TOKEN_FILE%, GitHub, Token, ""
+GH_API_URL := "https://api.github.com/repos/" . GH_REPO . "/releases/latest"
 IfNotExist, %MapsDir%
     FileCreateDir, %MapsDir%
 IfNotExist, %ImagesDir%
@@ -2555,6 +2563,10 @@ ProcessJSCmd(cmd) {
         OpenModalWindow("presets", "Presets", 440, 370)
         return
     }
+    if (action = "check-update") {
+        GoSub, CheckForUpdate
+        return
+    }
     if (action = "calibrate") {
         OpenModalWindow("calibrate", "Calibration", 460, 550)
         return
@@ -2623,6 +2635,7 @@ PushStateToHTML:
     
     ; Сообщаем JS что мы в AHK-режиме (не standalone браузер)
     WBH_CallJS("ahkSetMode()")
+    WBH_CallJS("ahkUpdateVersion('" . CURRENT_VERSION . "', false)")
     WBH_CallJS("ahkUpdateEmbed(" . (Embedded ? "true" : "false") . ")")
     WBH_CallJS("ahkUpdateFarm(" . (Running ? "true" : "false") . ")")
     WBH_CallJS("ahkUpdateAutoUpgrade(" . (AutoUpgradeEnabled ? "true" : "false") . ")")
@@ -3161,6 +3174,131 @@ UriDecode(str) {
         }
     }
     return result
+}
+
+; ---- Проверка обновлений через GitHub API ----
+CheckForUpdate:
+    global GH_API_URL, GH_TOKEN, CURRENT_VERSION, WB
+    AddLog("Update: проверяю обновления...")
+
+    ; Формируем HTTP-запрос
+    try {
+        whr := ComObjCreate("WinHttp.WinHttpRequest.5.1")
+        whr.Option(9) := 2688  ; TLS 1.2
+        whr.Open("GET", GH_API_URL, False)
+        whr.SetRequestHeader("User-Agent", "TD-Macro-Updater")
+        whr.SetRequestHeader("Accept", "application/vnd.github+json")
+        if (GH_TOKEN != "")
+            whr.SetRequestHeader("Authorization", "Bearer " . GH_TOKEN)
+        whr.Send()
+        status := whr.Status
+        if (status != 200) {
+            AddLog("Update: GitHub API вернул статус " status, "error")
+            WBH_CallJS("ahkUpdateVersion('ERR', false)")
+            return
+        }
+        body := whr.ResponseText
+    } catch e {
+        AddLog("Update: ошибка HTTP-запроса — " e.Message, "error")
+        WBH_CallJS("ahkUpdateVersion('ERR', false)")
+        return
+    }
+
+    ; Парсим JSON — ищем "tag_name"
+    tagPos := InStr(body, """tag_name""")
+    if (!tagPos) {
+        AddLog("Update: не удалось найти tag_name в ответе", "error")
+        WBH_CallJS("ahkUpdateVersion('v?', false)")
+        return
+    }
+    tagStart := tagPos + 12  ; длина "tag_name":" = 11 + кавычка = 12
+    tagRest := SubStr(body, tagStart)
+    StringSplit, tparts, tagRest, "
+    latestTag := tparts1
+
+    AddLog("Update: текущая = " CURRENT_VERSION ", последняя = " latestTag)
+
+    ; Сравниваем версии (простое строковое сравнение; предполагаем формат vX.Y.Z)
+    if (latestTag = CURRENT_VERSION || latestTag = "v" . CURRENT_VERSION) {
+        AddLog("Update: у вас последняя версия!")
+        WBH_CallJS("ahkUpdateVersion('" CURRENT_VERSION "', false)")
+    } else {
+        AddLog("Update: доступна новая версия: " latestTag "!", "warn")
+        WBH_CallJS("ahkUpdateVersion('" latestTag "', true)")
+        ; Сохраняем URL для скачивания
+        dlPos := InStr(body, """browser_download_url""")
+        if (dlPos) {
+            dlStart := dlPos + 25
+            dlRest := SubStr(body, dlStart)
+            StringSplit, dparts, dlRest, "
+            MsgBox, 4, TD Macro Update,
+            (LTrim
+            Доступна новая версия: %latestTag%
+            Текущая: %CURRENT_VERSION%
+
+            Скачать и установить обновление?
+            )
+            IfMsgBox, Yes
+            {
+                AddLog("Update: скачиваю " dparts1 "...")
+                DownloadAndUpdate(dparts1)
+            }
+        }
+    }
+return
+
+; ---- Скачивание и установка обновления через батник ----
+DownloadAndUpdate(url) {
+    global CURRENT_VERSION
+    zipPath := A_Temp . "\tdmacro_update.zip"
+    extractDir := A_Temp . "\tdmacro_update"
+
+    ; Скачиваем ZIP
+    try {
+        whr := ComObjCreate("WinHttp.WinHttpRequest.5.1")
+        whr.Option(9) := 2688
+        whr.Open("GET", url, False)
+        whr.SetRequestHeader("User-Agent", "TD-Macro-Updater")
+        whr.Send()
+        if (whr.Status != 200) {
+            AddLog("Update: ошибка скачивания, статус " whr.Status, "error")
+            return
+        }
+        ; Сохраняем ответ (ZIP) в файл
+        FileDelete, %zipPath%
+        file := FileOpen(zipPath, "w")
+        file.RawWrite(whr.ResponseBody, whr.ResponseBody.Length())
+        file.Close()
+    } catch e {
+        AddLog("Update: ошибка скачивания — " e.Message, "error")
+        return
+    }
+
+    ; Распаковываем через PowerShell
+    AddLog("Update: распаковываю...")
+    FileRemoveDir, %extractDir%, 1
+    FileCreateDir, %extractDir%
+    psCmd := "Expand-Archive -Path '" . zipPath . "' -DestinationPath '" . extractDir . "' -Force"
+    RunWait, % "powershell -Command " . psCmd, , Hide
+
+    ; Пишем батник для замены файлов и перезапуска
+    batPath := A_Temp . "\tdmacro_updater.bat"
+    scriptPath := A_ScriptDir . "\main.ahk"
+    FileDelete, %batPath%
+    batContent := ""
+    batContent .= "@echo off`r`n"
+    batContent .= "echo Updating TD Macro...`r`n"
+    batContent .= "timeout /t 2 /nobreak >nul`r`n"
+    batContent .= "xcopy /Y /E """ . extractDir . "\*.*"" """ . A_ScriptDir . "\""`r`n"
+    batContent .= "echo Done. Restarting...`r`n"
+    batContent .= "start """" """ . scriptPath . """`r`n"
+    batContent .= "del ""%~f0""`r`n"
+    FileAppend, %batContent%, %batPath%
+
+    ; Запускаем батник и выходим
+    AddLog("Update: запускаю обновление и выхожу...")
+    Run, %batPath%, , Hide
+    ExitApp
 }
 
 GuiClose:
