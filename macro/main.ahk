@@ -3295,10 +3295,12 @@ CheckUpdateNoAuth:
             return
         }
         ; Извлекаем тег из URL: .../releases/tag/v1.0.2
+        ; Если нет тега — значит нет релизов
         tagPos := InStr(location, "/tag/")
         if (!tagPos) {
-            AddLog("Update (no-auth): не удалось извлечь тег из " location, "error")
-            WBH_CallJS("ahkUpdateVersion('v?', false)")
+            AddLog("Update (no-auth): релизы не найдены (нет /tag/ в " location ")", "warn")
+            AddLog("Update: создайте Release на GitHub: git tag v" CURRENT_VERSION " && git push origin v" CURRENT_VERSION)
+            WBH_CallJS("ahkUpdateVersion('NO REL', false)")
             return
         }
         latestTag := SubStr(location, tagPos + 5)
