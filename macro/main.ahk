@@ -43,7 +43,7 @@ PresetsIni := A_ScriptDir . "\ahk\presets.ini"
 TempShot := A_ScriptDir . "\_preview.bmp"
 
 ; ---- Автообновление с GitHub ----
-CURRENT_VERSION := "1.0.1"
+CURRENT_VERSION := "1.0.0"
 GH_REPO := "mozrze/Mmacro"           ; пользователь/репозиторий
 GH_TOKEN_FILE := A_ScriptDir . "\ahk\token.ini"
 GH_TOKEN := ""
@@ -3342,41 +3342,21 @@ DownloadAndUpdate(url) {
     zipPath := A_Temp . "\tdmacro_update.zip"
     extractDir := A_Temp . "\tdmacro_update"
 
-    ; Скачиваем ZIP через WinHttp (UrlDownloadToFile не всегда дружит с GitHub)
     FileDelete, %zipPath%
     AddLog("Update: скачиваю " url "...")
-    try {
-        whr := ComObjCreate("WinHttp.WinHttpRequest.5.1")
-        whr.Option(6) := True     ; следовать редиректам
-        whr.Option(9) := 2688     ; TLS 1.2
-        whr.Open("GET", url, False)  ; синхронно
-        whr.SetRequestHeader("User-Agent", "TD-Macro-Updater")
-        whr.Send()
-        httpStatus := whr.Status
-        if (httpStatus != 200) {
-            AddLog("Update: ошибка скачивания, HTTP статус " httpStatus, "error")
-            MsgBox, 16, TD Macro Update, Ошибка скачивания: HTTP %httpStatus%
+    UrlDownloadToFile, %url%, %zipPath%
+    if (ErrorLevel || !FileExist(zipPath)) {
+        ; Пробуем с префиксом v (git теги часто v1.0 а в URL 1.0)
+        StringReplace, altUrl, url, /tags/, /tags/v
+        AddLog("Update: не вышло, пробую " altUrl "...")
+        UrlDownloadToFile, %altUrl%, %zipPath%
+        if (ErrorLevel || !FileExist(zipPath)) {
+            AddLog("Update: ошибка скачивания", "error")
+            MsgBox, 16, TD Macro Update, Ошибка при скачивании. Проверьте интернет.
             return
         }
-        body := whr.ResponseBody
-        file := FileOpen(zipPath, "w")
-        file.RawWrite(body, body.Length())
-        file.Close()
-    } catch e {
-        AddLog("Update: ошибка скачивания — " e.Message, "error")
-        MsgBox, 16, TD Macro Update, Ошибка при скачивании.`nПроверьте интернет.
-        return
-    }
-
-    if (!FileExist(zipPath)) {
-        AddLog("Update: скачанный файл отсутствует", "error")
-        return
     }
     FileGetSize, zipSize, %zipPath%
-    if (zipSize = 0) {
-        AddLog("Update: скачанный файл пуст", "error")
-        return
-    }
     AddLog("Update: скачано " Round(zipSize / 1024) " KB, распаковываю...")
 
     ; Распаковываем через PowerShell
@@ -3385,15 +3365,15 @@ DownloadAndUpdate(url) {
     psCmd := "Expand-Archive -Path '" . zipPath . "' -DestinationPath '" . extractDir . "' -Force"
     RunWait, % "powershell -Command " . psCmd, , Hide
 
-    ; GitHub ZIP кладёт всё в папку типа "Mmacro-1.0.2" — ищем её
+    ; GitHub ZIP кладёт всё в папку — ищем её
     srcDir := extractDir
-    Loop, %extractDir%\*, 2  ; 2 = только папки
+    Loop, %extractDir%\*, 2
     {
         srcDir := A_LoopFileFullPath
         break
     }
 
-    ; Пишем батник для замены файлов и перезапуска
+    ; Батник
     batPath := A_Temp . "\tdmacro_updater.bat"
     FileDelete, %batPath%
     batContent := "@echo off`r`n"
@@ -3406,7 +3386,6 @@ DownloadAndUpdate(url) {
     batContent .= "del ""%~f0""`r`n"
     FileAppend, %batContent%, %batPath%
 
-    ; Запускаем батник и выходим
     AddLog("Update: запускаю обновление и выхожу...")
     Run, %batPath%, , Hide
     ExitApp
