@@ -43,7 +43,7 @@ PresetsIni := A_ScriptDir . "\ahk\presets.ini"
 TempShot := A_ScriptDir . "\_preview.bmp"
 
 ; ---- Автообновление с GitHub ----
-CURRENT_VERSION := "1.0.1"
+CURRENT_VERSION := "1.0.0"
 GH_REPO := "mozrze/Mmacro"           ; пользователь/репозиторий
 GH_TOKEN_FILE := A_ScriptDir . "\ahk\token.ini"
 GH_TOKEN := ""
@@ -3342,16 +3342,37 @@ DownloadAndUpdate(url) {
     zipPath := A_Temp . "\tdmacro_update.zip"
     extractDir := A_Temp . "\tdmacro_update"
 
-    ; Скачиваем ZIP (UrlDownloadToFile надёжнее для бинарных файлов)
+    ; Скачиваем ZIP через WinHttp (UrlDownloadToFile не всегда дружит с GitHub)
     FileDelete, %zipPath%
     AddLog("Update: скачиваю " url "...")
-    UrlDownloadToFile, %url%, %zipPath%
-    if (ErrorLevel || !FileExist(zipPath)) {
-        AddLog("Update: ошибка скачивания", "error")
-        MsgBox, 16, TD Macro Update, Ошибка при скачивании обновления.
+    try {
+        whr := ComObjCreate("WinHttp.WinHttpRequest.5.1")
+        whr.Option(6) := True     ; следовать редиректам
+        whr.Option(9) := 2688     ; TLS 1.2
+        whr.Open("GET", url, True)
+        whr.SetRequestHeader("User-Agent", "TD-Macro-Updater")
+        whr.Send()
+        whr.WaitForResponse()
+        if (whr.Status != 200) {
+            AddLog("Update: ошибка скачивания, HTTP статус " whr.Status, "error")
+            MsgBox, 16, TD Macro Update, Ошибка скачивания: HTTP %whr.Status%
+            return
+        }
+        body := whr.ResponseBody
+        file := FileOpen(zipPath, "w")
+        file.RawWrite(body, body.Length())
+        file.Close()
+    } catch e {
+        AddLog("Update: ошибка скачивания — " e.Message, "error")
+        MsgBox, 16, TD Macro Update, Ошибка при скачивании.`nПроверьте интернет.
         return
     }
-    AddLog("Update: скачано, распаковываю...")
+
+    if (!FileExist(zipPath) || FileGetSize(zipPath) = 0) {
+        AddLog("Update: скачанный файл пуст", "error")
+        return
+    }
+    AddLog("Update: скачано " Round(FileGetSize(zipPath) / 1024) " KB, распаковываю...")
 
     ; Распаковываем через PowerShell
     FileRemoveDir, %extractDir%, 1
