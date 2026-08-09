@@ -43,7 +43,7 @@ PresetsIni := A_ScriptDir . "\ahk\presets.ini"
 TempShot := A_ScriptDir . "\_preview.bmp"
 
 ; ---- Автообновление с GitHub ----
-CURRENT_VERSION := "1.0.1"
+CURRENT_VERSION := "1.0.0"
 GH_REPO := "mozrze/Mmacro"           ; пользователь/репозиторий
 GH_TOKEN_FILE := A_ScriptDir . "\ahk\token.ini"
 GH_TOKEN := ""
@@ -3349,13 +3349,13 @@ DownloadAndUpdate(url) {
         whr := ComObjCreate("WinHttp.WinHttpRequest.5.1")
         whr.Option(6) := True     ; следовать редиректам
         whr.Option(9) := 2688     ; TLS 1.2
-        whr.Open("GET", url, True)
+        whr.Open("GET", url, False)  ; синхронно
         whr.SetRequestHeader("User-Agent", "TD-Macro-Updater")
         whr.Send()
-        whr.WaitForResponse()
-        if (whr.Status != 200) {
-            AddLog("Update: ошибка скачивания, HTTP статус " whr.Status, "error")
-            MsgBox, 16, TD Macro Update, Ошибка скачивания: HTTP %whr.Status%
+        httpStatus := whr.Status
+        if (httpStatus != 200) {
+            AddLog("Update: ошибка скачивания, HTTP статус " httpStatus, "error")
+            MsgBox, 16, TD Macro Update, Ошибка скачивания: HTTP %httpStatus%
             return
         }
         body := whr.ResponseBody
