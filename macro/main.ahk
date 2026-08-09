@@ -43,7 +43,7 @@ PresetsIni := A_ScriptDir . "\ahk\presets.ini"
 TempShot := A_ScriptDir . "\_preview.bmp"
 
 ; ---- Автообновление с GitHub ----
-CURRENT_VERSION := "1.0.2"
+CURRENT_VERSION := "1.0.0"
 GH_REPO := "mozrze/Mmacro"           ; пользователь/репозиторий
 GH_TOKEN_FILE := A_ScriptDir . "\ahk\token.ini"
 GH_TOKEN := ""
@@ -3379,15 +3379,23 @@ RunUpdateScript(zipURL) {
 }
 
 RunUpdateScript_Inner(zipURL) {
-    psPath := A_Temp . "\tdmacro_updater.ps1"
+    ; Используем уникальные имена: предыдущий updater может ещё удалять себя
+    ; или быть заблокирован системой. Общий путь приводил к сбою на FileDelete.
+    updateId := A_TickCount
+    psPath := A_Temp . "\tdmacro_updater_" . updateId . ".ps1"
+    zipPath := A_Temp . "\tdmacro_update_" . updateId . ".zip"
+    extractPath := A_Temp . "\tdmacro_update_" . updateId
 
     ; Экранирование: в PowerShell-строках внутри двойных кавычек
     ; одиночная кавычка безопасна, бэкслеши не являются escape-символами.
     safeURL    := StrReplace(zipURL, "'", "''")
-    safeTarget := StrReplace(A_ScriptDir, "'", "''")
+    ; main.ahk находится в <project>\macro, а GitHub-архив содержит
+    ; <project>\macro и <project>\UI. Копируем содержимое в корень проекта.
+    installRoot := A_ScriptDir . "\.."
+    safeTarget := StrReplace(installRoot, "'", "''")
     safeMain   := StrReplace(A_ScriptDir . "\main.ahk", "'", "''")
-    safeZip    := StrReplace(A_Temp . "\tdmacro_update.zip", "'", "''")
-    safeExtr   := StrReplace(A_Temp . "\tdmacro_update", "'", "''")
+    safeZip    := StrReplace(zipPath, "'", "''")
+    safeExtr   := StrReplace(extractPath, "'", "''")
 
     ; Пишем PowerShell-скрипт
     script := ""
@@ -3426,8 +3434,6 @@ RunUpdateScript_Inner(zipURL) {
     script .= "# Самоудаление скрипта`r`n"
     script .= "Start-Sleep -Seconds 2`r`n"
     script .= "Remove-Item -LiteralPath $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue`r`n"
-
-    FileDelete, %psPath%
 
     f := FileOpen(psPath, "w", "UTF-8")
     if (!f) {
