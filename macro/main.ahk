@@ -43,7 +43,7 @@ PresetsIni := A_ScriptDir . "\ahk\presets.ini"
 TempShot := A_ScriptDir . "\_preview.bmp"
 
 ; ---- Автообновление с GitHub ----
-CURRENT_VERSION := "1.0.2"
+CURRENT_VERSION := "1.0.0"
 GH_REPO := "mozrze/Mmacro"           ; пользователь/репозиторий
 GH_TOKEN_FILE := A_ScriptDir . "\ahk\token.ini"
 GH_TOKEN := ""
@@ -2481,6 +2481,7 @@ WBH_CallJS(js) {
     try {
         WB.Document.parentWindow.execScript(js)
     } catch e {
+        AddLog("JS bridge error: " . e.Message . " | call: " . SubStr(js, 1, 80), "error")
         ; HTML-панель может быть не готова
     }
 }
