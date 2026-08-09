@@ -44,7 +44,7 @@ TempShot := A_ScriptDir . "\_preview.bmp"
 
 ; ---- Автообновление с GitHub ----
 CURRENT_VERSION := "1.0.0"
-GH_REPO := "Miver/Mmacro"           ; пользователь/репозиторий
+GH_REPO := "mozrze/Mmacro"           ; пользователь/репозиторий
 GH_TOKEN_FILE := A_ScriptDir . "\ahk\token.ini"
 GH_TOKEN := ""
 IniRead, GH_TOKEN, %GH_TOKEN_FILE%, GitHub, Token, ""
