@@ -3178,8 +3178,13 @@ UriDecode(str) {
 
 ; ---- Проверка обновлений через GitHub API ----
 CheckForUpdate:
-    global GH_API_URL, GH_TOKEN, CURRENT_VERSION, WB
+    global GH_API_URL, GH_TOKEN, GH_TOKEN_FILE, CURRENT_VERSION, WB
     AddLog("Update: проверяю обновления...")
+
+    ; Проверяем наличие токена
+    if (GH_TOKEN = "") {
+        AddLog("Update: токен не найден в " . GH_TOKEN_FILE . " — запрос без аутентификации", "warn")
+    }
 
     ; Формируем HTTP-запрос
     try {
@@ -3192,12 +3197,28 @@ CheckForUpdate:
             whr.SetRequestHeader("Authorization", "Bearer " . GH_TOKEN)
         whr.Send()
         status := whr.Status
-        if (status != 200) {
-            AddLog("Update: GitHub API вернул статус " status, "error")
-            WBH_CallJS("ahkUpdateVersion('ERR', false)")
+        body := whr.ResponseText
+
+        if (status = 401) {
+            AddLog("Update: ошибка 401 — пробую без API (публичный режим)...", "warn")
+            GoSub, CheckUpdateNoAuth
             return
         }
-        body := whr.ResponseText
+        if (status = 404) {
+            AddLog("Update: релизы не найдены — создай Release на GitHub (тег v1.0.1+)", "error")
+            WBH_CallJS("ahkUpdateVersion('NO REL', false)")
+            return
+        }
+        if (status = 403) {
+            AddLog("Update: ошибка 403 — пробую без API (публичный режим)...", "warn")
+            GoSub, CheckUpdateNoAuth
+            return
+        }
+        if (status != 200) {
+            AddLog("Update: GitHub API вернул статус " status, "error")
+            WBH_CallJS("ahkUpdateVersion('ERR' status, false)")
+            return
+        }
     } catch e {
         AddLog("Update: ошибка HTTP-запроса — " e.Message, "error")
         WBH_CallJS("ahkUpdateVersion('ERR', false)")
@@ -3244,6 +3265,72 @@ CheckForUpdate:
                 DownloadAndUpdate(dparts1)
             }
         }
+    }
+return
+
+; ---- Проверка обновлений БЕЗ GitHub API (через редирект releases/latest) ----
+; Работает для публичных репозиториев, токен не нужен.
+CheckUpdateNoAuth:
+    global GH_REPO, CURRENT_VERSION, WB
+    releasesURL := "https://github.com/" . GH_REPO . "/releases/latest"
+    AddLog("Update (no-auth): проверяю " releasesURL "...")
+
+    try {
+        whr := ComObjCreate("WinHttp.WinHttpRequest.5.1")
+        whr.Option(6) := False   ; не следовать редиректу
+        whr.Option(9) := 2688
+        whr.Open("GET", releasesURL, False)
+        whr.SetRequestHeader("User-Agent", "TD-Macro-Updater")
+        whr.Send()
+        status := whr.Status
+        if (status != 302 && status != 301) {
+            AddLog("Update (no-auth): статус " status " — репо приватный или нет релизов", "error")
+            WBH_CallJS("ahkUpdateVersion('ERR', false)")
+            return
+        }
+        location := whr.GetResponseHeader("Location")
+        if (location = "") {
+            AddLog("Update (no-auth): нет Location-заголовка", "error")
+            WBH_CallJS("ahkUpdateVersion('ERR', false)")
+            return
+        }
+        ; Извлекаем тег из URL: .../releases/tag/v1.0.2
+        tagPos := InStr(location, "/tag/")
+        if (!tagPos) {
+            AddLog("Update (no-auth): не удалось извлечь тег из " location, "error")
+            WBH_CallJS("ahkUpdateVersion('v?', false)")
+            return
+        }
+        latestTag := SubStr(location, tagPos + 5)
+        ; Убираем возможный trailing slash
+        if (SubStr(latestTag, 0) = "/")
+            latestTag := SubStr(latestTag, 1, -1)
+
+        AddLog("Update (no-auth): текущая = " CURRENT_VERSION ", последняя = " latestTag)
+
+        if (latestTag = CURRENT_VERSION || latestTag = "v" . CURRENT_VERSION) {
+            AddLog("Update: у вас последняя версия!")
+            WBH_CallJS("ahkUpdateVersion('" CURRENT_VERSION "', false)")
+        } else {
+            AddLog("Update: доступна новая версия: " latestTag "!", "warn")
+            WBH_CallJS("ahkUpdateVersion('" latestTag "', true)")
+            zipURL := "https://github.com/" . GH_REPO . "/archive/refs/tags/" . latestTag . ".zip"
+            MsgBox, 4, TD Macro Update,
+            (LTrim
+            Доступна новая версия: %latestTag%
+            Текущая: %CURRENT_VERSION%
+
+            Скачать и установить обновление?
+            )
+            IfMsgBox, Yes
+            {
+                AddLog("Update: скачиваю " zipURL "...")
+                DownloadAndUpdate(zipURL)
+            }
+        }
+    } catch e {
+        AddLog("Update (no-auth): ошибка — " e.Message, "error")
+        WBH_CallJS("ahkUpdateVersion('ERR')", false)
     }
 return
 
