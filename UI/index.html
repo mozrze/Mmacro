@@ -960,8 +960,14 @@ body.modal-only .modal-foot {
                         <span class="check-custom"></span>
                         <span>Enable camera zoom before placing units</span>
                     </label>
-                    <div class="field-hint">Positive values zoom in, negative values zoom out. Applied before placing units.</div>
+                    <label class="check-label" style="margin-top:10px">
+                        <input type="checkbox" id="setTopCameraEnabled" class="check">
+                        <span class="check-custom"></span>
+                        <span>Enable top camera angle</span>
+                    </label>
+                    <div class="field-hint">Top angle moves the camera forward and down first, then applies Zoom Scrolls.</div>
                     <div class="row" style="margin-top:10px; gap:8px; flex-wrap:wrap;">
+                        <button class="btn btn-ghost btn-sm" id="btnPreviewTopCamera">Apply Top Camera</button>
                         <button class="btn btn-primary btn-sm" id="btnPreviewZoom">Apply Zoom</button>
                         <button class="btn btn-ghost btn-sm" id="btnPreviewZoomSnapshot">Zoom + Snapshot</button>
                     </div>
@@ -1646,7 +1652,8 @@ function initSettingsModal(m) {
 	                $('#setRejoinPostActionsDelay').value,
 	                $('#setMouseSpeedEnabled').checked ? '1' : '0',
 	                $('#setZoomScrolls').value,
-	                $('#setZoomEnabled').checked ? '1' : '0'
+	                $('#setZoomEnabled').checked ? '1' : '0',
+	                $('#setTopCameraEnabled').checked ? '1' : '0'
 	            ];
             window.ahkCmd = 'settings-save/' + vals.join('/');
         });
@@ -1660,6 +1667,10 @@ function initSettingsModal(m) {
         syncMouseSpeedControl();
         var btnPreviewZoom = $('#btnPreviewZoom');
         var btnPreviewZoomSnapshot = $('#btnPreviewZoomSnapshot');
+        var btnPreviewTopCamera = $('#btnPreviewTopCamera');
+        if (btnPreviewTopCamera) on(btnPreviewTopCamera, 'click', function () {
+            window.ahkCmd = 'preview-top-camera';
+        });
         if (btnPreviewZoom) on(btnPreviewZoom, 'click', function () {
             window.ahkCmd = 'preview-zoom/' + ($('#setZoomScrolls').value || '0');
         });
@@ -1728,7 +1739,7 @@ var btnTestDc = document.getElementById('btnTestDisconnected');
     }
     window.ahkLoadSettings = function(cd, scd, ucd, acd, usd, sgd, hd, ms, iv, sgc, sgcv, sgcx, sgcy, sgr,
                                        rjEnabled, rjLink, rjMaxAttempts, rjWaitTimeout, rjPostJoinDelay, rjPostActionsDelay,
-                                       msEnabled, zoomScrolls, zoomEnabled) {
+                                       msEnabled, zoomScrolls, zoomEnabled, topCameraEnabled) {
 	        var set = function(id, v) { var el = $(id); if (el) el.value = v; };
 	        set('#setClickDelay', cd); set('#setSlotClickDelay', scd);
 	        set('#setUpgradeClickDelay', ucd); set('#setAutoClickDelay', acd);
@@ -1742,6 +1753,8 @@ var btnTestDc = document.getElementById('btnTestDisconnected');
         if (msInput && msChk) msInput.disabled = !msChk.checked;
         var zoomChk = $('#setZoomEnabled');
         if (zoomChk) zoomChk.checked = (zoomEnabled == '1' || zoomEnabled === true);
+        var topCameraChk = $('#setTopCameraEnabled');
+        if (topCameraChk) topCameraChk.checked = (topCameraEnabled == '1' || topCameraEnabled === true);
 	        var colorHex = (sgc || '').replace('0x', '');
 	        set('#setStartGameColor', colorHex);
 	        var picker = $('#setStartGameColorPicker');

@@ -43,7 +43,7 @@ PresetsIni := A_ScriptDir . "\ahk\presets.ini"
 TempShot := A_ScriptDir . "\_preview.bmp"
 
 ; ---- Автообновление с GitHub ----
-CURRENT_VERSION := "1.0.1"
+CURRENT_VERSION := "1.0.2"
 GH_REPO := "mozrze/Mmacro"           ; пользователь/репозиторий
 GH_TOKEN_FILE := A_ScriptDir . "\ahk\token.ini"
 GH_TOKEN := ""
@@ -82,6 +82,7 @@ MouseSpeed := 70    ; скорость движения мыши (0-100, выш�
 MouseSpeedEnabled := true ; плавное движение мыши
 ZoomEnabled := false ; включать зум перед расстановкой юнитов
 ZoomScrolls := 0    ; зум перед расстановкой: + приближение, - отдаление
+TopCameraEnabled := false ; верхний ракурс перед обычным зумом
 ImgVariation := 30
 StartGameColor := 0x4ECD0C
 StartGameColorVar := 30
@@ -379,7 +380,7 @@ SaveConfig() {
 ; ===================== НАСТРОЙКИ (ahk/settings.ini) =====================
 LoadSettings() {
     global SettingsFile, ClickDelay, SlotClickDelay, UpgradeClickDelay
-    global AutoClickDelay, UnitSleepDelay, StartGameDelay, HoverDelay, MouseSpeed, MouseSpeedEnabled, ZoomEnabled, ZoomScrolls, ImgVariation
+    global AutoClickDelay, UnitSleepDelay, StartGameDelay, HoverDelay, MouseSpeed, MouseSpeedEnabled, ZoomEnabled, ZoomScrolls, TopCameraEnabled, ImgVariation
     global StartGameColor, StartGameColorVar, StartGameCenterX, StartGameCenterY, StartGameRadius
     global AutoUpgradePriority, AutoUpgradeUnitOffsetY, AutoUpgradeEnabled
     global RejoinEnabled, RejoinShareLink, RejoinMaxAttempts, RejoinWaitTimeout, RejoinPostJoinDelay
@@ -410,6 +411,8 @@ LoadSettings() {
         ZoomScrolls := 0
     IniRead, v, %SettingsFile%, Camera, ZoomEnabled, %ZoomEnabled%
     ZoomEnabled := (v = 1 || v = "true") ? true : false
+    IniRead, v, %SettingsFile%, Camera, TopCameraEnabled, %TopCameraEnabled%
+    TopCameraEnabled := (v = 1 || v = "true") ? true : false
     IniRead, v, %SettingsFile%, ImageSearch, Variation, %ImgVariation%
     ImgVariation := v
     IniRead, v, %SettingsFile%, PixelSearch, StartGameColor, %StartGameColor%
@@ -449,7 +452,7 @@ LoadSettings() {
 
 SaveSettings() {
     global SettingsFile, ClickDelay, SlotClickDelay, UpgradeClickDelay
-    global AutoClickDelay, UnitSleepDelay, StartGameDelay, HoverDelay, MouseSpeed, MouseSpeedEnabled, ZoomEnabled, ZoomScrolls, ImgVariation
+    global AutoClickDelay, UnitSleepDelay, StartGameDelay, HoverDelay, MouseSpeed, MouseSpeedEnabled, ZoomEnabled, ZoomScrolls, TopCameraEnabled, ImgVariation
     global StartGameColor, StartGameColorVar, StartGameCenterX, StartGameCenterY, StartGameRadius
     global AutoUpgradePriority, AutoUpgradeUnitOffsetY, AutoUpgradeEnabled
     global RejoinEnabled, RejoinShareLink, RejoinMaxAttempts, RejoinWaitTimeout, RejoinPostJoinDelay
@@ -465,6 +468,7 @@ SaveSettings() {
     IniWrite, % (MouseSpeedEnabled ? 1 : 0), %SettingsFile%, Input, MouseSpeedEnabled
     IniWrite, % (ZoomEnabled ? 1 : 0), %SettingsFile%, Camera, ZoomEnabled
     IniWrite, %ZoomScrolls%, %SettingsFile%, Camera, ZoomScrolls
+    IniWrite, % (TopCameraEnabled ? 1 : 0), %SettingsFile%, Camera, TopCameraEnabled
     IniWrite, %ImgVariation%, %SettingsFile%, ImageSearch, Variation
     IniWrite, %StartGameColor%, %SettingsFile%, PixelSearch, StartGameColor
     IniWrite, %StartGameColorVar%, %SettingsFile%, PixelSearch, StartGameColorVar
@@ -1497,6 +1501,7 @@ BtnPresetSave:
     IniWrite, % (MouseSpeedEnabled ? 1 : 0), %PresetsIni%, %PresetName%, MouseSpeedEnabled
     IniWrite, % (ZoomEnabled ? 1 : 0), %PresetsIni%, %PresetName%, ZoomEnabled
     IniWrite, %ZoomScrolls%,       %PresetsIni%, %PresetName%, ZoomScrolls
+    IniWrite, % (TopCameraEnabled ? 1 : 0), %PresetsIni%, %PresetName%, TopCameraEnabled
     ; ---- 3. Поиск изображений (ImageSearch) ----
     IniWrite, %ImgVariation%, %PresetsIni%, %PresetName%, ImgVariation
     ; ---- 4. Поиск пикселя (PixelSearch) ----
@@ -1577,6 +1582,8 @@ BtnPresetLoad:
     MouseSpeedEnabled := (v = 1 || v = "true") ? true : false
     IniRead, v, %PresetsIni%, %PresetName%, ZoomEnabled, %ZoomEnabled%
     ZoomEnabled := (v = 1 || v = "true") ? true : false
+    IniRead, v, %PresetsIni%, %PresetName%, TopCameraEnabled, %TopCameraEnabled%
+    TopCameraEnabled := (v = 1 || v = "true") ? true : false
     IniRead, v, %PresetsIni%, %PresetName%, ZoomScrolls, %ZoomScrolls%
     ZoomScrolls := v
     if (ZoomScrolls < -50 || ZoomScrolls > 50)
@@ -1795,6 +1802,30 @@ ApplyStartZoom(force := false, overrideScrolls := "") {
     Sleep, 200
 }
 
+; ---- Верхний ракурс камеры перед обычным зумом ----
+; Сначала прокручиваем вперёд на один шаг, затем удерживаем RMB и
+; опускаем мышь — Roblox наклоняет камеру вниз. После этого вызывается
+; ApplyStartZoom() с обычной настройкой Zoom Scrolls.
+ApplyTopCamera(force := false) {
+    global TopCameraEnabled, Running, GameAreaW, GameAreaH, TS_X, TS_Y
+    if (!force && !TopCameraEnabled)
+        return
+    if (!force && !Running)
+        return
+    ToScreen(GameAreaW // 2, GameAreaH // 2)
+    MouseMove, %TS_X%, %TS_Y%, 0
+    Sleep, 80
+    SendInput, {WheelUp}
+    Sleep, 100
+    SendInput, {RButton down}
+    Sleep, 60
+    MouseMove, 0, 280, 0, R
+    Sleep, 60
+    SendInput, {RButton up}
+    Sleep, 250
+    AddLog("Камера: установлен верхний ракурс")
+}
+
 ; ---- Плавный клик: наводит мышь и кликает ----
 ; Некоторые кнопки в игре не срабатывают при телепортации курсора
 ; (Click, X, Y двигает мгновенно). Нужно реальное наведение мыши.
@@ -1916,7 +1947,8 @@ RunPlacementSequence:
     ; Кликаем по центру области игры для фокуса
     ToScreen(640, 360)
     SmoothClick(TS_X, TS_Y, 200)
-    ; Зум выполняется после фокусировки игры, но до первого юнита.
+    ; Верхний ракурс и обычный зум выполняются до первого юнита.
+    ApplyTopCamera()
     ApplyStartZoom()
     for i, s in slots {
         if (!Running)
@@ -2814,14 +2846,19 @@ UpdateMapListHTML() {
 ; title: заголовок окна
 ; w, h: размеры окна
 OpenModalWindow(name, title, w, h) {
-    global htmlURL, WB_Modal, ModalHwnd
+    global htmlURL, WB_Modal, ModalHwnd, MainGuiHwnd
     
     ; Закрываем предыдущее модальное окно если открыто
     Gui, Modal:Destroy
     SetTimer, PollModalClose, Off
     
     ; Создаём окно без стандартного title bar (кастомный хотбар в HTML)
-    Gui, Modal:New, +HwndModalHwnd -Caption, %title%
+    ; В dock-режиме Roblox может находиться выше owner-окна. Модалка
+    ; временно AlwaysOnTop, чтобы Settings/Presets всегда были доступны.
+    Gui, Modal:New, +HwndModalHwnd +AlwaysOnTop -Caption, %title%
+    ; Модалка принадлежит главному окну AHK. Она будет выше связки
+    ; Roblox+панель, но не станет глобальным AlwaysOnTop для всех программ.
+    SetWindowLongPtr(ModalHwnd, -8, MainGuiHwnd) ; GWLP_HWNDPARENT = owner
     Gui, Modal:Color, 0x121212
     Gui, Modal:Add, ActiveX, x0 y0 w%w% h%h% vWB_Modal, Shell.Explorer
     WB_Modal.Silent := true
@@ -2846,6 +2883,7 @@ OpenModalWindow(name, title, w, h) {
         cy := 100
     
     Gui, Modal:Show, x%cx% y%cy% w%w% h%h%, %title%
+    WinActivate, ahk_id %ModalHwnd%
     
     ; Trident (Shell.Explorer) не всегда перерисовывает DOM после показа окна —
     ; из-за этого модалка (особенно пресеты) видна «пустой», пока курсор не наведут
@@ -2924,6 +2962,23 @@ PollModalClose:
     }
     else if (action = "settings-save") {
         GoSub, ModalSaveSettings
+    }
+    else if (action = "preview-top-camera") {
+        SetTimer, PollModalClose, Off
+        Gui, Modal:Destroy
+        ModalHwnd := 0
+        if !WinExist(WinTitle) {
+            AddLog("Проверка верхнего ракурса: игра не найдена", "warn")
+            return
+        }
+        if (Embedded)
+            FocusEmbeddedGame()
+        else {
+            WinActivate, %WinTitle%
+            WinWaitActive, %WinTitle%, , 2
+        }
+        Sleep, 300
+        ApplyTopCamera(true)
     }
     else if (action = "preview-zoom" || action = "preview-zoom-snapshot") {
         ; Закрываем Settings, активируем Roblox и применяем зум без запуска фарма.
@@ -3131,7 +3186,7 @@ PushModalData(name) {
             . StartGameCenterX . "," . StartGameCenterY . "," . StartGameRadius . ","
             . (RejoinEnabled ? 1 : 0) . ",'" . rjLink . "',"
             . RejoinMaxAttempts . "," . RejoinWaitTimeout . "," . RejoinPostJoinDelay . ","
-            . RejoinPostActionsDelay . "," . (MouseSpeedEnabled ? 1 : 0) . "," . ZoomScrolls . "," . (ZoomEnabled ? 1 : 0) . ")")
+            . RejoinPostActionsDelay . "," . (MouseSpeedEnabled ? 1 : 0) . "," . ZoomScrolls . "," . (ZoomEnabled ? 1 : 0) . "," . (TopCameraEnabled ? 1 : 0) . ")")
         AddLog("Settings пушнуты в модалку (Rejoin: " (RejoinEnabled ? "on" : "off") ", link len=" StrLen(RejoinShareLink) ")")
         ; Также пушим количество записанных Post-Rejoin действий
         count := RejoinActions.Length()
@@ -3180,7 +3235,7 @@ PushModalData(name) {
 ; ---- Сохранение настроек из модального окна Settings ----
 ModalSaveSettings:
     ; Новые поля добавляются в конец, чтобы сохранить совместимость с прежним порядком.
-    ; .../rejoinPostActionsDelay/mouseSpeedEnabled/zoomScrolls/zoomEnabled
+    ; .../rejoinPostActionsDelay/mouseSpeedEnabled/zoomScrolls/zoomEnabled/topCameraEnabled
     StringSplit, vals, arg, /
     AddLog("Команда: Save Settings получена (полей: " vals0 ")")
     if (vals0 < 14)
@@ -3219,6 +3274,9 @@ ModalSaveSettings:
     }
     if (vals0 >= 23) {
         ZoomEnabled := (vals23 = "1" || vals23 = "true") ? true : false
+    }
+    if (vals0 >= 24) {
+        TopCameraEnabled := (vals24 = "1" || vals24 = "true") ? true : false
     }
     SaveSettings()
     AddLog("Settings saved from modal")
