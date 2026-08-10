@@ -523,6 +523,7 @@ html, body {
 /* ---- Field ---- */
 .field { display: -ms-flexbox; display: flex; -ms-flex-direction: column; flex-direction: column; }
 .field-label { font-size: 11px; color: #666; font-weight: 500; margin-bottom: 4px; }
+.field-hint { font-size: 10px; color: #555; line-height: 1.4; margin-top: 8px; }
 .input {
     width: 100%; background: #1e1e1e; border: 1px solid #252525;
     border-radius: 6px; padding: 6px 8px;
@@ -530,6 +531,7 @@ html, body {
 }
 .input:hover { border-color: #2e2e2e; }
 .input:focus { outline: none; border-color: #3b82f6; }
+.input:disabled { opacity: .45; cursor: not-allowed; }
 .color-field { display: -ms-flexbox; display: flex; }
 .input-color {
     width: 32px; height: 32px; padding: 1px;
@@ -938,6 +940,30 @@ body.modal-only .modal-foot {
                         <div class="field"><label class="field-label">Stage Check</label><input type="number" class="input" id="setUnitSleepDelay" value="1000"></div>
                         <div class="field"><label class="field-label">After Hover</label><input type="number" class="input" id="setHoverDelay" value="380"></div>
                         <div class="field"><label class="field-label">Mouse Speed</label><input type="number" class="input" id="setMouseSpeed" value="70" min="0" max="100"></div>
+                    </div>
+                    <label class="check-label" style="margin-top:10px">
+                        <input type="checkbox" id="setMouseSpeedEnabled" class="check" checked>
+                        <span class="check-custom"></span>
+                        <span>Enable smooth mouse movement</span>
+                    </label>
+                </fieldset>
+                <fieldset class="fieldset">
+                    <legend class="fieldset-legend">Camera</legend>
+                    <div class="form-grid">
+                        <div class="field">
+                            <label class="field-label">Zoom Scrolls</label>
+                            <input type="number" class="input" id="setZoomScrolls" value="0" min="-50" max="50" step="1">
+                        </div>
+                    </div>
+                    <label class="check-label" style="margin-top:10px">
+                        <input type="checkbox" id="setZoomEnabled" class="check">
+                        <span class="check-custom"></span>
+                        <span>Enable camera zoom before placing units</span>
+                    </label>
+                    <div class="field-hint">Positive values zoom in, negative values zoom out. Applied before placing units.</div>
+                    <div class="row" style="margin-top:10px; gap:8px; flex-wrap:wrap;">
+                        <button class="btn btn-primary btn-sm" id="btnPreviewZoom">Apply Zoom</button>
+                        <button class="btn btn-ghost btn-sm" id="btnPreviewZoomSnapshot">Zoom + Snapshot</button>
                     </div>
                 </fieldset>
                 <fieldset class="fieldset">
@@ -1615,12 +1641,31 @@ function initSettingsModal(m) {
 	                $('#setRejoinEnabled').checked ? '1' : '0',
 	                encodeURIComponent($('#setRejoinShareLink').value || ''),
 	                $('#setRejoinMaxAttempts').value,
-$('#setRejoinWaitTimeout').value,
-		                $('#setRejoinPostJoinDelay').value,
-		                $('#setRejoinPostActionsDelay').value
+	                $('#setRejoinWaitTimeout').value,
+	                $('#setRejoinPostJoinDelay').value,
+	                $('#setRejoinPostActionsDelay').value,
+	                $('#setMouseSpeedEnabled').checked ? '1' : '0',
+	                $('#setZoomScrolls').value,
+	                $('#setZoomEnabled').checked ? '1' : '0'
 	            ];
-	            window.ahkCmd = 'settings-save/' + vals.join('/');
-	        });
+            window.ahkCmd = 'settings-save/' + vals.join('/');
+        });
+        var mouseSpeedEnabled = $('#setMouseSpeedEnabled');
+        var mouseSpeedInput = $('#setMouseSpeed');
+        function syncMouseSpeedControl() {
+            if (mouseSpeedInput && mouseSpeedEnabled)
+                mouseSpeedInput.disabled = !mouseSpeedEnabled.checked;
+        }
+        if (mouseSpeedEnabled) on(mouseSpeedEnabled, 'change', syncMouseSpeedControl);
+        syncMouseSpeedControl();
+        var btnPreviewZoom = $('#btnPreviewZoom');
+        var btnPreviewZoomSnapshot = $('#btnPreviewZoomSnapshot');
+        if (btnPreviewZoom) on(btnPreviewZoom, 'click', function () {
+            window.ahkCmd = 'preview-zoom/' + ($('#setZoomScrolls').value || '0');
+        });
+        if (btnPreviewZoomSnapshot) on(btnPreviewZoomSnapshot, 'click', function () {
+            window.ahkCmd = 'preview-zoom-snapshot/' + ($('#setZoomScrolls').value || '0');
+        });
 	        // Sync color picker <-> text
 	        var picker = $('#setStartGameColorPicker');
 	        var text = $('#setStartGameColor');
@@ -1681,14 +1726,22 @@ var btnTestDc = document.getElementById('btnTestDisconnected');
             window.ahkCmd = 'clear-rejoin';
         });
     }
-window.ahkLoadSettings = function(cd, scd, ucd, acd, usd, sgd, hd, ms, iv, sgc, sgcv, sgcx, sgcy, sgr,
-	                                       rjEnabled, rjLink, rjMaxAttempts, rjWaitTimeout, rjPostJoinDelay, rjPostActionsDelay) {
+    window.ahkLoadSettings = function(cd, scd, ucd, acd, usd, sgd, hd, ms, iv, sgc, sgcv, sgcx, sgcy, sgr,
+                                       rjEnabled, rjLink, rjMaxAttempts, rjWaitTimeout, rjPostJoinDelay, rjPostActionsDelay,
+                                       msEnabled, zoomScrolls, zoomEnabled) {
 	        var set = function(id, v) { var el = $(id); if (el) el.value = v; };
 	        set('#setClickDelay', cd); set('#setSlotClickDelay', scd);
 	        set('#setUpgradeClickDelay', ucd); set('#setAutoClickDelay', acd);
-	        set('#setUnitSleepDelay', usd); set('#setStartGameDelay', sgd);
-	        set('#setHoverDelay', hd); set('#setMouseSpeed', ms);
-	        set('#setImgVariation', iv);
+        set('#setUnitSleepDelay', usd); set('#setStartGameDelay', sgd);
+        set('#setHoverDelay', hd); set('#setMouseSpeed', ms);
+        set('#setImgVariation', iv);
+        var msChk = $('#setMouseSpeedEnabled');
+        if (msChk) msChk.checked = (msEnabled === undefined || msEnabled == '1' || msEnabled === true);
+        set('#setZoomScrolls', zoomScrolls === undefined ? 0 : zoomScrolls);
+        var msInput = $('#setMouseSpeed');
+        if (msInput && msChk) msInput.disabled = !msChk.checked;
+        var zoomChk = $('#setZoomEnabled');
+        if (zoomChk) zoomChk.checked = (zoomEnabled == '1' || zoomEnabled === true);
 	        var colorHex = (sgc || '').replace('0x', '');
 	        set('#setStartGameColor', colorHex);
 	        var picker = $('#setStartGameColorPicker');
@@ -1827,7 +1880,7 @@ window.ahkLoadSettings = function(cd, scd, ucd, acd, usd, sgd, hd, ms, iv, sgc, 
     window.ahkRejoinRecordState = function (active) {
         var btn = document.getElementById('btnRejoinRecord');
         if (btn) {
-            btn.textContent = active ? 'Stop' : 'Record';
+            btn.textContent = active ? 'Stop' : 'Record F1';
             btn.style.background = active ? '#ef4444' : '';
             btn.style.borderColor = active ? '#ef4444' : '';
         }

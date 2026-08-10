@@ -43,7 +43,7 @@ PresetsIni := A_ScriptDir . "\ahk\presets.ini"
 TempShot := A_ScriptDir . "\_preview.bmp"
 
 ; ---- Автообновление с GitHub ----
-CURRENT_VERSION := "1.0.0"
+CURRENT_VERSION := "1.0.1"
 GH_REPO := "mozrze/Mmacro"           ; пользователь/репозиторий
 GH_TOKEN_FILE := A_ScriptDir . "\ahk\token.ini"
 GH_TOKEN := ""
@@ -79,6 +79,9 @@ UnitSleepDelay := 200
 StartGameDelay := 500
 HoverDelay := 200   ; КД после наведения на место перед выбором юнита
 MouseSpeed := 70    ; скорость движения мыши (0-100, выше = быстрее)
+MouseSpeedEnabled := true ; плавное движение мыши
+ZoomEnabled := false ; включать зум перед расстановкой юнитов
+ZoomScrolls := 0    ; зум перед расстановкой: + приближение, - отдаление
 ImgVariation := 30
 StartGameColor := 0x4ECD0C
 StartGameColorVar := 30
@@ -100,6 +103,7 @@ GameHwnd := 0
 OrigStyle := 0
 OrigExStyle := 0
 OrigParent := 0
+OrigMainStyle := 0
 ; Исходная позиция/размер Roblox для восстановления после отсоединения
 OrigRX := 0
 OrigRY := 0
@@ -144,6 +148,7 @@ RejoinRecordPending := false ; ждём отпускания кнопки мыш
 Hotkey, ~WheelUp, RejoinWheelUp, Off
 Hotkey, ~WheelDown, RejoinWheelDown, Off
 Hotkey, F1, RejoinF1, On
+Hotkey, ~LButton, FocusEmbeddedGameClick, On
 ; Функции OnTemplateLButtonDown/Move/Up оставлены в drag_select.ahk как запасные заглушки.
 ; =======================================================
 
@@ -243,6 +248,35 @@ SetTimer, PollJSCmd, 20
 ; Отправляем начальное состояние в HTML
 SetTimer, PushStateToHTML, -300
 return
+
+FocusEmbeddedGameClick:
+    if (!Embedded || !GameHwnd || !DllCall("IsWindow", "ptr", GameHwnd))
+        return
+    MouseGetPos, clickX, clickY
+    if (!GameAreaOrigin(gameX, gameY))
+        return
+    if (clickX < gameX || clickY < gameY
+        || clickX >= gameX + GameAreaW || clickY >= gameY + GameAreaH)
+        return
+    FocusEmbeddedGame()
+return
+
+FocusEmbeddedGame() {
+    global GameHwnd, MainGuiHwnd
+    if (!GameHwnd || !MainGuiHwnd)
+        return
+    pid := 0
+    gameTid := DllCall("GetWindowThreadProcessId", "ptr", GameHwnd, "uint*", pid, "uint")
+    ourTid := DllCall("GetCurrentThreadId", "uint")
+    attached := false
+    if (gameTid && gameTid != ourTid)
+        attached := DllCall("AttachThreadInput", "uint", ourTid, "uint", gameTid, "int", 1)
+    DllCall("SetForegroundWindow", "ptr", MainGuiHwnd)
+    DllCall("SetActiveWindow", "ptr", MainGuiHwnd)
+    DllCall("SetFocus", "ptr", GameHwnd)
+    if (attached)
+        DllCall("AttachThreadInput", "uint", ourTid, "uint", gameTid, "int", 0)
+}
 
 ; ===================== CTRL+A / CTRL+V В HTML-ПОЛЯХ =====================
 ; ActiveX-контрол Shell.Explorer, встроенный в GUI, не реализует
@@ -345,7 +379,7 @@ SaveConfig() {
 ; ===================== НАСТРОЙКИ (ahk/settings.ini) =====================
 LoadSettings() {
     global SettingsFile, ClickDelay, SlotClickDelay, UpgradeClickDelay
-    global AutoClickDelay, UnitSleepDelay, StartGameDelay, HoverDelay, MouseSpeed, ImgVariation
+    global AutoClickDelay, UnitSleepDelay, StartGameDelay, HoverDelay, MouseSpeed, MouseSpeedEnabled, ZoomEnabled, ZoomScrolls, ImgVariation
     global StartGameColor, StartGameColorVar, StartGameCenterX, StartGameCenterY, StartGameRadius
     global AutoUpgradePriority, AutoUpgradeUnitOffsetY, AutoUpgradeEnabled
     global RejoinEnabled, RejoinShareLink, RejoinMaxAttempts, RejoinWaitTimeout, RejoinPostJoinDelay
@@ -368,6 +402,14 @@ LoadSettings() {
     HoverDelay := v
     IniRead, v, %SettingsFile%, Delays, MouseSpeed, %MouseSpeed%
     MouseSpeed := v
+    IniRead, v, %SettingsFile%, Input, MouseSpeedEnabled, %MouseSpeedEnabled%
+    MouseSpeedEnabled := (v = 1 || v = "true") ? true : false
+    IniRead, v, %SettingsFile%, Camera, ZoomScrolls, %ZoomScrolls%
+    ZoomScrolls := v
+    if (ZoomScrolls < -50 || ZoomScrolls > 50)
+        ZoomScrolls := 0
+    IniRead, v, %SettingsFile%, Camera, ZoomEnabled, %ZoomEnabled%
+    ZoomEnabled := (v = 1 || v = "true") ? true : false
     IniRead, v, %SettingsFile%, ImageSearch, Variation, %ImgVariation%
     ImgVariation := v
     IniRead, v, %SettingsFile%, PixelSearch, StartGameColor, %StartGameColor%
@@ -407,7 +449,7 @@ LoadSettings() {
 
 SaveSettings() {
     global SettingsFile, ClickDelay, SlotClickDelay, UpgradeClickDelay
-    global AutoClickDelay, UnitSleepDelay, StartGameDelay, HoverDelay, MouseSpeed, ImgVariation
+    global AutoClickDelay, UnitSleepDelay, StartGameDelay, HoverDelay, MouseSpeed, MouseSpeedEnabled, ZoomEnabled, ZoomScrolls, ImgVariation
     global StartGameColor, StartGameColorVar, StartGameCenterX, StartGameCenterY, StartGameRadius
     global AutoUpgradePriority, AutoUpgradeUnitOffsetY, AutoUpgradeEnabled
     global RejoinEnabled, RejoinShareLink, RejoinMaxAttempts, RejoinWaitTimeout, RejoinPostJoinDelay
@@ -420,6 +462,9 @@ SaveSettings() {
     IniWrite, %StartGameDelay%, %SettingsFile%, Delays, StartGameDelay
     IniWrite, %HoverDelay%, %SettingsFile%, Delays, HoverDelay
     IniWrite, %MouseSpeed%, %SettingsFile%, Delays, MouseSpeed
+    IniWrite, % (MouseSpeedEnabled ? 1 : 0), %SettingsFile%, Input, MouseSpeedEnabled
+    IniWrite, % (ZoomEnabled ? 1 : 0), %SettingsFile%, Camera, ZoomEnabled
+    IniWrite, %ZoomScrolls%, %SettingsFile%, Camera, ZoomScrolls
     IniWrite, %ImgVariation%, %SettingsFile%, ImageSearch, Variation
     IniWrite, %StartGameColor%, %SettingsFile%, PixelSearch, StartGameColor
     IniWrite, %StartGameColorVar%, %SettingsFile%, PixelSearch, StartGameColorVar
@@ -675,74 +720,70 @@ BtnEmbed:
     ; Запоминаем исходную позицию/размер Roblox для восстановления
     WinGetPos, OrigRX, OrigRY, OrigRW, OrigRH, ahk_id %GameHwnd%
 
-    ; ---- DOCK-режим: Roblox НЕ делается дочерним окном ----
-    ; Roblox остаётся полноценным окном (DirectX получает ввод — можно ходить
-    ; и пользоваться мышью). Сайдбар AHK "прилипает" к нему сбоку и двигается
-    ; синхронно через таймер SyncDockPosition.
-    ; Снимаем рамку/заголовок и фиксируем размер GameAreaW x GameAreaH.
-    dockStyle := OrigStyle
-    dockStyle := dockStyle & ~0x00C00000  ; WS_CAPTION
-    dockStyle := dockStyle & ~0x00040000  ; WS_THICKFRAME (запрет resize)
-    dockStyle := dockStyle & ~0x00800000  ; WS_BORDER
-    SetWindowLongPtr(GameHwnd, -16, dockStyle)
-
-    ; Левый верхний угол рабочего стола для Roblox, сайдбар — справа от него.
+    ; ---- Единый host без WS_CHILD ----
+    ; Roblox получает общего родителя для совместного перемещения, но его
+    ; исходный popup-стиль сохраняется — это важно для DirectX/raw input.
     SysGet, Mon1, MonitorWorkArea
     dockRX := Mon1Left
     dockRY := Mon1Top
-    ; Если правый край Roblox+сайдбар не помещается на экране — сдвигаем влево
     totalDockW := GameAreaW + SidebarW
     if (dockRX + totalDockW > Mon1Right)
         dockRX := Mon1Right - totalDockW
     if (dockRX < Mon1Left)
         dockRX := Mon1Left
+    WinGet, OrigMainStyle, Style, ahk_id %MainGuiHwnd%
+    GuiControl, Move, WB, x%GameAreaW% y0 w%SidebarW% h%GameAreaH%
+    Gui, Show, x%dockRX% y%dockRY% w%totalDockW% h%GameAreaH%, TD Macro Control
 
+    ; Убираем рамку/заголовок, но не добавляем WS_CHILD и не удаляем WS_POPUP.
+    dockStyle := OrigStyle
+    dockStyle := dockStyle & ~0x00C00000  ; WS_CAPTION
+    dockStyle := dockStyle & ~0x00040000  ; WS_THICKFRAME
+    dockStyle := dockStyle & ~0x00800000  ; WS_BORDER
+    SetWindowLongPtr(GameHwnd, -16, dockStyle)
+    DllCall("SetParent", "ptr", GameHwnd, "ptr", MainGuiHwnd)
     DllCall("SetWindowPos", "ptr", GameHwnd, "ptr", 0
-        , "int", dockRX, "int", dockRY, "int", GameAreaW, "int", GameAreaH
-        , "uint", 0x0040)  ; SWP_SHOWWINDOW
+        , "int", 0, "int", 0, "int", GameAreaW, "int", GameAreaH
+        , "uint", 0x0060)  ; SWP_SHOWWINDOW | SWP_FRAMECHANGED
     DllCall("ShowWindow", "ptr", GameHwnd, "int", 5)  ; SW_SHOW
-
-    ; Сайдбар — строго справа от Roblox, тот же Y
-    dockSx := dockRX + GameAreaW
-    DllCall("SetWindowPos", "ptr", MainGuiHwnd, "ptr", 0
-        , "int", dockSx, "int", dockRY
-        , "int", SidebarW, "int", GameAreaH
-        , "uint", 0x0040)  ; SWP_SHOWWINDOW
-    DllCall("ShowWindow", "ptr", MainGuiHwnd, "int", 8)  ; SW_SHOWNA (без активации — фокус у Roblox)
 
     Sleep, 150
     GetClientSize(GameHwnd, RealW, RealH)
     Embedded := true
-    ; Инициализируем last-позиции для двусторонней синхронизации
-    Embed_LastRX := dockRX, Embed_LastRY := dockRY, Embed_LastRW := GameAreaW
-    Embed_LastSX := dockSx, Embed_LastSY := dockRY
-    ; Запускаем синхронизацию: сайдбар следует за окном Roblox
-    SetTimer, SyncDockPosition, 50
+    FocusEmbeddedGame()
+    SetTimer, SyncDockPosition, 250
     WBH_CallJS("ahkUpdateEmbed(true)")
-    AddLog("Roblox прикреплён (dock): " RealW "x" RealH " — игра остаётся играбельной")
+    AddLog("Roblox подключён в общий host: " RealW "x" RealH)
 return
 
 UnembedGameWindow() {
-    global GameHwnd, OrigStyle, OrigExStyle, OrigParent, MainGuiHwnd
-    global OrigRX, OrigRY, OrigRW, OrigRH
+    global GameHwnd, OrigStyle, OrigExStyle, OrigParent, OrigMainStyle, MainGuiHwnd
+    global OrigRX, OrigRY, OrigRW, OrigRH, GameAreaW, SidebarW, GameAreaH
     ; Останавливаем синхронизацию положения
     SetTimer, SyncDockPosition, Off
     if (!GameHwnd || !WinExist("ahk_id " . GameHwnd)) {
         GameHwnd := 0
         return
     }
-    ; Возвращаем исходный стиль Roblox (заголовок/рамка/resize)
+    WinGetPos, hostX, hostY, , , ahk_id %MainGuiHwnd%
+    DllCall("SetParent", "ptr", GameHwnd, "ptr", OrigParent)
+    ; Возвращаем исходный стиль Roblox (заголовок/рамка/resize).
     SetWindowLongPtr(GameHwnd, -16, OrigStyle)
     SetWindowLongPtr(GameHwnd, -20, OrigExStyle)
     ; Восстанавливаем позицию/размер (если были сохранены)
     if (OrigRW > 0 && OrigRH > 0)
         DllCall("SetWindowPos", "ptr", GameHwnd, "ptr", 0
             , "int", OrigRX, "int", OrigRY, "int", OrigRW, "int", OrigRH
-            , "uint", 0x0040)  ; SWP_SHOWWINDOW
+            , "uint", 0x0060)  ; SWP_SHOWWINDOW | SWP_FRAMECHANGED
     else
         DllCall("SetWindowPos", "ptr", GameHwnd, "ptr", 0
-            , "int", 100, "int", 100, "int", 1280, "int", 720, "uint", 0x0040)
+            , "int", 100, "int", 100, "int", 1280, "int", 720, "uint", 0x0060)
     DllCall("ShowWindow", "ptr", GameHwnd, "int", 5)
+    sidebarX := hostX + GameAreaW
+    GuiControl, Move, WB, x0 y0 w%SidebarW% h%GameAreaH%
+    Gui, Show, x%sidebarX% y%hostY% w%SidebarW% h%GameAreaH%, TD Macro Control
+    if (OrigMainStyle)
+        SetWindowLongPtr(MainGuiHwnd, -16, OrigMainStyle)
     GameHwnd := 0
     AddLog("Roblox откреплён, окно восстановлено")
 }
@@ -753,7 +794,7 @@ UnembedGameWindow() {
 ; тоже подтягивается к нему (через DoNativeDrag + последующую синхронизацию).
 ; Последние известные позиции — для определения, чей ход.
 SyncDockPosition:
-    global Embed_LastRX, Embed_LastRY, Embed_LastRW, Embed_LastSX, Embed_LastSY
+    global Embed_LastRX, Embed_LastRY, Embed_LastRW, Embed_LastSX, Embed_LastSY, MainGuiHwnd, WinDragActive
     if (!Embedded)
         return
     if (!GameHwnd || !DllCall("IsWindow", "ptr", GameHwnd)) {
@@ -763,6 +804,16 @@ SyncDockPosition:
         WBH_CallJS("ahkUpdateEmbed(false)")
         AddLog("Окно Roblox закрыто, сайдбар откреплён")
         return
+    }
+    ; В host-режиме оба окна уже двигаются вместе. Таймер только проверяет
+    ; существование Roblox и не меняет координаты дочернего окна.
+    if (DllCall("GetParent", "ptr", GameHwnd, "ptr") = MainGuiHwnd)
+        return
+    ; При системном drag браузерный mouseup может не вернуться в HTML.
+    ; Завершаем ускоренный polling самостоятельно после отпускания кнопки.
+    if (WinDragActive && !GetKeyState("LButton", "P")) {
+        WinDragActive := false
+        SetTimer, SyncDockPosition, 50
     }
     ; Проверяем состояние окна Roblox
     WinGet, minMax, MinMax, ahk_id %GameHwnd%
@@ -1443,6 +1494,9 @@ BtnPresetSave:
     IniWrite, %StartGameDelay%,    %PresetsIni%, %PresetName%, StartGameDelay
     IniWrite, %HoverDelay%,        %PresetsIni%, %PresetName%, HoverDelay
     IniWrite, %MouseSpeed%,        %PresetsIni%, %PresetName%, MouseSpeed
+    IniWrite, % (MouseSpeedEnabled ? 1 : 0), %PresetsIni%, %PresetName%, MouseSpeedEnabled
+    IniWrite, % (ZoomEnabled ? 1 : 0), %PresetsIni%, %PresetName%, ZoomEnabled
+    IniWrite, %ZoomScrolls%,       %PresetsIni%, %PresetName%, ZoomScrolls
     ; ---- 3. Поиск изображений (ImageSearch) ----
     IniWrite, %ImgVariation%, %PresetsIni%, %PresetName%, ImgVariation
     ; ---- 4. Поиск пикселя (PixelSearch) ----
@@ -1519,6 +1573,14 @@ BtnPresetLoad:
     HoverDelay := v
     IniRead, v, %PresetsIni%, %PresetName%, MouseSpeed, %MouseSpeed%
     MouseSpeed := v
+    IniRead, v, %PresetsIni%, %PresetName%, MouseSpeedEnabled, %MouseSpeedEnabled%
+    MouseSpeedEnabled := (v = 1 || v = "true") ? true : false
+    IniRead, v, %PresetsIni%, %PresetName%, ZoomEnabled, %ZoomEnabled%
+    ZoomEnabled := (v = 1 || v = "true") ? true : false
+    IniRead, v, %PresetsIni%, %PresetName%, ZoomScrolls, %ZoomScrolls%
+    ZoomScrolls := v
+    if (ZoomScrolls < -50 || ZoomScrolls > 50)
+        ZoomScrolls := 0
     ; ---- 3. ImageSearch ----
     IniRead, v, %PresetsIni%, %PresetName%, ImgVariation, %ImgVariation%
     ImgVariation := v
@@ -1690,7 +1752,11 @@ return
 ; Равномерное движение: 30 мелких шагов, скорость регулируется только
 ; паузой между шагами (MouseSpeed 0-100). Без рывков при любой скорости.
 SmoothMove(x, y) {
-    global MouseSpeed
+    global MouseSpeed, MouseSpeedEnabled
+    if (!MouseSpeedEnabled) {
+        MouseMove, %x%, %y%, 0
+        return
+    }
     MouseGetPos, curX, curY
     steps := 30
     ; Пауза между шагами: 30 мс при скорости 10 (медленно),
@@ -1706,6 +1772,27 @@ SmoothMove(x, y) {
         Sleep, %stepSleep%
     }
     MouseMove, %x%, %y%, 0
+}
+
+; ---- Начальный зум камеры перед расстановкой юнитов ----
+; ZoomScrolls > 0 — приближение (WheelUp), < 0 — отдаление (WheelDown).
+ApplyStartZoom(force := false, overrideScrolls := "") {
+    global ZoomEnabled, ZoomScrolls, Running
+    if (!force && !ZoomEnabled)
+        return
+    scrolls := (overrideScrolls != "") ? (overrideScrolls + 0) : (ZoomScrolls + 0)
+    if (scrolls = 0)
+        return
+    direction := (scrolls > 0) ? "WheelUp" : "WheelDown"
+    count := Abs(scrolls)
+    AddLog("Камера: " (scrolls > 0 ? "приближение" : "отдаление") " на " count " дел.")
+    Loop, %count% {
+        if (!force && !Running)
+            return
+        SendInput, % "{" . direction . "}"
+        Sleep, 45
+    }
+    Sleep, 200
 }
 
 ; ---- Плавный клик: наводит мышь и кликает ----
@@ -1829,6 +1916,8 @@ RunPlacementSequence:
     ; Кликаем по центру области игры для фокуса
     ToScreen(640, 360)
     SmoothClick(TS_X, TS_Y, 200)
+    ; Зум выполняется после фокусировки игры, но до первого юнита.
+    ApplyStartZoom()
     for i, s in slots {
         if (!Running)
             break
@@ -2621,19 +2710,26 @@ ProcessJSCmd(cmd) {
             ; символ — пробел), что убивало поток и драг не стартовал.
             WinGetPos, WinDragStartWX, WinDragStartWY, , , ahk_id %MainGuiHwnd%
             WinDragActive := true
-            ; На время ручного драга отключаем SyncDockPosition (чтобы не дёргалось)
-            SetTimer, SyncDockPosition, Off
-            ; 16 мс ≈ 60 fps — синхронно с DWM. 10 мс (100 fps) давало белые
-            ; полоски: DWM не успевал перерисовать старую область между кадрами.
-            SetTimer, ManualDragLoop, 16
+            if (Embedded && GameHwnd && DllCall("IsWindow", "ptr", GameHwnd)) {
+                ; В host-режиме перемещаем общий контейнер — Roblox следует
+                ; за ним, а игровой ввод остаётся у окна игры.
+                SetTimer, SyncDockPosition, Off
+                SetTimer, ManualDragLoop, 16
+            } else {
+                SetTimer, SyncDockPosition, Off
+                SetTimer, ManualDragLoop, 16
+            }
         }
         return
     }
     if (InStr(cmd, "drag-end-main")) {
         WinDragActive := false
         SetTimer, ManualDragLoop, Off
-        if (Embedded)
+        if (Embedded) {
+            ; Сразу выравниваем панель после системного драга Roblox.
+            Gosub, SyncDockPosition
             SetTimer, SyncDockPosition, 50
+        }
         return
     }
     if (InStr(cmd, "drag-start-modal/")) {
@@ -2829,6 +2925,26 @@ PollModalClose:
     else if (action = "settings-save") {
         GoSub, ModalSaveSettings
     }
+    else if (action = "preview-zoom" || action = "preview-zoom-snapshot") {
+        ; Закрываем Settings, активируем Roblox и применяем зум без запуска фарма.
+        SetTimer, PollModalClose, Off
+        Gui, Modal:Destroy
+        ModalHwnd := 0
+        if !WinExist(WinTitle) {
+            AddLog("Проверка зума: игра не найдена", "warn")
+            return
+        }
+        WinActivate, %WinTitle%
+        WinWaitActive, %WinTitle%, , 2
+        Sleep, 300
+        ApplyStartZoom(true, arg)
+        if (action = "preview-zoom-snapshot") {
+            Sleep, 250
+            CaptureGameArea(TempShot)
+            AddLog("Снимок после тестового зума сделан, открываю превью...")
+            ShowSnapshotPreview()
+        }
+    }
     else if (action = "preset-save") {
         PresetName := arg
         GoSub, BtnPresetSave
@@ -3015,7 +3131,7 @@ PushModalData(name) {
             . StartGameCenterX . "," . StartGameCenterY . "," . StartGameRadius . ","
             . (RejoinEnabled ? 1 : 0) . ",'" . rjLink . "',"
             . RejoinMaxAttempts . "," . RejoinWaitTimeout . "," . RejoinPostJoinDelay . ","
-            . RejoinPostActionsDelay . ")")
+            . RejoinPostActionsDelay . "," . (MouseSpeedEnabled ? 1 : 0) . "," . ZoomScrolls . "," . (ZoomEnabled ? 1 : 0) . ")")
         AddLog("Settings пушнуты в модалку (Rejoin: " (RejoinEnabled ? "on" : "off") ", link len=" StrLen(RejoinShareLink) ")")
         ; Также пушим количество записанных Post-Rejoin действий
         count := RejoinActions.Length()
@@ -3063,7 +3179,8 @@ PushModalData(name) {
 
 ; ---- Сохранение настроек из модального окна Settings ----
 ModalSaveSettings:
-    ; arg = clickDelay/slotClickDelay/upgradeClickDelay/autoClickDelay/unitSleepDelay/startGameDelay/hoverDelay/mouseSpeed/imgVariation/startGameColor/startGameColorVar/startGameCenterX/startGameCenterY/startGameRadius/rejoinEnabled/rejoinShareLink(urlencoded)/rejoinMaxAttempts/rejoinWaitTimeout/rejoinPostJoinDelay
+    ; Новые поля добавляются в конец, чтобы сохранить совместимость с прежним порядком.
+    ; .../rejoinPostActionsDelay/mouseSpeedEnabled/zoomScrolls/zoomEnabled
     StringSplit, vals, arg, /
     AddLog("Команда: Save Settings получена (полей: " vals0 ")")
     if (vals0 < 14)
@@ -3091,6 +3208,17 @@ ModalSaveSettings:
     }
     if (vals0 >= 20) {
         RejoinPostActionsDelay := vals20
+    }
+    if (vals0 >= 21) {
+        MouseSpeedEnabled := (vals21 = "1" || vals21 = "true") ? true : false
+    }
+    if (vals0 >= 22) {
+        ZoomScrolls := vals22
+        if (ZoomScrolls < -50 || ZoomScrolls > 50)
+            ZoomScrolls := 0
+    }
+    if (vals0 >= 23) {
+        ZoomEnabled := (vals23 = "1" || vals23 = "true") ? true : false
     }
     SaveSettings()
     AddLog("Settings saved from modal")
@@ -3127,10 +3255,9 @@ return
 ; DllCall работает мгновенно, а DeferWindowPos двигает оба окна одной
 ; атомарной операцией — DWM перерисовывает их вместе, без разрыва.
 ;
-; Белые полоски при быстром драге = DWM не успевает перерисовать область
-; под СТАРОЙ позицией окон. Решение: перед перемещением запоминаем старые
-; rect'ы, а после — RedrawWindow(RDW_UPDATENOW) принудительно перерисовывает
-; их (синхронно, до возврата из вызова).
+; Перемещение выполняется одним пакетом DWM. Не вызываем RedrawWindow для
+; рабочего стола: это заставляет фон соседнего приложения проступать между
+; двумя окнами и создаёт белые полосы.
 ManualDragLoop:
     CoordMode, Mouse, Screen
     MouseGetPos, mx, my
@@ -3139,42 +3266,18 @@ ManualDragLoop:
     newY := WinDragStartWY + my - WinDragStartMY
     ; Только перемещение: без resize / z-order / activate
     moveFlags := 0x0015  ; SWP_NOSIZE(0x1) | SWP_NOZORDER(0x4) | SWP_NOACTIVATE(0x10)
-    ; Флаги перерисовки старой области (убирают белые следы):
-    ; RDW_INVALIDATE(0x1) | RDW_ERASE(0x4) | RDW_UPDATENOW(0x100)
-    redrawFlags := 0x0105
     if (Embedded && GameHwnd && DllCall("IsWindow", "ptr", GameHwnd)) {
-        ; Запоминаем старые области окон ДО перемещения
-        VarSetCapacity(oldRectS, 16, 0)
-        DllCall("GetWindowRect", "ptr", MainGuiHwnd, "ptr", &oldRectS)
-        VarSetCapacity(oldRectR, 16, 0)
-        DllCall("GetWindowRect", "ptr", GameHwnd, "ptr", &oldRectR)
-        newRX := newX - GameAreaW
-        newRY := newY
-        ; DeferWindowPos: батчим оба окна в один пакет перерисовки DWM
-        hwp := DllCall("BeginDeferWindowPos", "int", 2, "ptr")
-        if (hwp) {
-            hwp := DllCall("DeferWindowPos", "ptr", hwp, "ptr", MainGuiHwnd, "ptr", 0
-                , "int", newX, "int", newY, "int", 0, "int", 0, "uint", moveFlags, "ptr")
-            if (hwp)
-                hwp := DllCall("DeferWindowPos", "ptr", hwp, "ptr", GameHwnd, "ptr", 0
-                    , "int", newRX, "int", newRY, "int", 0, "int", 0, "uint", moveFlags, "ptr")
-            DllCall("EndDeferWindowPos", "ptr", hwp)
-        }
-        ; Обновляем last-позиции для SyncDockPosition
-        Embed_LastRX := newRX
-        Embed_LastRY := newRY
-        Embed_LastSX := newX
-        Embed_LastSY := newY
-        ; Принудительно перерисовываем старые области — убирает белые следы
-        DllCall("RedrawWindow", "ptr", 0, "ptr", &oldRectS, "ptr", 0, "uint", redrawFlags)
-        DllCall("RedrawWindow", "ptr", 0, "ptr", &oldRectR, "ptr", 0, "uint", redrawFlags)
+        ; Roblox находится внутри host, поэтому двигаем только общий контейнер.
+        ; Игра и сайдбар перемещаются системой как единая поверхность.
+        DllCall("SetWindowPos", "ptr", MainGuiHwnd, "ptr", 0
+            , "int", newX, "int", newY, "int", 0, "int", 0
+            , "uint", moveFlags, "ptr")
+        DllCall("dwmapi\DwmFlush")
     } else {
         ; Roblox не встроен — двигаем только сайдбар
-        VarSetCapacity(oldRectS, 16, 0)
-        DllCall("GetWindowRect", "ptr", MainGuiHwnd, "ptr", &oldRectS)
         DllCall("SetWindowPos", "ptr", MainGuiHwnd, "ptr", 0
             , "int", newX, "int", newY, "int", 0, "int", 0, "uint", moveFlags, "ptr")
-        DllCall("RedrawWindow", "ptr", 0, "ptr", &oldRectS, "ptr", 0, "uint", redrawFlags)
+        DllCall("dwmapi\DwmFlush")
     }
 return
 
