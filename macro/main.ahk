@@ -73,6 +73,7 @@ BotAllowedUserIds := ""
 BotProcessPid := 0
 BotDepsLogFile := BotRuntimeDir . "\pip_install.log"
 BotDepsScriptFile := BotRuntimeDir . "\install_bot_deps.ps1"
+BotPythonPathFile := BotRuntimeDir . "\python_path.txt"
 BotRunning := false
 PendingMapChange := ""
 BotMapRecordActive := false
@@ -94,7 +95,7 @@ IfNotExist, %BotActionsDir%
     FileCreateDir, %BotActionsDir%
 
 ; ---- Автообновление с GitHub ----
-CURRENT_VERSION := "1.0.7"
+CURRENT_VERSION := "1.0.8"
 GH_REPO := "mozrze/Mmacro"           ; пользователь/репозиторий
 GH_TOKEN_FILE := A_ScriptDir . "\ahk\token.ini"
 GH_TOKEN := ""
@@ -2866,12 +2867,14 @@ InstallBotDependencies:
     safeRequirements := StrReplace(requirementsFile, "'", "''")
     safeLog := StrReplace(BotDepsLogFile, "'", "''")
     safeResult := StrReplace(BotRuntimeDir . "\pip_install_exit.txt", "'", "''")
+    safePythonPath := StrReplace(BotPythonPathFile, "'", "''")
     psContent := "$ErrorActionPreference = 'Stop'`r`n"
     psContent .= "Add-Type -AssemblyName System.Windows.Forms`r`n"
     psContent .= "Add-Type -AssemblyName System.Drawing`r`n"
     psContent .= "$requirements = '" . safeRequirements . "'`r`n"
     psContent .= "$log = '" . safeLog . "'`r`n"
     psContent .= "$result = '" . safeResult . "'`r`n"
+    psContent .= "$pythonPathFile = '" . safePythonPath . "'`r`n"
     psContent .= "$form = New-Object System.Windows.Forms.Form`r`n"
     psContent .= "$form.Text = 'Mmacro - Установка зависимостей'`r`n"
     psContent .= "$form.ClientSize = New-Object System.Drawing.Size(500, 280)`r`n"
@@ -2999,6 +3002,7 @@ InstallBotDependencies:
     psContent .= "  }`r`n"
     psContent .= "  if (-not $python) { throw 'Python установлен, но его исполняемый файл не найден. Перезапустите макрос и повторите попытку.' }`r`n"
     psContent .= "  Set-Content -LiteralPath $log -Value ('Python: ' + $python)`r`n"
+    psContent .= "  Set-Content -LiteralPath $pythonPathFile -Value $python`r`n"
     psContent .= "  $status.Text = 'Подготовка pip'`r`n"
     psContent .= "  $detail.Text = 'Включаем встроенный установщик пакетов…'`r`n"
     psContent .= "  Run-Step 'Подготовка pip' $python @('-m','ensurepip','--upgrade')`r`n"
@@ -3116,9 +3120,44 @@ StartDiscordBot:
 return
 
 ResolveBotPython() {
-    global BotPython
+    global BotPython, BotPythonPathFile
     if (InStr(BotPython, "\") && FileExist(BotPython))
         return BotPython
+    if FileExist(BotPythonPathFile) {
+        FileRead, savedPython, %BotPythonPathFile%
+        savedPython := Trim(StrReplace(StrReplace(savedPython, "`r", ""), "`n", ""))
+        if (savedPython != "" && FileExist(savedPython))
+            return savedPython
+    }
+
+    ; Python Launcher знает фактическую установку даже если Python не добавлен
+    ; в PATH (частый случай после установки через winget).
+    pyProbe := A_Temp . "\mmacro_python_path.txt"
+    FileDelete, %pyProbe%
+    pyCommand := A_ComSpec . " /c py.exe -3 -c ""import sys; print(sys.executable)"" > """ . pyProbe . """ 2>nul"
+    RunWait, %pyCommand%, , Hide
+    if FileExist(pyProbe) {
+        FileRead, pyResolved, %pyProbe%
+        pyResolved := Trim(StrReplace(StrReplace(pyResolved, "`r", ""), "`n", ""))
+        FileDelete, %pyProbe%
+        if (pyResolved != "" && FileExist(pyResolved))
+            return pyResolved
+    }
+
+    ; Официальный установщик также записывает путь в реестр.
+    for _, version in ["3.13", "3.12", "3.11", "3.10", "3.9"] {
+        RegRead, installPath, HKCU, Software\Python\PythonCore\%version%\InstallPath,
+        if (ErrorLevel)
+            RegRead, installPath, HKLM, Software\Python\PythonCore\%version%\InstallPath,
+        if (!ErrorLevel && installPath != "") {
+            candidate := RTrim(installPath, "\") . "\pythonw.exe"
+            if FileExist(candidate)
+                return candidate
+            candidate := RTrim(installPath, "\") . "\python.exe"
+            if FileExist(candidate)
+                return candidate
+        }
+    }
 
     EnvGet, pathValue, PATH
     Loop, Parse, pathValue, `;
