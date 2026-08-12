@@ -1,6 +1,6 @@
 # Mmacro
 
-Discord-сервер проекта: [discord.gg/pYsA8PTEDQ](https://discord.gg/pYsA8PTEDQ)
+Discord-сервер: [discord.gg/pYsA8PTEDQ](https://discord.gg/pYsA8PTEDQ)
 
 Макрос AutoHotkey для автоматической расстановки юнитов и фарма в Roblox Tower Defense.
 
