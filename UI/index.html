@@ -1816,7 +1816,7 @@ body.modal-only .modal-foot {
             afterHover: 'After Hover', mouseSpeed: 'Mouse Speed', smoothMouse: 'Enable smooth mouse movement',
             camera: 'Camera', zoomScrolls: 'Zoom Scrolls', enableZoom: 'Enable camera zoom before placing units',
             enableTopCamera: 'Enable top camera angle', topHint: 'Top angle moves the camera forward and down first, then applies Zoom Scrolls.',
-            applyTop: 'Apply Top Camera', applyZoom: 'Apply Zoom', zoomSnapshot: 'Zoom + Snapshot',
+            applyTop: 'Apply Top Camera', applyZoom: 'Apply Camera Setup', zoomSnapshot: 'Camera + Snapshot',
             imageSearch: 'ImageSearch', variation: 'Variation (*N)', pixelSearch: 'PixelSearch',
             centerX: 'Center X', centerY: 'Center Y', radius: 'Radius', color: 'Color', colorVar: 'Color Var',
             autoRejoin: 'Auto-Rejoin (on crash/error)', vipHelp: 'How to get VIP share link', enabled: 'Enabled',
@@ -1871,7 +1871,7 @@ body.modal-only .modal-foot {
             afterHover: 'После наведения', mouseSpeed: 'Скорость мыши', smoothMouse: 'Включить плавное движение мыши',
             camera: 'Камера', zoomScrolls: 'Прокрутка зума', enableZoom: 'Включить зум камеры перед установкой юнитов',
             enableTopCamera: 'Включить верхний ракурс камеры', topHint: 'Сначала камера двигается вперёд и вниз, затем применяется прокрутка зума.',
-            applyTop: 'Применить верхний ракурс', applyZoom: 'Применить зум', zoomSnapshot: 'Зум + снимок',
+            applyTop: 'Применить верхний ракурс', applyZoom: 'Применить настройки камеры', zoomSnapshot: 'Камера + снимок',
             imageSearch: 'Поиск изображения', variation: 'Допуск (*N)', pixelSearch: 'Поиск пикселей',
             centerX: 'Центр X', centerY: 'Центр Y', radius: 'Радиус', color: 'Цвет', colorVar: 'Допуск цвета',
             autoRejoin: 'Автопереподключение (сбой/ошибка)', vipHelp: 'Как получить VIP-ссылку', enabled: 'Включено',
@@ -2241,10 +2241,10 @@ function initSettingsModal(m) {
             window.ahkCmd = 'preview-top-camera';
         });
         if (btnPreviewZoom) on(btnPreviewZoom, 'click', function () {
-            window.ahkCmd = 'preview-zoom/' + ($('#setZoomScrolls').value || '0');
+            window.ahkCmd = 'preview-zoom/' + ($('#setZoomScrolls').value || '0') + '/' + ($('#setTopCameraEnabled').checked ? '1' : '0');
         });
         if (btnPreviewZoomSnapshot) on(btnPreviewZoomSnapshot, 'click', function () {
-            window.ahkCmd = 'preview-zoom-snapshot/' + ($('#setZoomScrolls').value || '0');
+            window.ahkCmd = 'preview-zoom-snapshot/' + ($('#setZoomScrolls').value || '0') + '/' + ($('#setTopCameraEnabled').checked ? '1' : '0');
         });
 	        // Sync color picker <-> text
 	        var picker = $('#setStartGameColorPicker');

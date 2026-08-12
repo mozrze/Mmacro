@@ -1913,26 +1913,47 @@ ApplyStartZoom(force := false, overrideScrolls := "") {
 }
 
 ; ---- Верхний ракурс камеры перед обычным зумом ----
-; Сначала прокручиваем вперёд на один шаг, затем удерживаем RMB и
-; опускаем мышь — Roblox наклоняет камеру вниз. После этого вызывается
-; ApplyStartZoom() с обычной настройкой Zoom Scrolls.
+; Сначала активируем Roblox, прокручиваем вперёд на один шаг, затем
+; удерживаем ПКМ и смещаем мышь вниз. Обе точки драга всегда остаются
+; внутри игрового окна: относительный сдвиг из центра мог увести курсор
+; за его нижнюю границу и Roblox переставал получать движение камеры.
 ApplyTopCamera(force := false) {
-    global TopCameraEnabled, Running, GameAreaW, GameAreaH, TS_X, TS_Y
+    global TopCameraEnabled, Running, GameAreaW, GameAreaH, TS_X, TS_Y, WinTitle
     if (!force && !TopCameraEnabled)
         return
     if (!force && !Running)
         return
-    ToScreen(GameAreaW // 2, GameAreaH // 2)
+    if !WinExist(WinTitle) {
+        AddLog("Камера: Roblox не найден, верхний ракурс не применён", "warn")
+        return
+    }
+    ; При запуске из Settings фокус остаётся на модальном окне, поэтому
+    ; активируем Roblox и здесь, а не только в обработчике кнопки Preview.
+    WinActivate, %WinTitle%
+    WinWaitActive, %WinTitle%,, 2
+    if !WinActive(WinTitle) {
+        AddLog("Камера: не удалось активировать Roblox для верхнего ракурса", "warn")
+        return
+    }
+    ; Начинаем выше центра, чтобы после движения вниз курсор не вышел
+    ; за пределы клиентской области Roblox (высота по умолчанию — 720).
+    dragStartX := GameAreaW // 2
+    dragStartY := GameAreaH // 3
+    dragEndY := dragStartY + 280
+    if (dragEndY > GameAreaH - 60)
+        dragEndY := GameAreaH - 60
+    ToScreen(dragStartX, dragStartY)
     MouseMove, %TS_X%, %TS_Y%, 0
-    Sleep, 80
+    Sleep, 150
     SendInput, {WheelUp}
-    Sleep, 100
-    SendInput, {RButton down}
-    Sleep, 60
-    MouseMove, 0, 280, 0, R
-    Sleep, 60
-    SendInput, {RButton up}
-    Sleep, 250
+    Sleep, 150
+    Click, Right Down
+    Sleep, 120
+    ToScreen(dragStartX, dragEndY)
+    MouseMove, %TS_X%, %TS_Y%, 12
+    Sleep, 120
+    Click, Right Up
+    Sleep, 300
     AddLog("Камера: установлен верхний ракурс")
 }
 
@@ -2063,9 +2084,13 @@ RunPlacementSequence:
     runHasStarted := false
     slots := MapCoords[SelectedMapCtl]
     AddLog("Слотов загружено: " slots.Length() " для """ SelectedMapCtl """")
-    ; Кликаем по центру области игры для фокуса
+    ; Фокусируем игру без клика по миру: центральный клик мог случайно
+    ; взаимодействовать с игрой ещё до выбора первого юнита.
     ToScreen(640, 360)
-    SmoothClick(TS_X, TS_Y, 200)
+    MouseMove, %TS_X%, %TS_Y%, 0
+    WinActivate, %WinTitle%
+    WinWaitActive, %WinTitle%,, 2
+    Sleep, 200
     ; Верхний ракурс выполняется до первого юнита каждого этапа.
     ApplyTopCamera()
     ; Обычный зум применяется только перед первой расстановкой после старта фарма.
@@ -3642,7 +3667,8 @@ PollModalClose:
         ApplyTopCamera(true)
     }
     else if (action = "preview-zoom" || action = "preview-zoom-snapshot") {
-        ; Закрываем Settings, активируем Roblox и применяем зум без запуска фарма.
+        ; Закрываем Settings и применяем ту же последовательность, что и
+        ; перед фармом: верхний ракурс (если он включён в форме), затем зум.
         SetTimer, PollModalClose, Off
         Gui, Modal:Destroy
         ModalHwnd := 0
@@ -3653,7 +3679,12 @@ PollModalClose:
         WinActivate, %WinTitle%
         WinWaitActive, %WinTitle%, , 2
         Sleep, 300
-        ApplyStartZoom(true, arg)
+        StringSplit, preview, arg, /
+        previewScrolls := preview1
+        previewTopEnabled := (preview2 = "1" || preview2 = "true") ? true : false
+        if (previewTopEnabled)
+            ApplyTopCamera(true)
+        ApplyStartZoom(true, previewScrolls)
         if (action = "preview-zoom-snapshot") {
             Sleep, 250
             CaptureGameArea(TempShot)
@@ -4215,84 +4246,109 @@ RunUpdateScript_Inner(zipURL) {
     script .= "Add-Type -AssemblyName System.Drawing`r`n"
     script .= "`r`n"
     script .= "$form = New-Object System.Windows.Forms.Form`r`n"
-    script .= "$form.Text = 'Mmacro - Update'`r`n"
-    script .= "$form.ClientSize = New-Object System.Drawing.Size(520, 250)`r`n"
+    script .= "$form.Text = 'Mmacro — Обновление'`r`n"
+    script .= "$form.ClientSize = New-Object System.Drawing.Size(560, 320)`r`n"
     script .= "$form.StartPosition = 'CenterScreen'`r`n"
     script .= "$form.FormBorderStyle = 'None'`r`n"
     script .= "$form.ShowInTaskbar = $true`r`n"
     script .= "$form.TopMost = $true`r`n"
-    script .= "$form.BackColor = [System.Drawing.Color]::FromArgb(18, 18, 18)`r`n"
+    script .= "$form.BackColor = [System.Drawing.Color]::FromArgb(9, 14, 22)`r`n"
+    script .= "$card = New-Object System.Windows.Forms.Panel`r`n"
+    script .= "$card.BackColor = [System.Drawing.Color]::FromArgb(18, 27, 40)`r`n"
+    script .= "$card.Location = New-Object System.Drawing.Point(16, 16)`r`n"
+    script .= "$card.Size = New-Object System.Drawing.Size(528, 288)`r`n"
+    script .= "$form.Controls.Add($card)`r`n"
     script .= "$accent = New-Object System.Windows.Forms.Panel`r`n"
-    script .= "$accent.BackColor = [System.Drawing.Color]::FromArgb(59, 130, 246)`r`n"
+    script .= "$accent.BackColor = [System.Drawing.Color]::FromArgb(91, 156, 255)`r`n"
     script .= "$accent.Location = New-Object System.Drawing.Point(0, 0)`r`n"
-    script .= "$accent.Size = New-Object System.Drawing.Size(520, 3)`r`n"
-    script .= "$form.Controls.Add($accent)`r`n"
+    script .= "$accent.Size = New-Object System.Drawing.Size(528, 4)`r`n"
+    script .= "$card.Controls.Add($accent)`r`n"
+    script .= "$icon = New-Object System.Windows.Forms.Label`r`n"
+    script .= "$icon.AutoSize = $false`r`n"
+    script .= "$icon.Size = New-Object System.Drawing.Size(48, 48)`r`n"
+    script .= "$icon.Text = [char]0x2193`r`n"
+    script .= "$icon.TextAlign = 'MiddleCenter'`r`n"
+    script .= "$icon.Font = New-Object System.Drawing.Font('Segoe UI Symbol', 22, [System.Drawing.FontStyle]::Bold)`r`n"
+    script .= "$icon.ForeColor = [System.Drawing.Color]::FromArgb(188, 216, 255)`r`n"
+    script .= "$icon.BackColor = [System.Drawing.Color]::FromArgb(31, 67, 111)`r`n"
+    script .= "$icon.Location = New-Object System.Drawing.Point(24, 28)`r`n"
+    script .= "$card.Controls.Add($icon)`r`n"
     script .= "$brand = New-Object System.Windows.Forms.Label`r`n"
     script .= "$brand.AutoSize = $true`r`n"
-    script .= "$brand.Text = 'Mmacro'`r`n"
-    script .= "$brand.Font = New-Object System.Drawing.Font('Segoe UI', 9, [System.Drawing.FontStyle]::Bold)`r`n"
-    script .= "$brand.ForeColor = [System.Drawing.Color]::FromArgb(128, 128, 128)`r`n"
-    script .= "$brand.Location = New-Object System.Drawing.Point(30, 20)`r`n"
-    script .= "$form.Controls.Add($brand)`r`n"
+    script .= "$brand.Text = 'MMACRO  •  ОБНОВЛЕНИЕ'`r`n"
+    script .= "$brand.Font = New-Object System.Drawing.Font('Segoe UI', 8, [System.Drawing.FontStyle]::Bold)`r`n"
+    script .= "$brand.ForeColor = [System.Drawing.Color]::FromArgb(125, 153, 190)`r`n"
+    script .= "$brand.Location = New-Object System.Drawing.Point(88, 31)`r`n"
+    script .= "$card.Controls.Add($brand)`r`n"
     script .= "$title = New-Object System.Windows.Forms.Label`r`n"
     script .= "$title.AutoSize = $true`r`n"
-    script .= "$title.Text = 'Updating application'`r`n"
-    script .= "$title.Font = New-Object System.Drawing.Font('Segoe UI', 13, [System.Drawing.FontStyle]::Bold)`r`n"
-    script .= "$title.ForeColor = [System.Drawing.Color]::FromArgb(232, 232, 232)`r`n"
-    script .= "$title.Location = New-Object System.Drawing.Point(30, 45)`r`n"
-    script .= "$form.Controls.Add($title)`r`n"
+    script .= "$title.Text = 'Устанавливаем обновление'`r`n"
+    script .= "$title.Font = New-Object System.Drawing.Font('Segoe UI', 14, [System.Drawing.FontStyle]::Bold)`r`n"
+    script .= "$title.ForeColor = [System.Drawing.Color]::FromArgb(239, 244, 252)`r`n"
+    script .= "$title.Location = New-Object System.Drawing.Point(88, 48)`r`n"
+    script .= "$card.Controls.Add($title)`r`n"
+    script .= "$state = New-Object System.Windows.Forms.Label`r`n"
+    script .= "$state.AutoSize = $false`r`n"
+    script .= "$state.Size = New-Object System.Drawing.Size(104, 24)`r`n"
+    script .= "$state.Text = 'ЗАГРУЗКА'`r`n"
+    script .= "$state.TextAlign = 'MiddleCenter'`r`n"
+    script .= "$state.Font = New-Object System.Drawing.Font('Segoe UI', 8, [System.Drawing.FontStyle]::Bold)`r`n"
+    script .= "$state.ForeColor = [System.Drawing.Color]::FromArgb(174, 207, 255)`r`n"
+    script .= "$state.BackColor = [System.Drawing.Color]::FromArgb(28, 59, 98)`r`n"
+    script .= "$state.Location = New-Object System.Drawing.Point(400, 34)`r`n"
+    script .= "$card.Controls.Add($state)`r`n"
     script .= "$label = New-Object System.Windows.Forms.Label`r`n"
     script .= "$label.AutoSize = $true`r`n"
-    script .= "$label.Text = 'Downloading update...'`r`n"
+    script .= "$label.Text = 'Подготавливаем загрузку…'`r`n"
     script .= "$label.Font = New-Object System.Drawing.Font('Segoe UI', 9)`r`n"
-    script .= "$label.ForeColor = [System.Drawing.Color]::FromArgb(160, 160, 160)`r`n"
-    script .= "$label.Location = New-Object System.Drawing.Point(30, 83)`r`n"
-    script .= "$form.Controls.Add($label)`r`n"
+    script .= "$label.ForeColor = [System.Drawing.Color]::FromArgb(181, 195, 216)`r`n"
+    script .= "$label.Location = New-Object System.Drawing.Point(40, 120)`r`n"
+    script .= "$card.Controls.Add($label)`r`n"
     script .= "$percent = New-Object System.Windows.Forms.Label`r`n"
     script .= "$percent.AutoSize = $false`r`n"
     script .= "$percent.Size = New-Object System.Drawing.Size(70, 22)`r`n"
     script .= "$percent.Text = '0%'`r`n"
     script .= "$percent.TextAlign = 'MiddleRight'`r`n"
-    script .= "$percent.Font = New-Object System.Drawing.Font('Segoe UI', 9, [System.Drawing.FontStyle]::Bold)`r`n"
-    script .= "$percent.ForeColor = [System.Drawing.Color]::FromArgb(59, 130, 246)`r`n"
-    script .= "$percent.Location = New-Object System.Drawing.Point(420, 81)`r`n"
-    script .= "$form.Controls.Add($percent)`r`n"
+    script .= "$percent.Font = New-Object System.Drawing.Font('Segoe UI', 10, [System.Drawing.FontStyle]::Bold)`r`n"
+    script .= "$percent.ForeColor = [System.Drawing.Color]::FromArgb(120, 177, 255)`r`n"
+    script .= "$percent.Location = New-Object System.Drawing.Point(418, 116)`r`n"
+    script .= "$card.Controls.Add($percent)`r`n"
     script .= "$track = New-Object System.Windows.Forms.Panel`r`n"
-    script .= "$track.BackColor = [System.Drawing.Color]::FromArgb(45, 45, 45)`r`n"
-    script .= "$track.Location = New-Object System.Drawing.Point(30, 116)`r`n"
-    script .= "$track.Size = New-Object System.Drawing.Size(460, 10)`r`n"
-    script .= "$form.Controls.Add($track)`r`n"
+    script .= "$track.BackColor = [System.Drawing.Color]::FromArgb(34, 47, 66)`r`n"
+    script .= "$track.Location = New-Object System.Drawing.Point(40, 153)`r`n"
+    script .= "$track.Size = New-Object System.Drawing.Size(448, 8)`r`n"
+    script .= "$card.Controls.Add($track)`r`n"
     script .= "$fill = New-Object System.Windows.Forms.Panel`r`n"
-    script .= "$fill.BackColor = [System.Drawing.Color]::FromArgb(59, 130, 246)`r`n"
-    script .= "$fill.Location = New-Object System.Drawing.Point(30, 116)`r`n"
-    script .= "$fill.Size = New-Object System.Drawing.Size(2, 10)`r`n"
-    script .= "$form.Controls.Add($fill)`r`n"
+    script .= "$fill.BackColor = [System.Drawing.Color]::FromArgb(91, 156, 255)`r`n"
+    script .= "$fill.Location = New-Object System.Drawing.Point(40, 153)`r`n"
+    script .= "$fill.Size = New-Object System.Drawing.Size(2, 8)`r`n"
+    script .= "$card.Controls.Add($fill)`r`n"
     script .= "$spinner = New-Object System.Windows.Forms.Label`r`n"
     script .= "$spinner.AutoSize = $true`r`n"
     script .= "$spinner.Text = [char]0x25D0`r`n"
     script .= "$spinner.Font = New-Object System.Drawing.Font('Segoe UI Symbol', 10)`r`n"
-    script .= "$spinner.ForeColor = [System.Drawing.Color]::FromArgb(59, 130, 246)`r`n"
-    script .= "$spinner.Location = New-Object System.Drawing.Point(30, 145)`r`n"
-    script .= "$form.Controls.Add($spinner)`r`n"
+    script .= "$spinner.ForeColor = [System.Drawing.Color]::FromArgb(91, 156, 255)`r`n"
+    script .= "$spinner.Location = New-Object System.Drawing.Point(40, 177)`r`n"
+    script .= "$card.Controls.Add($spinner)`r`n"
     script .= "$hint = New-Object System.Windows.Forms.Label`r`n"
     script .= "$hint.AutoSize = $true`r`n"
-    script .= "$hint.Text = 'Please wait, the application will restart automatically.'`r`n"
+    script .= "$hint.Text = 'Не закрывайте окно — Mmacro перезапустится автоматически.'`r`n"
     script .= "$hint.Font = New-Object System.Drawing.Font('Segoe UI', 8)`r`n"
-    script .= "$hint.ForeColor = [System.Drawing.Color]::FromArgb(100, 100, 100)`r`n"
-    script .= "$hint.Location = New-Object System.Drawing.Point(52, 148)`r`n"
-    script .= "$form.Controls.Add($hint)`r`n"
+    script .= "$hint.ForeColor = [System.Drawing.Color]::FromArgb(117, 137, 165)`r`n"
+    script .= "$hint.Location = New-Object System.Drawing.Point(62, 180)`r`n"
+    script .= "$card.Controls.Add($hint)`r`n"
     script .= "$stage = New-Object System.Windows.Forms.Label`r`n"
     script .= "$stage.AutoSize = $true`r`n"
-    script .= "$stage.Text = '1  Download    2  Install    3  Restart'`r`n"
+    script .= "$stage.Text = '01  Скачать        02  Установить        03  Перезапустить'`r`n"
     script .= "$stage.Font = New-Object System.Drawing.Font('Segoe UI', 8)`r`n"
-    script .= "$stage.ForeColor = [System.Drawing.Color]::FromArgb(75, 75, 75)`r`n"
-    script .= "$stage.Location = New-Object System.Drawing.Point(30, 195)`r`n"
-    script .= "$form.Controls.Add($stage)`r`n"
+    script .= "$stage.ForeColor = [System.Drawing.Color]::FromArgb(137, 162, 198)`r`n"
+    script .= "$stage.Location = New-Object System.Drawing.Point(40, 238)`r`n"
+    script .= "$card.Controls.Add($stage)`r`n"
     script .= "$form.Show()`r`n"
     script .= "[System.Windows.Forms.Application]::DoEvents()`r`n"
     script .= "`r`n"
     script .= "try {`r`n"
-    script .= "    Write-Host 'Downloading...'`r`n"
+    script .= "    Write-Host 'Downloading update...'`r`n"
     script .= "    [System.IO.File]::WriteAllText('" . safeProgress . "', '0')`r`n"
     script .= "    $downloadCommand = '" . safeWorkerCommand . "'`r`n"
     script .= "    $encodedCommand = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($downloadCommand))`r`n"
@@ -4311,51 +4367,60 @@ RunUpdateScript_Inner(zipURL) {
     script .= "        $spinnerChar = $spinFrames[$spinIndex]`r`n"
     script .= "        $spinIndex = ($spinIndex + 1) % 4`r`n"
     script .= "        if ($progressValue -ge 0) {`r`n"
-    script .= "            $label.Text = 'Downloading update...'`r`n"
+    script .= "            $label.Text = 'Скачиваем файлы обновления…'`r`n"
+    script .= "            $state.Text = 'ЗАГРУЗКА'`r`n"
     script .= "            $percent.Text = ('{0}%' -f $progressValue)`r`n"
     script .= "            $spinner.Text = $spinnerChar`r`n"
-    script .= "            $fill.Left = 30`r`n"
-    script .= "            $fill.Width = [int][Math]::Max(2, [Math]::Min(460, [Math]::Round(460 * $progressValue / 100)))`r`n"
+    script .= "            $fill.Left = 40`r`n"
+    script .= "            $fill.Width = [int][Math]::Max(2, [Math]::Min(448, [Math]::Round(448 * $progressValue / 100)))`r`n"
     script .= "        } else {`r`n"
-    script .= "            $label.Text = 'Connecting to GitHub...'`r`n"
+    script .= "            $label.Text = 'Подключаемся к GitHub…'`r`n"
+    script .= "            $state.Text = 'СОЕДИНЕНИЕ'`r`n"
     script .= "            $percent.Text = '...'`r`n"
     script .= "            $spinner.Text = $spinnerChar`r`n"
-    script .= "            $fill.Left = 30 + $phase`r`n"
+    script .= "            $fill.Left = 40 + $phase`r`n"
     script .= "            $fill.Width = 90`r`n"
     script .= "            $phase += 10`r`n"
-    script .= "            if ($phase -gt 370) { $phase = 0 }`r`n"
+    script .= "            if ($phase -gt 358) { $phase = 0 }`r`n"
     script .= "        }`r`n"
     script .= "        [System.Windows.Forms.Application]::DoEvents()`r`n"
     script .= "        Start-Sleep -Milliseconds 40`r`n"
     script .= "    }`r`n"
     script .= "    $worker.Refresh()`r`n"
-    script .= "    if ($worker.ExitCode -ne 0) { throw 'Download failed. Check your internet connection.' }`r`n"
-    script .= "    if (-not (Test-Path '" . safeZip . "')) { throw 'Downloaded file was not created' }`r`n"
-    script .= "    $label.Text = 'Installing update...'`r`n"
+    script .= "    if ($worker.ExitCode -ne 0) { throw 'Не удалось скачать обновление. Проверьте подключение к интернету.' }`r`n"
+    script .= "    if (-not (Test-Path '" . safeZip . "')) { throw 'Файл обновления не был создан' }`r`n"
+    script .= "    $label.Text = 'Распаковываем и устанавливаем обновление…'`r`n"
+    script .= "    $state.Text = 'УСТАНОВКА'`r`n"
     script .= "    $percent.Text = '100%'`r`n"
-    script .= "    $stage.Text = '1  Download    2  Installing    3  Restart'`r`n"
-    script .= "    $fill.Left = 30`r`n"
-    script .= "    $fill.Width = 460`r`n"
+    script .= "    $stage.Text = '01  Скачать        02  Устанавливаем        03  Перезапустить'`r`n"
+    script .= "    $fill.Left = 40`r`n"
+    script .= "    $fill.Width = 448`r`n"
     script .= "    [System.Windows.Forms.Application]::DoEvents()`r`n"
     script .= "    Expand-Archive -Path '" . safeZip . "' -DestinationPath '" . safeExtr . "' -Force`r`n"
     script .= "    $srcDir = Get-ChildItem -Path '" . safeExtr . "' -Directory | Select-Object -First 1`r`n"
     script .= "    if (-not $srcDir) { $srcDir = '" . safeExtr . "' } else { $srcDir = $srcDir.FullName }`r`n"
     script .= "    $target = '" . safeTarget . "'`r`n"
     script .= "    Copy-Item -Path (Join-Path $srcDir '*') -Destination $target -Recurse -Force`r`n"
-    script .= "    $label.Text = 'Restarting application...'`r`n"
-    script .= "    $stage.Text = '1  Download    2  Install    3  Restarting'`r`n"
+    script .= "    $label.Text = 'Готово. Перезапускаем Mmacro…'`r`n"
+    script .= "    $state.Text = 'ГОТОВО'`r`n"
+    script .= "    $stage.Text = '01  Скачать        02  Установить        03  Перезапускаем'`r`n"
     script .= "    [System.Windows.Forms.Application]::DoEvents()`r`n"
     script .= "    Start-Sleep -Milliseconds 500`r`n"
     script .= "} catch {`r`n"
     script .= "    Write-Host ('Update error: ' + $_.Exception.Message)`r`n"
-    script .= "    $label.Text = 'Update failed'`r`n"
+    script .= "    $title.Text = 'Не удалось обновить приложение'`r`n"
+    script .= "    $label.Text = 'Обновление не было установлено'`r`n"
+    script .= "    $state.Text = 'ОШИБКА'`r`n"
     script .= "    $percent.Text = '!'`r`n"
-    script .= "    $stage.Text = 'The update could not be completed'`r`n"
+    script .= "    $stage.Text = 'Проверьте подключение и повторите попытку позже'`r`n"
     script .= "    $hint.Text = $_.Exception.Message`r`n"
-    script .= "    $label.ForeColor = [System.Drawing.Color]::FromArgb(220, 80, 80)`r`n"
-    script .= "    $fill.BackColor = [System.Drawing.Color]::FromArgb(220, 80, 80)`r`n"
-    script .= "    $fill.Left = 30`r`n"
-    script .= "    $fill.Width = 460`r`n"
+    script .= "    $label.ForeColor = [System.Drawing.Color]::FromArgb(255, 160, 160)`r`n"
+    script .= "    $state.ForeColor = [System.Drawing.Color]::FromArgb(255, 190, 190)`r`n"
+    script .= "    $state.BackColor = [System.Drawing.Color]::FromArgb(101, 38, 48)`r`n"
+    script .= "    $accent.BackColor = [System.Drawing.Color]::FromArgb(234, 89, 103)`r`n"
+    script .= "    $fill.BackColor = [System.Drawing.Color]::FromArgb(234, 89, 103)`r`n"
+    script .= "    $fill.Left = 40`r`n"
+    script .= "    $fill.Width = 448`r`n"
     script .= "    [System.Windows.Forms.Application]::DoEvents()`r`n"
     script .= "    Start-Sleep -Seconds 8`r`n"
     script .= "    $form.Close()`r`n"
