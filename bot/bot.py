@@ -568,9 +568,13 @@ def main() -> int:
         print("DiscordBot.Token is empty", file=sys.stderr, flush=True)
         bot_log("DiscordBot.Token is empty")
         return 2
+    if len(token) < 40 or token.count(".") < 2:
+        bot_log("DiscordBot.Token has an invalid format")
+        print("DiscordBot.Token has an invalid format", file=sys.stderr, flush=True)
+        return 2
     guild_raw = setting("DiscordBot", "GuildId", "")
     guild_id = int(guild_raw) if guild_raw.isdigit() else None
-    bot_log(f"token loaded; guild_id={guild_id if guild_id else 'global'}")
+    bot_log(f"token loaded; token_length={len(token)}; guild_id={guild_id if guild_id else 'global'}")
     bot = MacroBot(guild_id)
     register_commands(bot)
     try:

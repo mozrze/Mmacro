@@ -196,10 +196,13 @@ Discord-сервер: [discord.gg/pYsA8PTEDQ](https://discord.gg/pYsA8PTEDQ)
 
 ## Discord-бот
 
-В `Settings` → `Discord bot` укажите токен, при необходимости ID сервера и разрешённые Discord ID пользователей. Перед первым запуском установите зависимости:
+В `Settings` → `Discord bot` укажите токен, при необходимости ID сервера и разрешённые Discord ID пользователей. Перед первым запуском нажмите `Install dependencies`: установщик найдёт Python, создаст локальное окружение `bot/runtime/.venv`, установит зависимости в него и проверит импорт пакетов. Это не требует прав администратора и не смешивает зависимости бота с другими Python-проектами.
+
+Для ручной установки используйте виртуальное окружение:
 
 ```powershell
-python -m pip install -r bot/requirements.txt
+py -3 -m venv bot/runtime/.venv
+bot/runtime/.venv/Scripts/python.exe -m pip install -r bot/requirements.txt
 ```
 
 Для ручного управления используйте `Start bot` и `Stop bot`. Флажок `Запускать Discord-бота вместе с макросом` запускает бота автоматически при следующем старте Mmacro; без него бот можно запускать только вручную.

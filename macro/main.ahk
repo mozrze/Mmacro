@@ -74,6 +74,11 @@ BotProcessPid := 0
 BotDepsLogFile := BotRuntimeDir . "\pip_install.log"
 BotDepsScriptFile := BotRuntimeDir . "\install_bot_deps.ps1"
 BotPythonPathFile := BotRuntimeDir . "\python_path.txt"
+BotVenvDir := BotRuntimeDir . "\.venv"
+BotVenvPythonFile := BotVenvDir . "\Scripts\python.exe"
+BotLaunchScriptFile := BotRuntimeDir . "\start_bot.ps1"
+BotLaunchErrorFile := BotRuntimeDir . "\bot_start_error.log"
+BotLaunchOutputFile := BotRuntimeDir . "\bot_stdout.log"
 BotRunning := false
 PendingMapChange := ""
 BotMapRecordActive := false
@@ -95,7 +100,7 @@ IfNotExist, %BotActionsDir%
     FileCreateDir, %BotActionsDir%
 
 ; ---- Автообновление с GitHub ----
-CURRENT_VERSION := "1.0.9"
+CURRENT_VERSION := "1.0.10"
 GH_REPO := "mozrze/Mmacro"           ; пользователь/репозиторий
 GH_TOKEN_FILE := A_ScriptDir . "\ahk\token.ini"
 GH_TOKEN := ""
@@ -2875,6 +2880,8 @@ InstallBotDependencies:
     psContent .= "$log = '" . safeLog . "'`r`n"
     psContent .= "$result = '" . safeResult . "'`r`n"
     psContent .= "$pythonPathFile = '" . safePythonPath . "'`r`n"
+    psContent .= "$venv = Join-Path (Split-Path -Parent $requirements) 'runtime\.venv'`r`n"
+    psContent .= "$venvPython = Join-Path $venv 'Scripts\python.exe'`r`n"
     psContent .= "$form = New-Object System.Windows.Forms.Form`r`n"
     psContent .= "$form.Text = 'Mmacro - Установка зависимостей'`r`n"
     psContent .= "$form.ClientSize = New-Object System.Drawing.Size(500, 280)`r`n"
@@ -2965,6 +2972,7 @@ InstallBotDependencies:
     psContent .= "  if ($exitCode -ne 0) { throw ($caption + ' завершился с ошибкой (код ' + $exitCode + ')') }`r`n"
     psContent .= "}`r`n"
     psContent .= "Remove-Item -LiteralPath $result -Force -ErrorAction SilentlyContinue`r`n"
+    psContent .= "Remove-Item -LiteralPath $pythonPathFile -Force -ErrorAction SilentlyContinue`r`n"
     psContent .= "function Find-Python {`r`n"
     psContent .= "  $found = @()`r`n"
     psContent .= "  $cmd = Get-Command python.exe -ErrorAction SilentlyContinue`r`n"
@@ -2981,9 +2989,15 @@ InstallBotDependencies:
     psContent .= "  foreach ($launcher in @((Get-Command py.exe -ErrorAction SilentlyContinue).Source, (Join-Path $env:LocalAppData 'Programs\\Python\\Launcher\\py.exe'))) {`r`n"
     psContent .= "    if ($launcher -and (Test-Path -LiteralPath $launcher)) { try { $resolved = (& $launcher -3 -c 'import sys; print(sys.executable)' 2>$null | Select-Object -First 1).Trim(); if ($resolved -and (Test-Path -LiteralPath $resolved)) { $found += $resolved } } catch {} }`r`n"
     psContent .= "  }`r`n"
-    psContent .= "  foreach ($candidate in $found | Select-Object -Unique) { if (Test-Path -LiteralPath $candidate) { return $candidate } }`r`n"
+    psContent .= "  foreach ($candidate in $found | Select-Object -Unique) { if ((Test-Path -LiteralPath $candidate) -and (Is-SupportedPython $candidate)) { return $candidate } }`r`n"
     psContent .= "  return $null`r`n"
     psContent .= "}`r`n"
+    psContent .= "function Is-SupportedPython($candidate) {`r`n"
+    psContent .= "  try { & $candidate -c 'import sys; raise SystemExit(0 if sys.version_info >= (3,10) else 1)' 2>$null; return ($LASTEXITCODE -eq 0) } catch { return $false }`r`n"
+    psContent .= "}`r`n"
+    ; Не используем старую или системную установку Python, которая может не
+    ; поддерживать актуальные версии Pillow/mss. Python 3.10+ достаточен для
+    ; всех зависимостей бота и не требует установки от имени администратора.
     psContent .= "try {`r`n"
     psContent .= "  $status.Text = 'Поиск Python'`r`n"
     psContent .= "  $detail.Text = 'Проверяем стандартные папки и Python Launcher…'`r`n"
@@ -3002,16 +3016,26 @@ InstallBotDependencies:
     psContent .= "  }`r`n"
     psContent .= "  if (-not $python) { throw 'Python установлен, но его исполняемый файл не найден. Перезапустите макрос и повторите попытку.' }`r`n"
     psContent .= "  Set-Content -LiteralPath $log -Value ('Python: ' + $python)`r`n"
-    psContent .= "  Set-Content -LiteralPath $pythonPathFile -Value $python`r`n"
+    psContent .= "  $venvReady = $false`r`n"
+    psContent .= "  if (Test-Path -LiteralPath $venvPython) { $venvReady = Is-SupportedPython $venvPython }`r`n"
+    psContent .= "  if (-not $venvReady) {`r`n"
+    psContent .= "    if (Test-Path -LiteralPath $venv) { Remove-Item -LiteralPath $venv -Recurse -Force }`r`n"
+    psContent .= "    $status.Text = 'Создание окружения'`r`n"
+    psContent .= "    $detail.Text = 'Создаём отдельное окружение бота…'`r`n"
+    psContent .= "    Run-Step 'Создание окружения' $python @('-m','venv',$venv)`r`n"
+    psContent .= "  }`r`n"
+    psContent .= "  if (-not (Test-Path -LiteralPath $venvPython)) { throw 'Не удалось создать виртуальное окружение Python' }`r`n"
+    psContent .= "  Set-Content -LiteralPath $pythonPathFile -Value $venvPython`r`n"
     psContent .= "  $status.Text = 'Подготовка pip'`r`n"
     psContent .= "  $detail.Text = 'Включаем встроенный установщик пакетов…'`r`n"
-    psContent .= "  Run-Step 'Подготовка pip' $python @('-m','ensurepip','--upgrade')`r`n"
+    psContent .= "  Run-Step 'Подготовка pip' $venvPython @('-m','ensurepip','--upgrade')`r`n"
     psContent .= "  $status.Text = 'Обновление pip'`r`n"
     psContent .= "  $detail.Text = 'Проверяем менеджер пакетов…'`r`n"
-    psContent .= "  Run-Step 'Обновление pip' $python @('-m','pip','install','--upgrade','pip')`r`n"
+    psContent .= "  Run-Step 'Обновление pip' $venvPython @('-m','pip','install','--upgrade','pip','--disable-pip-version-check','--no-input')`r`n"
     psContent .= "  $status.Text = 'Установка пакетов'`r`n"
     psContent .= "  $detail.Text = 'Устанавливаем discord.py, Pillow и mss…'`r`n"
-    psContent .= "  Run-Step 'Установка пакетов' $python @('-m','pip','install','-r',$requirements)`r`n"
+    psContent .= "  Run-Step 'Установка пакетов' $venvPython @('-m','pip','install','-r',$requirements,'--disable-pip-version-check','--no-input','--prefer-binary')`r`n"
+    psContent .= "  Run-Step 'Проверка пакетов' $venvPython @('-c','import discord, PIL, mss')`r`n"
     psContent .= "  $progress.Style = 'Continuous'`r`n"
     psContent .= "  $progress.Value = 100`r`n"
     psContent .= "  $status.Text = 'Готово'`r`n"
@@ -3108,19 +3132,112 @@ StartDiscordBot:
     }
     BotPython := botPythonExe
     AddLog("Discord bot: найден Python " . botPythonExe)
-    Run, % """" . botPythonExe . """ """ . botScript . """", %BotDir%, Hide, BotProcessPid
-    if (ErrorLevel) {
-        AddLog("Discord bot: не удалось запустить Python", "error")
-        UpdateBotStatus("Python start failed", "error")
+    botLogFile := BotRuntimeDir . "\bot.log"
+    ; Прямой запуск Python надёжнее промежуточного PowerShell-скрипта.
+    Run, % """" . botPythonExe . """ -u """ . botScript . """", %BotDir%, Hide, BotProcessPid
+    if (ErrorLevel || !BotProcessPid) {
+        AddLog("Discord bot: не удалось создать процесс Python (" . botPythonExe . ")", "error")
+        UpdateBotStatus("Bot start failed", "error")
         return
     }
+    Goto, BotProcessStarted
+
+    ; Старый fallback оставлен ниже для совместимости со сборками, где прямой
+    ; запуск запрещён политикой Windows.
+    FileDelete, %BotLaunchOutputFile%
+    FileDelete, %BotLaunchErrorFile%
+    safePython := StrReplace(botPythonExe, "'", "''")
+    safeScript := StrReplace(botScript, "'", "''")
+    safeWorkDir := StrReplace(BotDir, "'", "''")
+    safeBotLog := StrReplace(botLogFile, "'", "''")
+    safeLaunchError := StrReplace(BotLaunchErrorFile, "'", "''")
+    safeLaunchOutput := StrReplace(BotLaunchOutputFile, "'", "''")
+    launchScript := "$ErrorActionPreference = 'Stop'`r`n"
+    launchScript .= "$python = '" . safePython . "'`r`n"
+    launchScript .= "$script = '" . safeScript . "'`r`n"
+    launchScript .= "$work = '" . safeWorkDir . "'`r`n"
+    launchScript .= "$log = '" . safeBotLog . "'`r`n"
+    launchScript .= "$err = '" . safeLaunchError . "'`r`n"
+    launchScript .= "$out = '" . safeLaunchOutput . "'`r`n"
+    launchScript .= "try {`r`n"
+    launchScript .= "  if (-not (Test-Path -LiteralPath $python)) { throw ('Python not found: ' + $python) }`r`n"
+    launchScript .= "  if (-not (Test-Path -LiteralPath $script)) { throw ('bot.py not found: ' + $script) }`r`n"
+    launchScript .= "  $probe = @(& $python '-c' 'import discord; print(discord.__version__)' 2>&1)`r`n"
+    launchScript .= "  if ($LASTEXITCODE -ne 0) { throw ('Не удалось загрузить discord.py: ' + ($probe -join ' ')) }`r`n"
+    launchScript .= "  Remove-Item -LiteralPath $out,$err -Force -ErrorAction SilentlyContinue`r`n"
+    launchScript .= "  $p = Start-Process -FilePath $python -ArgumentList @('-u', $script) -WorkingDirectory $work -RedirectStandardOutput $out -RedirectStandardError $err -WindowStyle Hidden -PassThru`r`n"
+    launchScript .= "  if (-not $p) { throw 'Не удалось создать процесс Python' }`r`n"
+    launchScript .= "  Set-Content -LiteralPath (Join-Path $work 'runtime\\bot_pid.txt') -Value $p.Id`r`n"
+    launchScript .= "} catch { Set-Content -LiteralPath $err -Value ($_.Exception | Out-String); exit 1 }`r`n"
+    FileDelete, %BotLaunchScriptFile%
+    launchFile := FileOpen(BotLaunchScriptFile, "w", "UTF-8")
+    if (launchFile) {
+        launchFile.Write(launchScript)
+        launchFile.Close()
+    }
+    RunWait, % "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File """ . BotLaunchScriptFile . """", %BotDir%, Hide
+    if (FileExist(BotLaunchErrorFile)) {
+        FileRead, launchError, %BotLaunchErrorFile%
+        launchError := Trim(launchError)
+        if (launchError != "") {
+            AddLog("Discord bot: ошибка запуска — " . launchError, "error")
+            UpdateBotStatus("Bot start failed", "error")
+            return
+        }
+    }
+    pidFile := BotRuntimeDir . "\bot_pid.txt"
+    if FileExist(pidFile) {
+        FileRead, pidText, %pidFile%
+        BotProcessPid := Trim(pidText) + 0
+    }
+BotProcessStarted:
+    if (!BotProcessPid) {
+        AddLog("Discord bot: процесс не был создан", "error")
+        UpdateBotStatus("Bot start failed", "error")
+        return
+    }
+    ; Даём Python время пройти импорт и проверить токен. Если процесс сразу
+    ; завершился, показываем реальную причину из stderr/stdout, а не «запуск».
+    Sleep, 900
+    Process, Exist, %BotProcessPid%
+    if (!ErrorLevel) {
+        launchError := ""
+        if FileExist(BotLaunchErrorFile) {
+            FileRead, launchError, %BotLaunchErrorFile%
+            launchError := Trim(launchError)
+        }
+        if (launchError = "" && FileExist(BotLaunchOutputFile)) {
+            FileRead, launchError, %BotLaunchOutputFile%
+            launchError := Trim(launchError)
+        }
+        if (launchError = "" && FileExist(BotRuntimeDir . "\bot.log")) {
+            FileRead, launchError, % BotRuntimeDir . "\bot.log"
+            launchError := Trim(launchError)
+            if (StrLen(launchError) > 280)
+                launchError := SubStr(launchError, StrLen(launchError) - 279)
+        }
+        if (launchError = "")
+            launchError := "Python завершился до подключения к Discord"
+        if (StrLen(launchError) > 220)
+            launchError := SubStr(launchError, 1, 220) . "…"
+        AddLog("Discord bot: процесс завершился — " . launchError, "error")
+        UpdateBotStatus("Bot stopped", "error")
+        BotProcessPid := 0
+        return
+    }
+    ; Process, Exist возвращает PID найденного процесса в ErrorLevel.
+    ; Ненулевое значение здесь означает успешный запуск, а не ошибку.
     BotRunning := true
     AddLog("Discord bot: запуск запрошен (лог: " . BotDir . "\runtime\bot.log)", "success")
-    UpdateBotStatus("Starting...", "running")
+    UpdateBotStatus("Running", "running")
 return
 
 ResolveBotPython() {
-    global BotPython, BotPythonPathFile
+    global BotPython, BotPythonPathFile, BotVenvPythonFile
+    ; Всегда предпочитаем окружение, созданное кнопкой установки. Это
+    ; исключает запуск на другом Python после обновления или переустановки.
+    if FileExist(BotVenvPythonFile)
+        return BotVenvPythonFile
     if (InStr(BotPython, "\") && FileExist(BotPython))
         return BotPython
     if FileExist(BotPythonPathFile) {
