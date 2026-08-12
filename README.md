@@ -1,5 +1,7 @@
 # Mmacro
 
+Discord-сервер проекта: [discord.gg/pYsA8PTEDQ](https://discord.gg/pYsA8PTEDQ)
+
 Макрос AutoHotkey для автоматической расстановки юнитов и фарма в Roblox Tower Defense.
 
 Программа управляет игрой через экранные координаты, ImageSearch/PixelSearch и сохранённые разметки карт. Для корректной работы Roblox должен быть открыт и виден на экране.
