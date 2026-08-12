@@ -4443,12 +4443,17 @@ RunUpdateScript_Inner(zipURL) {
     script .= "    $srcDir = Get-ChildItem -Path '" . safeExtr . "' -Directory | Select-Object -First 1`r`n"
     script .= "    if (-not $srcDir) { $srcDir = '" . safeExtr . "' } else { $srcDir = $srcDir.FullName }`r`n"
     script .= "    $target = '" . safeTarget . "'`r`n"
-    ; Карты и пресеты — данные пользователя. Не копируем их из архива
-    ; релиза, чтобы обновление никогда не заменяло локальную разметку
-    ; карт или созданные пользователем пресеты.
+    ; Пользовательские данные не копируем из архива релиза. Код обновляется,
+    ; а локальные настройки, токены, карты, пресеты и действия бота остаются
+    ; такими, какими их создал пользователь.
     script .= "    $protectedUpdatePaths = @(`r`n"
     script .= "        [System.IO.Path]::GetFullPath((Join-Path $srcDir 'macro\\maps')),`r`n"
-    script .= "        [System.IO.Path]::GetFullPath((Join-Path $srcDir 'macro\\ahk\\presets.ini'))`r`n"
+    script .= "        [System.IO.Path]::GetFullPath((Join-Path $srcDir 'macro\\config.ini')),`r`n"
+    script .= "        [System.IO.Path]::GetFullPath((Join-Path $srcDir 'macro\\ahk\\settings.ini')),`r`n"
+    script .= "        [System.IO.Path]::GetFullPath((Join-Path $srcDir 'macro\\ahk\\presets.ini')),`r`n"
+    script .= "        [System.IO.Path]::GetFullPath((Join-Path $srcDir 'macro\\ahk\\token.ini')),`r`n"
+    script .= "        [System.IO.Path]::GetFullPath((Join-Path $srcDir 'bot\\actions')),`r`n"
+    script .= "        [System.IO.Path]::GetFullPath((Join-Path $srcDir 'bot\\runtime'))`r`n"
     script .= "    )`r`n"
     script .= "    function Copy-UpdateItem($item, $destination) {`r`n"
     script .= "        $sourcePath = [System.IO.Path]::GetFullPath($item.FullName)`r`n"
