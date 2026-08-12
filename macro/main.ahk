@@ -71,6 +71,8 @@ BotAutoStart := false
 BotGuildId := ""
 BotAllowedUserIds := ""
 BotProcessPid := 0
+BotDepsLogFile := BotRuntimeDir . "\pip_install.log"
+BotDepsScriptFile := BotRuntimeDir . "\install_bot_deps.ps1"
 BotRunning := false
 PendingMapChange := ""
 BotMapRecordActive := false
@@ -92,7 +94,7 @@ IfNotExist, %BotActionsDir%
     FileCreateDir, %BotActionsDir%
 
 ; ---- Автообновление с GitHub ----
-CURRENT_VERSION := "1.0.5"
+CURRENT_VERSION := "1.0.6"
 GH_REPO := "mozrze/Mmacro"           ; пользователь/репозиторий
 GH_TOKEN_FILE := A_ScriptDir . "\ahk\token.ini"
 GH_TOKEN := ""
@@ -2859,22 +2861,226 @@ InstallBotDependencies:
         UpdateBotInstallButton(true)
         return
     }
-    ; Используем официальный Python Launcher напрямую. RunWait возвращает
-    ; настоящий код pip и не зависит от cmd/PowerShell/файлов-обёрток.
+    ; PowerShell-скрипт сам находит Python, а если его нет — устанавливает
+    ; Python через winget. Поэтому кнопка работает на чистой системе тоже.
+    safeRequirements := StrReplace(requirementsFile, "'", "''")
+    safeLog := StrReplace(BotDepsLogFile, "'", "''")
+    safeResult := StrReplace(BotRuntimeDir . "\pip_install_exit.txt", "'", "''")
+    psContent := "$ErrorActionPreference = 'Stop'`r`n"
+    psContent .= "Add-Type -AssemblyName System.Windows.Forms`r`n"
+    psContent .= "Add-Type -AssemblyName System.Drawing`r`n"
+    psContent .= "$requirements = '" . safeRequirements . "'`r`n"
+    psContent .= "$log = '" . safeLog . "'`r`n"
+    psContent .= "$result = '" . safeResult . "'`r`n"
+    psContent .= "$form = New-Object System.Windows.Forms.Form`r`n"
+    psContent .= "$form.Text = 'Mmacro - Установка зависимостей'`r`n"
+    psContent .= "$form.ClientSize = New-Object System.Drawing.Size(500, 280)`r`n"
+    psContent .= "$form.StartPosition = 'CenterScreen'`r`n"
+    psContent .= "$form.FormBorderStyle = 'None'`r`n"
+    psContent .= "$form.ShowInTaskbar = $true`r`n"
+    psContent .= "$form.TopMost = $true`r`n"
+    psContent .= "$form.BackColor = [System.Drawing.Color]::FromArgb(18,18,18)`r`n"
+    psContent .= "$accent = New-Object System.Windows.Forms.Panel`r`n"
+    psContent .= "$accent.BackColor = [System.Drawing.Color]::FromArgb(59,130,246)`r`n"
+    psContent .= "$accent.Location = New-Object System.Drawing.Point(0,0)`r`n"
+    psContent .= "$accent.Size = New-Object System.Drawing.Size(500,2)`r`n"
+    psContent .= "$form.Controls.Add($accent)`r`n"
+    psContent .= "$brand = New-Object System.Windows.Forms.Label`r`n"
+    psContent .= "$brand.Text = 'MMACRO  •  BOT'`r`n"
+    psContent .= "$brand.AutoSize = $true`r`n"
+    psContent .= "$brand.Font = New-Object System.Drawing.Font('Segoe UI',9,[System.Drawing.FontStyle]::Bold)`r`n"
+    psContent .= "$brand.ForeColor = [System.Drawing.Color]::FromArgb(150,150,150)`r`n"
+    psContent .= "$brand.Location = New-Object System.Drawing.Point(22,22)`r`n"
+    psContent .= "$form.Controls.Add($brand)`r`n"
+    psContent .= "$title = New-Object System.Windows.Forms.Label`r`n"
+    psContent .= "$title.Text = 'Установка зависимостей'`r`n"
+    psContent .= "$title.AutoSize = $true`r`n"
+    psContent .= "$title.Font = New-Object System.Drawing.Font('Segoe UI',14,[System.Drawing.FontStyle]::Bold)`r`n"
+    psContent .= "$title.ForeColor = [System.Drawing.Color]::FromArgb(228,228,228)`r`n"
+    psContent .= "$title.Location = New-Object System.Drawing.Point(22,48)`r`n"
+    psContent .= "$form.Controls.Add($title)`r`n"
+    psContent .= "$status = New-Object System.Windows.Forms.Label`r`n"
+    psContent .= "$status.Text = 'Подготовка…'`r`n"
+    psContent .= "$status.AutoSize = $true`r`n"
+    psContent .= "$status.Font = New-Object System.Drawing.Font('Segoe UI',10)`r`n"
+    psContent .= "$status.ForeColor = [System.Drawing.Color]::FromArgb(59,130,246)`r`n"
+    psContent .= "$status.Location = New-Object System.Drawing.Point(22,94)`r`n"
+    psContent .= "$form.Controls.Add($status)`r`n"
+    psContent .= "$spinner = New-Object System.Windows.Forms.Label`r`n"
+    psContent .= "$spinner.AutoSize = $false`r`n"
+    psContent .= "$spinner.Size = New-Object System.Drawing.Size(32,32)`r`n"
+    psContent .= "$spinner.TextAlign = 'MiddleCenter'`r`n"
+    psContent .= "$spinner.Font = New-Object System.Drawing.Font('Segoe UI Symbol',16,[System.Drawing.FontStyle]::Regular)`r`n"
+    psContent .= "$spinner.ForeColor = [System.Drawing.Color]::FromArgb(59,130,246)`r`n"
+    psContent .= "$spinner.Location = New-Object System.Drawing.Point(444,86)`r`n"
+    psContent .= "$form.Controls.Add($spinner)`r`n"
+    psContent .= "$detail = New-Object System.Windows.Forms.Label`r`n"
+    psContent .= "$detail.Text = 'Проверяем Python и pip'`r`n"
+    psContent .= "$detail.AutoSize = $true`r`n"
+    psContent .= "$detail.Font = New-Object System.Drawing.Font('Segoe UI',8)`r`n"
+    psContent .= "$detail.ForeColor = [System.Drawing.Color]::FromArgb(120,120,120)`r`n"
+    psContent .= "$detail.Location = New-Object System.Drawing.Point(22,120)`r`n"
+    psContent .= "$form.Controls.Add($detail)`r`n"
+    psContent .= "$progress = New-Object System.Windows.Forms.ProgressBar`r`n"
+    psContent .= "$progress.Style = 'Marquee'`r`n"
+    psContent .= "$progress.MarqueeAnimationSpeed = 22`r`n"
+    psContent .= "$progress.Location = New-Object System.Drawing.Point(22,150)`r`n"
+    psContent .= "$progress.Size = New-Object System.Drawing.Size(456,10)`r`n"
+    psContent .= "$form.Controls.Add($progress)`r`n"
+    psContent .= "$steps = New-Object System.Windows.Forms.Label`r`n"
+    psContent .= "$steps.Text = '01  Python        02  pip        03  Пакеты        04  Готово'`r`n"
+    psContent .= "$steps.AutoSize = $true`r`n"
+    psContent .= "$steps.Font = New-Object System.Drawing.Font('Segoe UI',8)`r`n"
+    psContent .= "$steps.ForeColor = [System.Drawing.Color]::FromArgb(100,100,100)`r`n"
+    psContent .= "$steps.Location = New-Object System.Drawing.Point(22,200)`r`n"
+    psContent .= "$form.Controls.Add($steps)`r`n"
+    psContent .= "$hint = New-Object System.Windows.Forms.Label`r`n"
+    psContent .= "$hint.Text = 'Не закрывайте окно — установка выполняется автоматически.'`r`n"
+    psContent .= "$hint.AutoSize = $true`r`n"
+    psContent .= "$hint.Font = New-Object System.Drawing.Font('Segoe UI',8)`r`n"
+    psContent .= "$hint.ForeColor = [System.Drawing.Color]::FromArgb(90,90,90)`r`n"
+    psContent .= "$hint.Location = New-Object System.Drawing.Point(22,230)`r`n"
+    psContent .= "$form.Controls.Add($hint)`r`n"
+    psContent .= "$form.Show()`r`n"
+    psContent .= "[System.Windows.Forms.Application]::DoEvents()`r`n"
+    psContent .= "$script:spinFrames = @([char]0x25D0, [char]0x25D3, [char]0x25D1, [char]0x25D2)`r`n"
+    psContent .= "$script:spinIndex = 0`r`n"
+    psContent .= "function Pump { $spinner.Text = $script:spinFrames[$script:spinIndex]; $script:spinIndex = ($script:spinIndex + 1) % $script:spinFrames.Count; [System.Windows.Forms.Application]::DoEvents(); Start-Sleep -Milliseconds 80 }`r`n"
+    psContent .= "$errorLog = $log + '.err'`r`n"
+    psContent .= "Remove-Item -LiteralPath $errorLog -Force -ErrorAction SilentlyContinue`r`n"
+    psContent .= "function Run-Step($caption, $executable, $arguments) {`r`n"
+    psContent .= "  $status.Text = $caption`r`n"
+    psContent .= "  $detail.Text = 'Выполняется, пожалуйста подождите…'`r`n"
+    psContent .= "  [System.Windows.Forms.Application]::DoEvents()`r`n"
+    psContent .= "  $process = Start-Process -FilePath $executable -ArgumentList $arguments -WorkingDirectory (Split-Path -Parent $requirements) -RedirectStandardOutput $log -RedirectStandardError $errorLog -WindowStyle Hidden -PassThru`r`n"
+    psContent .= "  while (-not $process.HasExited) { Pump }`r`n"
+    psContent .= "  $process.WaitForExit()`r`n"
+    psContent .= "  $process.Refresh()`r`n"
+    psContent .= "  $exitCode = $process.ExitCode`r`n"
+    psContent .= "  if ($null -eq $exitCode) { $exitCode = 0 }`r`n"
+    psContent .= "  if (Test-Path -LiteralPath $errorLog) { Get-Content -LiteralPath $errorLog | Add-Content -LiteralPath $log }`r`n"
+    psContent .= "  if ($exitCode -ne 0) { throw ($caption + ' завершился с ошибкой (код ' + $exitCode + ')') }`r`n"
+    psContent .= "}`r`n"
+    psContent .= "Remove-Item -LiteralPath $result -Force -ErrorAction SilentlyContinue`r`n"
+    psContent .= "function Find-Python {`r`n"
+    psContent .= "  $found = @()`r`n"
+    psContent .= "  $cmd = Get-Command python.exe -ErrorAction SilentlyContinue`r`n"
+    psContent .= "  if ($cmd -and $cmd.Source -notlike '*\\WindowsApps\\*') { $found += $cmd.Source }`r`n"
+    psContent .= "  $roots = @((Join-Path $env:USERPROFILE 'AppData\\Local\\Programs\\Python'), (Join-Path $env:LocalAppData 'Programs\\Python'))`r`n"
+    psContent .= "  if ($env:ProgramFiles) { $roots += @((Join-Path $env:ProgramFiles 'Python'), $env:ProgramFiles) }`r`n"
+    psContent .= "  if (${env:ProgramFiles(x86)}) { $roots += @((Join-Path ${env:ProgramFiles(x86)} 'Python'), ${env:ProgramFiles(x86)}) }`r`n"
+    psContent .= "  foreach ($root in $roots) {`r`n"
+    psContent .= "    if ($root -and (Test-Path -LiteralPath $root)) {`r`n"
+    psContent .= "      $found += @(Get-ChildItem -LiteralPath $root -Filter python.exe -File -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName })`r`n"
+    psContent .= "      $found += @(Get-ChildItem -LiteralPath $root -Directory -ErrorAction SilentlyContinue | ForEach-Object { $candidate = Join-Path $_.FullName 'python.exe'; if (Test-Path -LiteralPath $candidate) { $candidate } })`r`n"
+    psContent .= "    }`r`n"
+    psContent .= "  }`r`n"
+    psContent .= "  foreach ($launcher in @((Get-Command py.exe -ErrorAction SilentlyContinue).Source, (Join-Path $env:LocalAppData 'Programs\\Python\\Launcher\\py.exe'))) {`r`n"
+    psContent .= "    if ($launcher -and (Test-Path -LiteralPath $launcher)) { try { $resolved = (& $launcher -3 -c 'import sys; print(sys.executable)' 2>$null | Select-Object -First 1).Trim(); if ($resolved -and (Test-Path -LiteralPath $resolved)) { $found += $resolved } } catch {} }`r`n"
+    psContent .= "  }`r`n"
+    psContent .= "  foreach ($candidate in $found | Select-Object -Unique) { if (Test-Path -LiteralPath $candidate) { return $candidate } }`r`n"
+    psContent .= "  return $null`r`n"
+    psContent .= "}`r`n"
+    psContent .= "try {`r`n"
+    psContent .= "  $status.Text = 'Поиск Python'`r`n"
+    psContent .= "  $detail.Text = 'Проверяем стандартные папки и Python Launcher…'`r`n"
+    psContent .= "  Pump`r`n"
+    psContent .= "  $python = Find-Python`r`n"
+    psContent .= "  if (-not $python) {`r`n"
+    psContent .= "    $winget = Get-Command winget.exe -ErrorAction SilentlyContinue`r`n"
+    psContent .= "    if (-not $winget) { throw 'Python не найден, а winget недоступен. Установите Python с python.org и повторите попытку.' }`r`n"
+    psContent .= "    Add-Content -LiteralPath $log -Value 'Python не найден. Устанавливаем Python через winget...'`r`n"
+    psContent .= "    $status.Text = 'Установка Python'`r`n"
+    psContent .= "    $detail.Text = 'Скачиваем Python через winget…'`r`n"
+    psContent .= "    $install = Start-Process -FilePath $winget.Source -ArgumentList @('install','--id','Python.Python.3.13','--scope','user','--silent','--accept-package-agreements','--accept-source-agreements') -PassThru -WindowStyle Hidden`r`n"
+    psContent .= "    while (-not $install.HasExited) { Pump }`r`n"
+    psContent .= "    if ($install.ExitCode -ne 0) { throw ('Не удалось установить Python через winget (код ' + $install.ExitCode + ')') }`r`n"
+    psContent .= "    $python = Find-Python`r`n"
+    psContent .= "  }`r`n"
+    psContent .= "  if (-not $python) { throw 'Python установлен, но его исполняемый файл не найден. Перезапустите макрос и повторите попытку.' }`r`n"
+    psContent .= "  Set-Content -LiteralPath $log -Value ('Python: ' + $python)`r`n"
+    psContent .= "  $status.Text = 'Подготовка pip'`r`n"
+    psContent .= "  $detail.Text = 'Включаем встроенный установщик пакетов…'`r`n"
+    psContent .= "  Run-Step 'Подготовка pip' $python @('-m','ensurepip','--upgrade')`r`n"
+    psContent .= "  $status.Text = 'Обновление pip'`r`n"
+    psContent .= "  $detail.Text = 'Проверяем менеджер пакетов…'`r`n"
+    psContent .= "  Run-Step 'Обновление pip' $python @('-m','pip','install','--upgrade','pip')`r`n"
+    psContent .= "  $status.Text = 'Установка пакетов'`r`n"
+    psContent .= "  $detail.Text = 'Устанавливаем discord.py, Pillow и mss…'`r`n"
+    psContent .= "  Run-Step 'Установка пакетов' $python @('-m','pip','install','-r',$requirements)`r`n"
+    psContent .= "  $progress.Style = 'Continuous'`r`n"
+    psContent .= "  $progress.Value = 100`r`n"
+    psContent .= "  $status.Text = 'Готово'`r`n"
+    psContent .= "  $detail.Text = 'Все зависимости установлены'`r`n"
+    psContent .= "  $spinner.Text = [char]0x2713`r`n"
+    psContent .= "  $spinner.ForeColor = [System.Drawing.Color]::FromArgb(34,197,94)`r`n"
+    psContent .= "  [System.Windows.Forms.Application]::DoEvents()`r`n"
+    psContent .= "  [System.IO.File]::WriteAllText($result, '0')`r`n"
+    psContent .= "  Start-Sleep -Milliseconds 800`r`n"
+    psContent .= "} catch {`r`n"
+    psContent .= "  Add-Content -LiteralPath $log -Value ($_.Exception.Message)`r`n"
+    psContent .= "  $status.Text = 'Ошибка установки'`r`n"
+    psContent .= "  $detail.Text = $_.Exception.Message`r`n"
+    psContent .= "  $status.ForeColor = [System.Drawing.Color]::FromArgb(239,68,68)`r`n"
+    psContent .= "  $spinner.Text = '!'`r`n"
+    psContent .= "  $spinner.ForeColor = [System.Drawing.Color]::FromArgb(239,68,68)`r`n"
+    psContent .= "  $progress.Style = 'Continuous'`r`n"
+    psContent .= "  $progress.Value = 0`r`n"
+    psContent .= "  [System.Windows.Forms.Application]::DoEvents()`r`n"
+    psContent .= "  [System.IO.File]::WriteAllText($result, '1')`r`n"
+    psContent .= "  [System.Windows.Forms.Application]::DoEvents()`r`n"
+    psContent .= "  $form.Close()`r`n"
+    psContent .= "  Start-Sleep -Seconds 3`r`n"
+    psContent .= "  exit 1`r`n"
+    psContent .= "}`r`n"
+    psContent .= "$form.Close()`r`n"
+    FileDelete, %BotDepsScriptFile%
+    f := FileOpen(BotDepsScriptFile, "w", "UTF-8")
+    if (f) {
+        f.Write(psContent)
+        f.Close()
+    }
+    if !FileExist(BotDepsScriptFile) {
+        AddLog("Discord bot: не удалось создать установщик", "error")
+        UpdateBotStatus("Install failed", "error")
+        UpdateBotInstallButton(true)
+        return
+    }
     UpdateBotStatus("Installing dependencies...", "running")
     UpdateBotInstallButton(false)
-    AddLog("Discord bot: установка зависимостей запущена", "success")
-    RunWait, % "py.exe -3 -m pip install -r """ . requirementsFile . """", %BotDir%, Hide
-    exitCode := ErrorLevel
+    AddLog("Discord bot: установка Python и зависимостей запущена", "success")
+    q := Chr(34)
+    RunWait, % "powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -WindowStyle Hidden -File " . q . BotDepsScriptFile . q, %BotDir%, Hide
+    exitCode := 1
+    resultFile := BotRuntimeDir . "\pip_install_exit.txt"
+    if FileExist(resultFile) {
+        FileRead, resultText, %resultFile%
+        exitCode := Trim(resultText) + 0
+    } else if (ErrorLevel != 0) {
+        exitCode := ErrorLevel
+    }
     if (exitCode = 0) {
         AddLog("Discord bot: зависимости установлены", "success")
         UpdateBotStatus("Dependencies installed", "success")
     } else {
-        AddLog("Discord bot: установка зависимостей завершилась с ошибкой (код " . exitCode . ")", "error")
+        AddLog("Discord bot: установка завершилась с ошибкой (код " . exitCode . "), лог: " . BotDepsLogFile . " | причина: " . ReadBotInstallError(), "error")
         UpdateBotStatus("Install failed", "error")
     }
+    if (exitCode = 0)
+        FileDelete, %BotDepsScriptFile%
     UpdateBotInstallButton(true)
 return
+
+ReadBotInstallError() {
+    global BotDepsLogFile
+    if !FileExist(BotDepsLogFile)
+        return "лог не создан"
+    FileRead, logText, %BotDepsLogFile%
+    logText := Trim(logText)
+    if (StrLen(logText) > 300)
+        logText := SubStr(logText, StrLen(logText) - 299)
+    return StrReplace(StrReplace(logText, "`r", " "), "`n", " | ")
+}
 
 StartDiscordBot:
     if (BotRunning)
