@@ -94,7 +94,7 @@ IfNotExist, %BotActionsDir%
     FileCreateDir, %BotActionsDir%
 
 ; ---- Автообновление с GitHub ----
-CURRENT_VERSION := "1.0.6"
+CURRENT_VERSION := "1.0.7"
 GH_REPO := "mozrze/Mmacro"           ; пользователь/репозиторий
 GH_TOKEN_FILE := A_ScriptDir . "\ahk\token.ini"
 GH_TOKEN := ""
@@ -3096,7 +3096,15 @@ StartDiscordBot:
         UpdateBotStatus("bot.py not found", "error")
         return
     }
-    Run, % BotPython . " """ . botScript . """", %BotDir%, Hide, BotProcessPid
+    botPythonExe := ResolveBotPython()
+    if (botPythonExe = "") {
+        AddLog("Discord bot: Python не найден. Сначала установите зависимости", "error")
+        UpdateBotStatus("Python not found", "error")
+        return
+    }
+    BotPython := botPythonExe
+    AddLog("Discord bot: найден Python " . botPythonExe)
+    Run, % """" . botPythonExe . """ """ . botScript . """", %BotDir%, Hide, BotProcessPid
     if (ErrorLevel) {
         AddLog("Discord bot: не удалось запустить Python", "error")
         UpdateBotStatus("Python start failed", "error")
@@ -3106,6 +3114,56 @@ StartDiscordBot:
     AddLog("Discord bot: запуск запрошен", "success")
     UpdateBotStatus("Starting...", "running")
 return
+
+ResolveBotPython() {
+    global BotPython
+    if (InStr(BotPython, "\") && FileExist(BotPython))
+        return BotPython
+
+    EnvGet, pathValue, PATH
+    Loop, Parse, pathValue, `;
+    {
+        dir := Trim(A_LoopField)
+        if (dir = "" || InStr(dir, "\WindowsApps\"))
+            continue
+        candidate := dir . "\pythonw.exe"
+        if FileExist(candidate)
+            return candidate
+        candidate := dir . "\python.exe"
+        if FileExist(candidate)
+            return candidate
+    }
+
+    EnvGet, botLocalAppData, LOCALAPPDATA
+    EnvGet, botUserProfile, USERPROFILE
+    EnvGet, botPfRoot, ProgramFiles
+    EnvGet, botPf86Root, ProgramFiles(x86)
+    roots := []
+    if (botLocalAppData != "")
+        roots.Push(botLocalAppData . "\Programs\Python")
+    if (botUserProfile != "")
+        roots.Push(botUserProfile . "\AppData\Local\Programs\Python")
+    if (botPfRoot != "")
+        roots.Push(botPfRoot . "\Python")
+    if (botPf86Root != "")
+        roots.Push(botPf86Root . "\Python")
+
+    for _, root in roots {
+        candidate := root . "\pythonw.exe"
+        if FileExist(candidate)
+            return candidate
+        candidate := root . "\python.exe"
+        if FileExist(candidate)
+            return candidate
+        pattern := root . "\Python*\pythonw.exe"
+        Loop, Files, %pattern%, F
+            return A_LoopFileFullPath
+        pattern := root . "\Python*\python.exe"
+        Loop, Files, %pattern%, F
+            return A_LoopFileFullPath
+    }
+    return ""
+}
 
 StopDiscordBot:
     if (BotProcessPid) {
