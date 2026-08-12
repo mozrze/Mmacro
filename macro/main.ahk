@@ -92,7 +92,7 @@ IfNotExist, %BotActionsDir%
     FileCreateDir, %BotActionsDir%
 
 ; ---- Автообновление с GitHub ----
-CURRENT_VERSION := "1.0.4"
+CURRENT_VERSION := "1.0.5"
 GH_REPO := "mozrze/Mmacro"           ; пользователь/репозиторий
 GH_TOKEN_FILE := A_ScriptDir . "\ahk\token.ini"
 GH_TOKEN := ""
@@ -2842,6 +2842,40 @@ UpdateBotStatus(text, cls := "") {
     ModalCallJS("ahkUpdateBotStatus('" . safeText . "','" . safeCls . "')")
 }
 
+UpdateBotInstallButton(enabled) {
+    js := "ahkSetBotInstallButton(" . (enabled ? "true" : "false") . ")"
+    WBH_CallJS(js)
+    ModalCallJS(js)
+}
+
+; ---- Установка Python-зависимостей Discord-бота ----
+; Запускается из Settings отдельно от запуска бота. Ожидаем завершения pip,
+; чтобы показать пользователю настоящий результат установки.
+InstallBotDependencies:
+    requirementsFile := BotDir . "\requirements.txt"
+    if !FileExist(requirementsFile) {
+        AddLog("Discord bot: requirements.txt не найден", "error")
+        UpdateBotStatus("requirements.txt not found", "error")
+        UpdateBotInstallButton(true)
+        return
+    }
+    ; Используем официальный Python Launcher напрямую. RunWait возвращает
+    ; настоящий код pip и не зависит от cmd/PowerShell/файлов-обёрток.
+    UpdateBotStatus("Installing dependencies...", "running")
+    UpdateBotInstallButton(false)
+    AddLog("Discord bot: установка зависимостей запущена", "success")
+    RunWait, % "py.exe -3 -m pip install -r """ . requirementsFile . """", %BotDir%, Hide
+    exitCode := ErrorLevel
+    if (exitCode = 0) {
+        AddLog("Discord bot: зависимости установлены", "success")
+        UpdateBotStatus("Dependencies installed", "success")
+    } else {
+        AddLog("Discord bot: установка зависимостей завершилась с ошибкой (код " . exitCode . ")", "error")
+        UpdateBotStatus("Install failed", "error")
+    }
+    UpdateBotInstallButton(true)
+return
+
 StartDiscordBot:
     if (BotRunning)
         return
@@ -3269,6 +3303,10 @@ ProcessJSCmd(cmd) {
         Gosub, StopDiscordBot
         return
     }
+    if (action = "bot-install-deps") {
+        Gosub, InstallBotDependencies
+        return
+    }
     if (action = "select-map") {
         if (arg = "__none__")
             SelectedMapCtl := ""
@@ -3648,6 +3686,9 @@ PollModalClose:
     }
     else if (action = "bot-stop") {
         GoSub, StopDiscordBot
+    }
+    else if (action = "bot-install-deps") {
+        GoSub, InstallBotDependencies
     }
     else if (action = "preview-top-camera") {
         SetTimer, PollModalClose, Off

@@ -153,6 +153,7 @@ html, body {
     background: #1a1a1a; color: #999; white-space: nowrap;
 }
 .btn:hover { background: #222; color: #e4e4e4; }
+.btn:disabled { opacity: 0.55; cursor: wait; }
 .btn svg { width: 14px; height: 14px; -ms-flex-negative: 0; flex-shrink: 0; margin-right: 6px; }
 .btn-primary      { background: #3b82f6; color: #fff; width: 100%; }
 .btn-primary:hover { background: #2563eb; color: #fff; }
@@ -1040,6 +1041,7 @@ body.modal-only .modal-foot {
                     <div class="row" style="margin-top:10px; gap:8px; flex-wrap:wrap;">
                         <button class="btn btn-primary btn-sm" id="btnBotStart" data-i18n="botStart">Start bot</button>
                         <button class="btn btn-ghost btn-sm" id="btnBotStop" data-i18n="botStop">Stop bot</button>
+                        <button class="btn btn-ghost btn-sm" id="btnBotInstallDeps" data-i18n="botInstall">Install dependencies</button>
                         <span class="field-label" id="botStatus" data-i18n="botStopped">Stopped</span>
                     </div>
                     <div class="field-hint" data-i18n="botHint">Install dependencies from bot/requirements.txt. Keep the token private.</div>
@@ -1626,8 +1628,15 @@ body.modal-only .modal-foot {
         var el = document.getElementById('botStatus');
         if (el) {
             el.textContent = text || uiText('botStopped', 'Stopped');
-            el.style.color = cls === 'error' ? '#ef4444' : (cls === 'running' ? '#22c55e' : '#666');
+            el.style.color = cls === 'error' ? '#ef4444' : ((cls === 'running' || cls === 'success') ? '#22c55e' : '#666');
         }
+    };
+
+    window.ahkSetBotInstallButton = function (enabled) {
+        var btn = document.getElementById('btnBotInstallDeps');
+        if (!btn) return;
+        btn.disabled = !enabled;
+        btn.textContent = enabled ? uiText('botInstall', 'Install dependencies') : uiText('botInstalling', 'Installing...');
     };
 
 	    window.ahkUpdateAutoUpgrade = function (enabled) {
@@ -1896,6 +1905,8 @@ body.modal-only .modal-foot {
     settingsI18n.en.botAllowedUsers = 'Allowed user IDs (optional)';
     settingsI18n.en.botStart = 'Start bot';
     settingsI18n.en.botStop = 'Stop bot';
+    settingsI18n.en.botInstall = 'Install dependencies';
+    settingsI18n.en.botInstalling = 'Installing...';
     settingsI18n.en.botStopped = 'Stopped';
     settingsI18n.en.botHint = 'Install dependencies from bot/requirements.txt. Keep the token private.';
     settingsI18n.ru.discordBot = '\u0411\u043e\u0442 Discord';
@@ -1908,6 +1919,8 @@ body.modal-only .modal-foot {
     settingsI18n.ru.botAllowedUsers = '\u0420\u0430\u0437\u0440\u0435\u0448\u0451\u043d\u043d\u044b\u0435 Discord ID (\u043d\u0435\u043e\u0431\u044f\u0437\u0430\u0442\u0435\u043b\u044c\u043d\u043e)';
     settingsI18n.ru.botStart = '\u0417\u0430\u043f\u0443\u0441\u0442\u0438\u0442\u044c \u0431\u043e\u0442\u0430';
     settingsI18n.ru.botStop = '\u041e\u0441\u0442\u0430\u043d\u043e\u0432\u0438\u0442\u044c \u0431\u043e\u0442\u0430';
+    settingsI18n.ru.botInstall = '\u0423\u0441\u0442\u0430\u043d\u043e\u0432\u0438\u0442\u044c \u0437\u0430\u0432\u0438\u0441\u0438\u043c\u043e\u0441\u0442\u0438';
+    settingsI18n.ru.botInstalling = '\u0423\u0441\u0442\u0430\u043d\u043e\u0432\u043a\u0430...';
     settingsI18n.ru.botStopped = '\u041e\u0441\u0442\u0430\u043d\u043e\u0432\u043b\u0435\u043d';
     settingsI18n.ru.botHint = '\u0423\u0441\u0442\u0430\u043d\u043e\u0432\u0438 \u0437\u0430\u0432\u0438\u0441\u0438\u043c\u043e\u0441\u0442\u0438 \u0438\u0437 bot/requirements.txt. \u041d\u0435 \u043f\u0443\u0431\u043b\u0438\u043a\u0443\u0439 \u0442\u043e\u043a\u0435\u043d.';
     var currentLanguage = 'en';
@@ -2224,8 +2237,13 @@ function initSettingsModal(m) {
         });
         var btnBotStart = document.getElementById('btnBotStart');
         var btnBotStop = document.getElementById('btnBotStop');
+        var btnBotInstallDeps = document.getElementById('btnBotInstallDeps');
         if (btnBotStart) on(btnBotStart, 'click', function () { window.ahkCmd = 'bot-start'; });
         if (btnBotStop) on(btnBotStop, 'click', function () { window.ahkCmd = 'bot-stop'; });
+        if (btnBotInstallDeps) on(btnBotInstallDeps, 'click', function () {
+            window.ahkSetBotInstallButton(false);
+            window.ahkCmd = 'bot-install-deps';
+        });
         var mouseSpeedEnabled = $('#setMouseSpeedEnabled');
         var mouseSpeedInput = $('#setMouseSpeed');
         function syncMouseSpeedControl() {
