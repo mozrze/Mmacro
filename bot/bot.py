@@ -383,7 +383,7 @@ def recapture_desktop() -> bool:
     return SCREENSHOT_FILE.exists()
 
 
-def screenshot_path(raw_path: str = "", region: str = "") -> tuple[Path | None, str]:
+def _legacy_screenshot_path(raw_path: str = "", region: str = "") -> tuple[Path | None, str]:
     """Return a Discord-friendly PNG and a diagnostic message on failure."""
 
     source = Path(raw_path) if raw_path else SCREENSHOT_FILE
@@ -421,6 +421,58 @@ def screenshot_path(raw_path: str = "", region: str = "") -> tuple[Path | None, 
         return SCREENSHOT_PNG, notice
     except (OSError, ValueError) as exc:
         return None, f"Не удалось подготовить PNG-снимок: {exc}"
+
+
+def screenshot_path(raw_path: str = "", region: str = "") -> tuple[Path | None, str]:
+    """Capture only the game rectangle without changing window focus.
+
+    AutoHotkey already knows the exact screen coordinates of the game area,
+    including when Roblox is docked as a child window. Activating Roblox here
+    changes the docking state and can make a later desktop capture include
+    Discord and previously captured images. Prefer the supplied region and
+    never fall back to a full-desktop screenshot.
+    """
+
+    capture_region = region.strip()
+    if not capture_region:
+        # Compatibility path for older macro builds that did not send a
+        # region. It still captures without activating Roblox.
+        for attempt in range(3):
+            hwnd, discovered_region = find_roblox_window()
+            bot_log(f"Roblox window search attempt={attempt + 1}: hwnd={hwnd} region={discovered_region}")
+            if discovered_region:
+                capture_region = discovered_region
+                break
+            if attempt < 2:
+                time.sleep(0.5)
+
+    if not capture_region:
+        return None, "Could not determine the game area. Reconnect Roblox to Mmacro and try again."
+
+    captured = False
+    for attempt in range(3):
+        bot_log(f"trying game-region capture without activation: {capture_region} attempt={attempt + 1}")
+        if recapture_screen(capture_region):
+            captured = True
+            break
+        if attempt < 2:
+            time.sleep(0.25)
+
+    if not captured:
+        return None, "Could not capture the game area without changing window positions. Check that Roblox is connected and visible."
+
+    if Image is None:
+        return None, "Pillow is required for screenshots. Install dependencies from bot/requirements.txt."
+    try:
+        SCREENSHOT_PNG.unlink(missing_ok=True)
+        with Image.open(SCREENSHOT_FILE) as image:
+            image.convert("RGB").save(SCREENSHOT_PNG, format="PNG")
+        if not SCREENSHOT_PNG.exists():
+            return None, "The screenshot PNG was not created."
+        bot_log(f"screenshot prepared: {SCREENSHOT_PNG} ({SCREENSHOT_PNG.stat().st_size} bytes)")
+        return SCREENSHOT_PNG, ""
+    except (OSError, ValueError) as exc:
+        return None, f"Could not prepare the screenshot PNG: {exc}"
 
 
 class MacroBot(commands.Bot):
