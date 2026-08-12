@@ -95,7 +95,7 @@ IfNotExist, %BotActionsDir%
     FileCreateDir, %BotActionsDir%
 
 ; ---- Автообновление с GitHub ----
-CURRENT_VERSION := "1.0.8"
+CURRENT_VERSION := "1.0.9"
 GH_REPO := "mozrze/Mmacro"           ; пользователь/репозиторий
 GH_TOKEN_FILE := A_ScriptDir . "\ahk\token.ini"
 GH_TOKEN := ""
@@ -3115,7 +3115,7 @@ StartDiscordBot:
         return
     }
     BotRunning := true
-    AddLog("Discord bot: запуск запрошен", "success")
+    AddLog("Discord bot: запуск запрошен (лог: " . BotDir . "\runtime\bot.log)", "success")
     UpdateBotStatus("Starting...", "running")
 return
 

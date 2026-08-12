@@ -13,14 +13,31 @@ import ctypes
 import os
 import sys
 import time
+import traceback
 import urllib.parse
 import uuid
 from pathlib import Path
 from ctypes import wintypes
 
-import discord
-from discord import app_commands
-from discord.ext import commands
+BOOT_LOG_FILE = Path(__file__).resolve().parent / "runtime" / "bot.log"
+
+
+def bootstrap_log(message: str) -> None:
+    try:
+        BOOT_LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with BOOT_LOG_FILE.open("a", encoding="utf-8") as log:
+            log.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {message}\n")
+    except OSError:
+        pass
+
+
+try:
+    import discord
+    from discord import app_commands
+    from discord.ext import commands
+except Exception as exc:
+    bootstrap_log(f"bot import failed: {type(exc).__name__}: {exc}")
+    raise
 
 try:
     from PIL import Image, ImageGrab, ImageStat
@@ -408,19 +425,47 @@ def screenshot_path(raw_path: str = "", region: str = "") -> tuple[Path | None, 
 
 class MacroBot(commands.Bot):
     def __init__(self, guild_id: int | None):
-        super().__init__(command_prefix="!", intents=discord.Intents.none())
+        # Нужны только обычные (не privileged) intents. Guilds помогает Discord
+        # корректно обработать slash-команды на разных компьютерах.
+        super().__init__(command_prefix="!", intents=discord.Intents.default())
         self.guild_id = guild_id
 
     async def setup_hook(self) -> None:
+        # Не ждём Discord API до подключения к Gateway: медленная сеть или
+        # неверный GuildId не должны оставлять бота в состоянии offline.
         if self.guild_id:
             guild = discord.Object(id=self.guild_id)
             self.tree.copy_global_to(guild=guild)
-            await self.tree.sync(guild=guild)
-        else:
-            await self.tree.sync()
+        self._sync_task = asyncio.create_task(self._sync_commands())
+
+    async def _sync_commands(self) -> None:
+        """Synchronize commands without preventing the Gateway connection."""
+
+        try:
+            if self.guild_id:
+                await asyncio.wait_for(
+                    self.tree.sync(guild=discord.Object(id=self.guild_id)),
+                    timeout=20,
+                )
+                bot_log(f"slash commands synced to guild {self.guild_id}")
+            else:
+                await asyncio.wait_for(self.tree.sync(), timeout=20)
+                bot_log("global slash commands synced")
+        except (discord.HTTPException, asyncio.TimeoutError) as exc:
+            bot_log(f"slash command sync failed: {type(exc).__name__}: {exc}")
+            if self.guild_id:
+                try:
+                    await asyncio.wait_for(self.tree.sync(), timeout=20)
+                    bot_log("global slash command sync completed")
+                except (discord.HTTPException, asyncio.TimeoutError) as global_exc:
+                    bot_log(f"global command sync failed: {type(global_exc).__name__}: {global_exc}")
+        except Exception as exc:
+            bot_log(f"unexpected command sync failure: {type(exc).__name__}: {exc}")
 
     async def on_ready(self) -> None:
-        print(f"Mmacro bot connected as {self.user}", flush=True)
+        message = f"Mmacro bot connected as {self.user} (id={self.user.id if self.user else 'unknown'})"
+        print(message, flush=True)
+        bot_log(message)
 
 
 def allowed_users() -> set[int]:
@@ -516,23 +561,28 @@ def register_commands(bot: MacroBot) -> None:
         await interaction.followup.send(result.get("message", "Команда отправлена."), ephemeral=True)
 
 def main() -> int:
+    ensure_runtime()
+    bot_log(f"bot process starting; python={sys.executable}; settings={SETTINGS_FILE}")
     token = setting("DiscordBot", "Token", "")
     if not token:
         print("DiscordBot.Token is empty", file=sys.stderr, flush=True)
+        bot_log("DiscordBot.Token is empty")
         return 2
     guild_raw = setting("DiscordBot", "GuildId", "")
     guild_id = int(guild_raw) if guild_raw.isdigit() else None
-    ensure_runtime()
-    bot_log("bot process started from current bot.py")
+    bot_log(f"token loaded; guild_id={guild_id if guild_id else 'global'}")
     bot = MacroBot(guild_id)
     register_commands(bot)
     try:
         bot.run(token, log_handler=None)
     except discord.LoginFailure:
         print("Discord bot token is invalid", file=sys.stderr, flush=True)
+        bot_log("Discord login failed: token is invalid or revoked")
         return 3
     except Exception as exc:
         print(f"Discord bot stopped: {exc}", file=sys.stderr, flush=True)
+        bot_log(f"Discord bot stopped: {type(exc).__name__}: {exc}")
+        bot_log(traceback.format_exc())
         return 1
     return 0
 
