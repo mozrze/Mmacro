@@ -104,11 +104,15 @@ html, body {
     -webkit-user-select: none; -ms-user-select: none; user-select: none;
 }
 .logo { display: -ms-flexbox; display: flex; -ms-flex-align: center; align-items: center; }
-.logo-dot {
-    width: 8px; height: 8px; border-radius: 50%;
-    background: #3b82f6; margin-right: 10px;
-    box-shadow: 0 0 8px rgba(59,130,246,0.15);
+.logo-mark {
+    width: 28px; height: 28px; border-radius: 6px;
+    display: -ms-flexbox; display: flex;
+    -ms-flex-align: center; align-items: center;
+    -ms-flex-pack: center; justify-content: center;
+    margin-right: 7px; background: transparent;
+    overflow: hidden;
 }
+.logo-mark img { width: 31px; height: 31px; display: block; object-fit: contain; }
 .logo h1 { font-size: 15px; font-weight: 600; letter-spacing: 1.5px; margin: 0; }
 
 /* Header buttons (minimize / close) */
@@ -239,6 +243,7 @@ html, body {
 .status-dot.running { background: #22c55e; }
 .status-dot.error   { background: #ef4444; }
 #statusText { font-size: 11px; color: #666; font-family: 'Consolas', monospace; }
+.run-count { margin-left: auto; color: #666; font-size: 11px; font-family: 'Consolas', monospace; }
 
 /* ---- Log ---- */
 .log-section {

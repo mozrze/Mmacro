@@ -1,6 +1,8 @@
 ﻿#SingleInstance Off
 #NoEnv
 #Include %A_ScriptDir%\ahk\drag_select.ahk
+#Include %A_ScriptDir%\ahk\language.ahk
+#Include %A_ScriptDir%\ahk\hotkeys.ahk
 SetWorkingDir %A_ScriptDir%
 CoordMode, Mouse, Screen
 CoordMode, Pixel, Screen
@@ -37,10 +39,57 @@ SidebarW  := 320
 
 MapsDir := A_ScriptDir . "\maps"
 ImagesDir := A_ScriptDir . "\images"
+LogoDir := A_ScriptDir . "\logo"
+LogoIconFile := LogoDir . "\mmacro.ico"
 ConfigFile := A_ScriptDir . "\config.ini"
 SettingsFile := A_ScriptDir . "\ahk\settings.ini"
 PresetsIni := A_ScriptDir . "\ahk\presets.ini"
 TempShot := A_ScriptDir . "\_preview.bmp"
+
+; Иконка Mmacro для трея и ярлыка запуска.
+if FileExist(LogoIconFile) {
+    Menu, Tray, Icon, %LogoIconFile%
+    Menu, Tray, Tip, Mmacro
+}
+
+; ---- Discord bot integration ----
+BotDir := A_ScriptDir . "\..\bot"
+BotRuntimeDir := BotDir . "\runtime"
+BotCommandsDir := BotRuntimeDir . "\commands"
+BotResponsesDir := BotRuntimeDir . "\responses"
+BotActionsDir := BotDir . "\actions"
+BotStateFile := BotRuntimeDir . "\state.ini"
+BotScreenshotFile := BotRuntimeDir . "\discord_screenshot.bmp"
+LastCaptureX := 0
+LastCaptureY := 0
+LastCaptureW := 1280
+LastCaptureH := 720
+BotPython := "pythonw.exe"
+BotToken := ""
+BotEnabled := false
+BotAutoStart := false
+BotGuildId := ""
+BotAllowedUserIds := ""
+BotProcessPid := 0
+BotRunning := false
+PendingMapChange := ""
+BotMapRecordActive := false
+BotMapRecordMap := ""
+BotMapRecordActions := []
+BotMapRecordLastTime := 0
+BotMapRecordLastX := 0
+BotMapRecordLastY := 0
+BotMapRecordPending := false
+BotMapActions := []
+
+IfNotExist, %BotRuntimeDir%
+    FileCreateDir, %BotRuntimeDir%
+IfNotExist, %BotCommandsDir%
+    FileCreateDir, %BotCommandsDir%
+IfNotExist, %BotResponsesDir%
+    FileCreateDir, %BotResponsesDir%
+IfNotExist, %BotActionsDir%
+    FileCreateDir, %BotActionsDir%
 
 ; ---- Автообновление с GitHub ----
 CURRENT_VERSION := "1.0.2"
@@ -97,8 +146,11 @@ RejoinMaxAttempts   := 3
 RejoinWaitTimeout   := 40   ; сек, сколько ждать появления окна Roblox после запуска ссылки
 RejoinPostJoinDelay := 6    ; сек, пауза после появления окна перед продолжением фарма
 RejoinPostActionsDelay := 3  ; сек, пауза после выполнения Post-Rejoin действий
+BotMapPostActionsDelay := 3  ; сек, пауза после действий входа на карту через Discord
 
 Running := false
+FarmRunCount := 0
+StartZoomApplied := false ; обычный зум уже применён в текущей фарм-сессии
 Embedded := false
 GameHwnd := 0
 OrigStyle := 0
@@ -141,15 +193,22 @@ RejoinRecordLastX := 0
 RejoinRecordLastY := 0
 RejoinRecordPending := false ; ждём отпускания кнопки мыши
 
+; ---- нативное окно назначения горячей клавиши ----
+HotkeyCaptureTarget := ""
+HotkeyCaptureHwnd := 0
+HotkeyCaptureLastValue := ""
+
 ; Drag-select шаблонов (MarkMode = "template") теперь полностью в HTML-модалке.
 ; Глобальные OnMessage-перехваты больше не используются.
 
 ; ---- Горячие клавиши для записи Post-Rejoin действий ----
-; F1 — старт/стоп записи, WheelUp/Down включаются только во время записи
+; WheelUp/Down включаются только во время записи; F1 заменяется настройкой.
 Hotkey, ~WheelUp, RejoinWheelUp, Off
 Hotkey, ~WheelDown, RejoinWheelDown, Off
-Hotkey, F1, RejoinF1, On
-Hotkey, ~LButton, FocusEmbeddedGameClick, On
+; Roblox остаётся отдельным top-level окном, поэтому Windows само передаёт
+; ему фокус по клику. Глобальный перехват LButton здесь не нужен и мог
+; мешать кликам по HTML-панели после закрепления.
+Hotkey, ~LButton, FocusEmbeddedGameClick, Off
 ; Функции OnTemplateLButtonDown/Move/Up оставлены в drag_select.ahk как запасные заглушки.
 ; =======================================================
 
@@ -163,6 +222,9 @@ SidebarTotalH := GameAreaH
 
 LoadConfig()
 LoadSettings()
+LoadAppLanguage()
+LoadHotkeySettings()
+ApplyConfiguredHotkeys()
 ReloadMapList()
 LoadAllMapCoords()
 
@@ -242,13 +304,21 @@ if (StartX < 0)
 if (StartY < 0)
     StartY := 100
 
-Gui, Show, x%StartX% y%StartY% w%SidebarTotalW% h%SidebarTotalH%, TD Macro Control
+Gui, Show, x%StartX% y%StartY% w%SidebarTotalW% h%SidebarTotalH%, Mmacro Control
 
 ; Таймер опроса JS-команд
 SetTimer, PollJSCmd, 20
+SetTimer, PollBotCommands, 250
+SetTimer, PublishBotState, 1000
 ; Отправляем начальное состояние в HTML
 SetTimer, PushStateToHTML, -300
+if (BotAutoStart)
+    SetTimer, StartDiscordBot, -1000
+; Проверяем версию после загрузки интерфейса, чтобы обновление не мешало старту GUI.
+SetTimer, CheckForUpdate, -2000
 return
+
+#Include %A_ScriptDir%\ahk\version_check.ahk
 
 FocusEmbeddedGameClick:
     if (!Embedded || !GameHwnd || !DllCall("IsWindow", "ptr", GameHwnd))
@@ -264,7 +334,7 @@ return
 
 FocusEmbeddedGame() {
     global GameHwnd, MainGuiHwnd
-    if (!GameHwnd || !MainGuiHwnd)
+    if (!GameHwnd || !DllCall("IsWindow", "ptr", GameHwnd))
         return
     pid := 0
     gameTid := DllCall("GetWindowThreadProcessId", "ptr", GameHwnd, "uint*", pid, "uint")
@@ -272,8 +342,13 @@ FocusEmbeddedGame() {
     attached := false
     if (gameTid && gameTid != ourTid)
         attached := DllCall("AttachThreadInput", "uint", ourTid, "uint", gameTid, "int", 1)
-    DllCall("SetForegroundWindow", "ptr", MainGuiHwnd)
-    DllCall("SetActiveWindow", "ptr", MainGuiHwnd)
+    ; Не используем SW_RESTORE: для развёрнутого Roblox он повторно
+    ; восстанавливает старую позицию уже после dock и уводит окно влево.
+    ; Во время закрепления окно уже видимо, поэтому достаточно SW_SHOW.
+    DllCall("ShowWindow", "ptr", GameHwnd, "int", 5) ; SW_SHOW
+    DllCall("BringWindowToTop", "ptr", GameHwnd)
+    DllCall("SetForegroundWindow", "ptr", GameHwnd)
+    DllCall("SetActiveWindow", "ptr", GameHwnd)
     DllCall("SetFocus", "ptr", GameHwnd)
     if (attached)
         DllCall("AttachThreadInput", "uint", ourTid, "uint", gameTid, "int", 0)
@@ -384,7 +459,8 @@ LoadSettings() {
     global StartGameColor, StartGameColorVar, StartGameCenterX, StartGameCenterY, StartGameRadius
     global AutoUpgradePriority, AutoUpgradeUnitOffsetY, AutoUpgradeEnabled
     global RejoinEnabled, RejoinShareLink, RejoinMaxAttempts, RejoinWaitTimeout, RejoinPostJoinDelay
-    global RejoinPostActionsDelay
+    global RejoinPostActionsDelay, BotMapPostActionsDelay
+    global BotToken, BotEnabled, BotAutoStart, BotGuildId, BotAllowedUserIds
     if !FileExist(SettingsFile)
         return
     IniRead, v, %SettingsFile%, Delays, ClickDelay, %ClickDelay%
@@ -448,6 +524,21 @@ LoadSettings() {
     RejoinPostJoinDelay := v
     IniRead, v, %SettingsFile%, Rejoin, PostActionsDelay, %RejoinPostActionsDelay%
     RejoinPostActionsDelay := v
+    IniRead, v, %SettingsFile%, DiscordBot, MapPostActionsDelay, %BotMapPostActionsDelay%
+    BotMapPostActionsDelay := v
+    if (BotMapPostActionsDelay < 0)
+        BotMapPostActionsDelay := 0
+
+    IniRead, v, %SettingsFile%, DiscordBot, Token, %BotToken%
+    BotToken := (v = "ERROR") ? "" : v
+    IniRead, v, %SettingsFile%, DiscordBot, Enabled, %BotEnabled%
+    BotEnabled := (v = 1 || v = "true") ? true : false
+    IniRead, v, %SettingsFile%, DiscordBot, AutoStart, %BotAutoStart%
+    BotAutoStart := (v = 1 || v = "true") ? true : false
+    IniRead, v, %SettingsFile%, DiscordBot, GuildId, %BotGuildId%
+    BotGuildId := (v = "ERROR") ? "" : v
+    IniRead, v, %SettingsFile%, DiscordBot, AllowedUserIds, %BotAllowedUserIds%
+    BotAllowedUserIds := (v = "ERROR") ? "" : v
 }
 
 SaveSettings() {
@@ -456,7 +547,8 @@ SaveSettings() {
     global StartGameColor, StartGameColorVar, StartGameCenterX, StartGameCenterY, StartGameRadius
     global AutoUpgradePriority, AutoUpgradeUnitOffsetY, AutoUpgradeEnabled
     global RejoinEnabled, RejoinShareLink, RejoinMaxAttempts, RejoinWaitTimeout, RejoinPostJoinDelay
-    global RejoinPostActionsDelay
+    global RejoinPostActionsDelay, BotMapPostActionsDelay
+    global BotToken, BotEnabled, BotAutoStart, BotGuildId, BotAllowedUserIds
     IniWrite, %ClickDelay%, %SettingsFile%, Delays, ClickDelay
     IniWrite, %SlotClickDelay%, %SettingsFile%, Delays, SlotClickDelay
     IniWrite, %UpgradeClickDelay%, %SettingsFile%, Delays, UpgradeClickDelay
@@ -486,6 +578,13 @@ SaveSettings() {
     IniWrite, %RejoinWaitTimeout%, %SettingsFile%, Rejoin, WaitTimeout
     IniWrite, %RejoinPostJoinDelay%, %SettingsFile%, Rejoin, PostJoinDelay
     IniWrite, %RejoinPostActionsDelay%, %SettingsFile%, Rejoin, PostActionsDelay
+    IniWrite, %BotMapPostActionsDelay%, %SettingsFile%, DiscordBot, MapPostActionsDelay
+    IniWrite, %BotToken%, %SettingsFile%, DiscordBot, Token
+    IniWrite, % (BotEnabled ? 1 : 0), %SettingsFile%, DiscordBot, Enabled
+    IniWrite, % (BotAutoStart ? 1 : 0), %SettingsFile%, DiscordBot, AutoStart
+    IniWrite, %BotGuildId%, %SettingsFile%, DiscordBot, GuildId
+    IniWrite, %BotAllowedUserIds%, %SettingsFile%, DiscordBot, AllowedUserIds
+    SaveHotkeySettings()
 }
 
 ; ===================== КООРДИНАТЫ КАРТ (слоты) =====================
@@ -563,12 +662,18 @@ LoadAllMapCoords() {
 ReloadMapList() {
     global MapList, MapsDir
     MapList := []
+    seen := {}
     Loop, Files, %MapsDir%\*.bmp
     {
         name := A_LoopFileName
         StringGetPos, dotPos, name, .
         if (dotPos >= 0)
             name := SubStr(name, 1, dotPos)
+        name := Trim(name)
+        StringLower, key, name
+        if (name = "" || seen.HasKey(key))
+            continue
+        seen[key] := true
         MapList.Push(name)
     }
 }
@@ -619,8 +724,10 @@ SaveMapSlots(mapName, list) {
 ; При встраивании (dock) это клиентская область окна Roblox (GameHwnd),
 ; иначе — главное окно AHK. Возвращает true при успехе.
 GameAreaOrigin(ByRef ox, ByRef oy) {
-    global Embedded, GameHwnd, MainGuiHwnd
-    hwnd := MainGuiHwnd
+    global Embedded, GameHwnd, WinTitle
+    ; В обычном режиме игровое окно отдельное, поэтому нельзя брать
+    ; координаты MainGuiHwnd (это только сайдбар макроса).
+    hwnd := WinExist(WinTitle)
     if (Embedded && GameHwnd && DllCall("IsWindow", "ptr", GameHwnd))
         hwnd := GameHwnd
     if (!hwnd || !DllCall("IsWindow", "ptr", hwnd))
@@ -724,20 +831,25 @@ BtnEmbed:
     ; Запоминаем исходную позицию/размер Roblox для восстановления
     WinGetPos, OrigRX, OrigRY, OrigRW, OrigRH, ahk_id %GameHwnd%
 
-    ; ---- Единый host без WS_CHILD ----
-    ; Roblox получает общего родителя для совместного перемещения, но его
-    ; исходный popup-стиль сохраняется — это важно для DirectX/raw input.
+    ; ---- Dock без SetParent ----
+    ; Roblox остаётся отдельным top-level окном. SetParent превращает его в
+    ; дочернее окно AHK и ломает часть DirectX/raw input: клики и клавиши
+    ; начинают теряться. Боковая панель просто располагается рядом.
     SysGet, Mon1, MonitorWorkArea
-    dockRX := Mon1Left
-    dockRY := Mon1Top
+    ; Сохраняем текущую позицию Roblox при закреплении. Раньше dockRX
+    ; всегда был Mon1Left, из-за чего игра после короткой паузы уезжала
+    ; в левый край монитора.
+    dockRX := OrigRX
+    dockRY := OrigRY
     totalDockW := GameAreaW + SidebarW
     if (dockRX + totalDockW > Mon1Right)
         dockRX := Mon1Right - totalDockW
     if (dockRX < Mon1Left)
         dockRX := Mon1Left
     WinGet, OrigMainStyle, Style, ahk_id %MainGuiHwnd%
-    GuiControl, Move, WB, x%GameAreaW% y0 w%SidebarW% h%GameAreaH%
-    Gui, Show, x%dockRX% y%dockRY% w%totalDockW% h%GameAreaH%, TD Macro Control
+    GuiControl, Move, WB, x0 y0 w%SidebarW% h%GameAreaH%
+    sidebarX := dockRX + GameAreaW
+    Gui, Show, x%sidebarX% y%dockRY% w%SidebarW% h%GameAreaH%, Mmacro Control
 
     ; Убираем рамку/заголовок, но не добавляем WS_CHILD и не удаляем WS_POPUP.
     dockStyle := OrigStyle
@@ -745,9 +857,8 @@ BtnEmbed:
     dockStyle := dockStyle & ~0x00040000  ; WS_THICKFRAME
     dockStyle := dockStyle & ~0x00800000  ; WS_BORDER
     SetWindowLongPtr(GameHwnd, -16, dockStyle)
-    DllCall("SetParent", "ptr", GameHwnd, "ptr", MainGuiHwnd)
     DllCall("SetWindowPos", "ptr", GameHwnd, "ptr", 0
-        , "int", 0, "int", 0, "int", GameAreaW, "int", GameAreaH
+        , "int", dockRX, "int", dockRY, "int", GameAreaW, "int", GameAreaH
         , "uint", 0x0060)  ; SWP_SHOWWINDOW | SWP_FRAMECHANGED
     DllCall("ShowWindow", "ptr", GameHwnd, "int", 5)  ; SW_SHOW
 
@@ -755,9 +866,11 @@ BtnEmbed:
     GetClientSize(GameHwnd, RealW, RealH)
     Embedded := true
     FocusEmbeddedGame()
-    SetTimer, SyncDockPosition, 250
+    ; Не запускаем фоновую синхронизацию: постоянный SetWindowPos панели
+    ; сбивал фокус у HTML-элементов. Связка перемещается в ManualDragLoop.
+    SetTimer, SyncDockPosition, Off
     WBH_CallJS("ahkUpdateEmbed(true)")
-    AddLog("Roblox подключён в общий host: " RealW "x" RealH)
+    AddLog("Roblox закреплён рядом с панелью: " RealW "x" RealH " в " dockRX "," dockRY)
 return
 
 UnembedGameWindow() {
@@ -770,7 +883,10 @@ UnembedGameWindow() {
         return
     }
     WinGetPos, hostX, hostY, , , ahk_id %MainGuiHwnd%
-    DllCall("SetParent", "ptr", GameHwnd, "ptr", OrigParent)
+    ; При новом dock Roblox уже top-level. Восстанавливаем родителя только
+    ; если он действительно был у окна до закрепления.
+    if (OrigParent)
+        DllCall("SetParent", "ptr", GameHwnd, "ptr", OrigParent)
     ; Возвращаем исходный стиль Roblox (заголовок/рамка/resize).
     SetWindowLongPtr(GameHwnd, -16, OrigStyle)
     SetWindowLongPtr(GameHwnd, -20, OrigExStyle)
@@ -783,9 +899,14 @@ UnembedGameWindow() {
         DllCall("SetWindowPos", "ptr", GameHwnd, "ptr", 0
             , "int", 100, "int", 100, "int", 1280, "int", 720, "uint", 0x0060)
     DllCall("ShowWindow", "ptr", GameHwnd, "int", 5)
-    sidebarX := hostX + GameAreaW
+    ; При dock панель уже является отдельным окном справа от Roblox.
+    ; hostX/hostY — её реальные координаты, поэтому GameAreaW здесь
+    ; прибавлять нельзя: это уводит Mmacro за пределы экрана.
+    sidebarX := hostX
     GuiControl, Move, WB, x0 y0 w%SidebarW% h%GameAreaH%
-    Gui, Show, x%sidebarX% y%hostY% w%SidebarW% h%GameAreaH%, TD Macro Control
+    Gui, Show, x%sidebarX% y%hostY% w%SidebarW% h%GameAreaH%, Mmacro Control
+    Gui, Restore
+    WinActivate, ahk_id %MainGuiHwnd%
     if (OrigMainStyle)
         SetWindowLongPtr(MainGuiHwnd, -16, OrigMainStyle)
     GameHwnd := 0
@@ -794,11 +915,10 @@ UnembedGameWindow() {
 
 ; ---- Синхронизация положения сайдбара с окном Roblox (dock) ----
 ; Roblox остаётся foreground-окном (играбельным), а сайдбар AHK следует
-; за его перемещением. Работает в обе стороны: при драге сайдбара Roblox
-; тоже подтягивается к нему (через DoNativeDrag + последующую синхронизацию).
-; Последние известные позиции — для определения, чей ход.
+; за его перемещением. При ручном драге панели оба окна перемещаются
+; одновременно в ManualDragLoop.
 SyncDockPosition:
-    global Embed_LastRX, Embed_LastRY, Embed_LastRW, Embed_LastSX, Embed_LastSY, MainGuiHwnd, WinDragActive
+    global MainGuiHwnd, WinDragActive, SidebarW, GameAreaH
     if (!Embedded)
         return
     if (!GameHwnd || !DllCall("IsWindow", "ptr", GameHwnd)) {
@@ -809,15 +929,13 @@ SyncDockPosition:
         AddLog("Окно Roblox закрыто, сайдбар откреплён")
         return
     }
-    ; В host-режиме оба окна уже двигаются вместе. Таймер только проверяет
-    ; существование Roblox и не меняет координаты дочернего окна.
-    if (DllCall("GetParent", "ptr", GameHwnd, "ptr") = MainGuiHwnd)
-        return
+    ; Roblox и панель — два отдельных окна. Таймер синхронизирует их
+    ; положение, не меняя порядок окон и не перехватывая ввод игры.
     ; При системном drag браузерный mouseup может не вернуться в HTML.
     ; Завершаем ускоренный polling самостоятельно после отпускания кнопки.
     if (WinDragActive && !GetKeyState("LButton", "P")) {
         WinDragActive := false
-        SetTimer, SyncDockPosition, 50
+        SetTimer, SyncDockPosition, Off
     }
     ; Проверяем состояние окна Roblox
     WinGet, minMax, MinMax, ahk_id %GameHwnd%
@@ -830,46 +948,27 @@ SyncDockPosition:
     if (!DllCall("IsWindowVisible", "ptr", MainGuiHwnd))
         DllCall("ShowWindow", "ptr", MainGuiHwnd, "int", 8)  ; SW_SHOWNA
 
-    ; Читаем позиции
-    VarSetCapacity(rct, 16, 0), VarSetCapacity(sct, 16, 0)
-    okR := DllCall("GetWindowRect", "ptr", GameHwnd, "ptr", &rct)
-    okS := DllCall("GetWindowRect", "ptr", MainGuiHwnd, "ptr", &sct)
-    if (!okR || !okS)
+    ; Roblox — главное окно пары. Панель всегда следует справа от его
+    ; фактической позиции. Это исключает скачки влево из-за устаревших
+    ; Embed_Last* координат или одновременного движения обоих окон.
+    VarSetCapacity(rct, 16, 0)
+    if (!DllCall("GetWindowRect", "ptr", GameHwnd, "ptr", &rct))
         return
-    rx := NumGet(rct, 0, "Int"), ry := NumGet(rct, 4, "Int")
+    rx := NumGet(rct, 0, "Int")
+    ry := NumGet(rct, 4, "Int")
     rw := NumGet(rct, 8, "Int") - rx
-    sx := NumGet(sct, 0, "Int"), sy := NumGet(sct, 4, "Int")
-
-    ; Определяем, кто двигался (если оба/никто — Roblox главный)
-    robloxMoved := (rx != Embed_LastRX || ry != Embed_LastRY || rw != Embed_LastRW)
-    sidebarMoved := (sx != Embed_LastSX || sy != Embed_LastSY)
-
-    ; Обновляем last-позиции
-    Embed_LastRX := rx, Embed_LastRY := ry, Embed_LastRW := rw
-    Embed_LastSX := sx, Embed_LastSY := sy
-
-    if (sidebarMoved && !robloxMoved) {
-        ; Драгали сайдбар (DoNativeDrag) — подтягиваем Roblox к сайдбару
-        newRX := sx - GameAreaW
-        newRY := sy
-        if (rx != newRX || ry != newRY) {
-            DllCall("SetWindowPos", "ptr", GameHwnd, "ptr", 0
-                , "int", newRX, "int", newRY
-                , "int", 0, "int", 0
-                , "uint", 0x0213)  ; SWP_NOACTIVATE | SWP_NOZORDER | SWP_SHOWWINDOW | SWP_NOSIZE
-            Embed_LastRX := newRX, Embed_LastRY := newRY
-        }
-    } else {
-        ; Roblox двигался (или никто) — сайдбар за Roblox
-        newSx := rx + rw
-        newSy := ry
-        if (sx != newSx || sy != newSy) {
-            DllCall("SetWindowPos", "ptr", MainGuiHwnd, "ptr", 0
-                , "int", newSx, "int", newSy
-                , "int", SidebarW, "int", GameAreaH
-                , "uint", 0x0213)  ; SWP_NOACTIVATE | SWP_NOZORDER | SWP_SHOWWINDOW
-            Embed_LastSX := newSx, Embed_LastSY := newSy
-        }
+    newSx := rx + rw
+    newSy := ry
+    VarSetCapacity(sct, 16, 0)
+    if (!DllCall("GetWindowRect", "ptr", MainGuiHwnd, "ptr", &sct))
+        return
+    sx := NumGet(sct, 0, "Int")
+    sy := NumGet(sct, 4, "Int")
+    if (sx != newSx || sy != newSy) {
+        DllCall("SetWindowPos", "ptr", MainGuiHwnd, "ptr", 0
+            , "int", newSx, "int", newSy
+            , "int", SidebarW, "int", GameAreaH
+            , "uint", 0x0213)  ; SWP_NOACTIVATE | SWP_NOZORDER | SWP_SHOWWINDOW | SWP_NOSIZE
     }
 return
 
@@ -896,6 +995,7 @@ MapChanged:
     ; Загружаем Post-Rejoin действия для выбранной карты
     if (SelectedMapCtl != "")
         LoadRejoinActions(SelectedMapCtl)
+    WriteBotState()
 return
 
 BtnClearMap:
@@ -964,14 +1064,16 @@ return
 
 ; ===================== СКРИНШОТ ОБЛАСТИ ИГРЫ =====================
 CaptureGameArea(filepath) {
-    global GameAreaW, GameAreaH
+    global GameAreaW, GameAreaH, LastCaptureX, LastCaptureY, LastCaptureW, LastCaptureH
     ; Игровая область: при dock-встраивании это клиентская область Roblox,
     ; иначе — главное окно AHK. GameAreaOrigin выбирает нужный HWND.
-    if (!GameAreaOrigin(ScreenX, ScreenY)) {
+    if (!GameAreaOrigin(LastCaptureX, LastCaptureY)) {
         AddLog("CaptureGameArea: игровое окно недоступно")
         return
     }
-    CaptureScreenshot(ScreenX, ScreenY, GameAreaW, GameAreaH, filepath)
+    LastCaptureW := GameAreaW
+    LastCaptureH := GameAreaH
+    CaptureScreenshot(LastCaptureX, LastCaptureY, LastCaptureW, LastCaptureH, filepath)
     ; Если кадр вышел почти чёрным (игра свёрнута/не видна на экране) —
     ; пробуем PrintWindow по HWND игры
     if (IsMostlyBlack(filepath)) {
@@ -984,20 +1086,21 @@ CaptureGameArea(filepath) {
 
 ; ---- Захват окна игры через PrintWindow (запасной вариант) ----
 CaptureGameWindow(filepath) {
-    global GameHwnd, GameAreaW, GameAreaH
-    if (!GameHwnd || !WinExist("ahk_id " . GameHwnd))
+    global GameHwnd, GameAreaW, GameAreaH, Embedded, WinTitle
+    captureHwnd := (Embedded && GameHwnd) ? GameHwnd : WinExist(WinTitle)
+    if (!captureHwnd || !WinExist("ahk_id " . captureHwnd))
         return false
-    hdcWin := DllCall("GetDC", "ptr", GameHwnd, "ptr")
+    hdcWin := DllCall("GetDC", "ptr", captureHwnd, "ptr")
     if (!hdcWin)
         return false
     hdcMem := DllCall("CreateCompatibleDC", "ptr", hdcWin, "ptr")
     hBmp   := DllCall("CreateCompatibleBitmap", "ptr", hdcWin, "int", GameAreaW, "int", GameAreaH, "ptr")
     hOld   := DllCall("SelectObject", "ptr", hdcMem, "ptr", hBmp, "ptr")
     ; PW_RENDERFULLCONTENT (0x2) — захват DirectX-контента
-    ok := DllCall("PrintWindow", "ptr", GameHwnd, "ptr", hdcMem, "uint", 0x2)
+    ok := DllCall("PrintWindow", "ptr", captureHwnd, "ptr", hdcMem, "uint", 0x2)
     DllCall("SelectObject", "ptr", hdcMem, "ptr", hOld)
     DllCall("DeleteDC", "ptr", hdcMem)
-    DllCall("ReleaseDC", "ptr", GameHwnd, "ptr", hdcWin)
+    DllCall("ReleaseDC", "ptr", captureHwnd, "ptr", hdcWin)
     if (!ok) {
         DllCall("DeleteObject", "ptr", hBmp)
         return false
@@ -1062,8 +1165,9 @@ CaptureScreenshot(x, y, w, h, filepath) {
     hCaptureDC := DllCall("CreateCompatibleDC", "ptr", hDesktopDC, "ptr")
     hBitmap := DllCall("CreateCompatibleBitmap", "ptr", hDesktopDC, "int", w, "int", h, "ptr")
     hOld := DllCall("SelectObject", "ptr", hCaptureDC, "ptr", hBitmap, "ptr")
+    ; SRCCOPY + CAPTUREBLT: захватываем и layered-компоненты окна Roblox.
     DllCall("BitBlt", "ptr", hCaptureDC, "int", 0, "int", 0, "int", w, "int", h
-        , "ptr", hDesktopDC, "int", x, "int", y, "uint", 0x00CC0020)
+        , "ptr", hDesktopDC, "int", x, "int", y, "uint", 0x40CC0020)
     DllCall("SelectObject", "ptr", hCaptureDC, "ptr", hOld)
     DllCall("DeleteDC", "ptr", hCaptureDC)
     DllCall("ReleaseDC", "ptr", 0, "ptr", hDesktopDC)
@@ -1727,7 +1831,7 @@ return
 
 ; ===================== СТАРТ / СТОП ФАРМА =====================
 BtnStartStop:
-F9::
+FarmHotkeyAction:
     if (SelectedMapCtl = "") {
         AddLog("Сначала выбери карту", "warn")
         WBH_CallJS("ahkUpdateStatus('Select a map', 'error')")
@@ -1745,13 +1849,19 @@ F9::
     }
     Running := !Running
     if (Running) {
+        FarmRunCount := 0
+        StartZoomApplied := false
+        PendingMapChange := ""
         WBH_CallJS("ahkUpdateFarm(true)")
+        PushFarmRunCount()
+        WriteBotState()
         AddLog("Старт фарма: " SelectedMapCtl)
         SetTimer, RunPlacementSequence, -100
     } else {
         WBH_CallJS("ahkUpdateFarm(false)")
         AddLog("Фарм остановлен")
         SetTimer, WatchNextStage, Off
+        WriteBotState()
     }
 return
 
@@ -1941,15 +2051,36 @@ ClickStartGameRetry() {
 }
 
 ; ---- Разовая расстановка всех юнитов по размеченным слотам ----
+BeginFarmRun() {
+    global FarmRunCount
+    FarmRunCount += 1
+    PushFarmRunCount()
+    WriteBotState()
+    AddLog("Ран #" FarmRunCount " начат")
+}
+
 RunPlacementSequence:
+    runHasStarted := false
     slots := MapCoords[SelectedMapCtl]
     AddLog("Слотов загружено: " slots.Length() " для """ SelectedMapCtl """")
     ; Кликаем по центру области игры для фокуса
     ToScreen(640, 360)
     SmoothClick(TS_X, TS_Y, 200)
-    ; Верхний ракурс и обычный зум выполняются до первого юнита.
+    ; Верхний ракурс выполняется до первого юнита каждого этапа.
     ApplyTopCamera()
-    ApplyStartZoom()
+    ; Обычный зум применяется только перед первой расстановкой после старта фарма.
+    if (!StartZoomApplied) {
+        ; Если зум включён, считаем ран с него; иначе — перед первой поставкой.
+        if (Running && ZoomEnabled && (ZoomScrolls + 0) != 0) {
+            BeginFarmRun()
+            runHasStarted := true
+        }
+        ApplyStartZoom()
+        if (Running)
+            StartZoomApplied := true
+    }
+    if (Running && !runHasStarted)
+        BeginFarmRun()
     for i, s in slots {
         if (!Running)
             break
@@ -2035,10 +2166,37 @@ return
 
 ; ---- Таймер записи Post-Rejoin действий (опрос состояния мыши) ----
 RejoinRecordTimer:
-    if (!RejoinRecordActive)
+    if (!RejoinRecordActive && !BotMapRecordActive)
         return
     MouseGetPos, mx, my
     lDown := GetKeyState("LButton", "P")
+    if (BotMapRecordActive) {
+        if (lDown && !BotMapRecordPending) {
+            BotMapRecordPending := true
+            BotMapRecordLastX := mx
+            BotMapRecordLastY := my
+        }
+        if (!lDown && BotMapRecordPending) {
+            BotMapRecordPending := false
+            delayMs := 0
+            if (BotMapRecordLastTime > 0)
+                delayMs := A_TickCount - BotMapRecordLastTime
+            gx := mx
+            gy := my
+            if (WinExist(WinTitle)) {
+                robloxHwnd := WinExist(WinTitle)
+                VarSetCapacity(pt, 8, 0)
+                NumPut(0, pt, 0, "Int"), NumPut(0, pt, 4, "Int")
+                DllCall("ClientToScreen", "ptr", robloxHwnd, "ptr", &pt)
+                gx := mx - NumGet(pt, 0, "Int")
+                gy := my - NumGet(pt, 4, "Int")
+            }
+            BotMapRecordActions.Push({x: gx, y: gy, delay: delayMs})
+            BotMapRecordLastTime := A_TickCount
+            AddLog("Discord bot: записан клик " gx "," gy)
+        }
+        return
+    }
     if (lDown && !RejoinRecordPending) {
         ; Нажатие — запоминаем позицию, ждём отпускания
         RejoinRecordPending := true
@@ -2071,27 +2229,43 @@ return
 
 ; ---- Колёсико мыши (горячие клавиши, включаются при записи) ----
 RejoinWheelUp:
-    if (!RejoinRecordActive)
+    if (!RejoinRecordActive && !BotMapRecordActive)
         return
     delayMs := 0
-    if (RejoinRecordLastTime > 0)
+    if (BotMapRecordActive && BotMapRecordLastTime > 0)
+        delayMs := A_TickCount - BotMapRecordLastTime
+    else if (RejoinRecordLastTime > 0)
         delayMs := A_TickCount - RejoinRecordLastTime
-    RejoinActions.Push({isWheel: true, delta: 120, delay: delayMs})
-    RejoinRecordLastTime := A_TickCount
-    AddLog("RejoinAction записан: колесо вверх (задержка " delayMs " мс)")
-    PushRejoinActionCount()
+    if (BotMapRecordActive) {
+        BotMapRecordActions.Push({isWheel: true, delta: 120, delay: delayMs})
+        BotMapRecordLastTime := A_TickCount
+        AddLog("Discord bot: записано колесо вверх")
+    } else {
+        RejoinActions.Push({isWheel: true, delta: 120, delay: delayMs})
+        RejoinRecordLastTime := A_TickCount
+        AddLog("RejoinAction записан: колесо вверх (задержка " delayMs " мс)")
+        PushRejoinActionCount()
+    }
 return
 
 RejoinWheelDown:
-    if (!RejoinRecordActive)
+    if (!RejoinRecordActive && !BotMapRecordActive)
         return
     delayMs := 0
-    if (RejoinRecordLastTime > 0)
+    if (BotMapRecordActive && BotMapRecordLastTime > 0)
+        delayMs := A_TickCount - BotMapRecordLastTime
+    else if (RejoinRecordLastTime > 0)
         delayMs := A_TickCount - RejoinRecordLastTime
-    RejoinActions.Push({isWheel: true, delta: -120, delay: delayMs})
-    RejoinRecordLastTime := A_TickCount
-    AddLog("RejoinAction записан: колесо вниз (задержка " delayMs " мс)")
-    PushRejoinActionCount()
+    if (BotMapRecordActive) {
+        BotMapRecordActions.Push({isWheel: true, delta: -120, delay: delayMs})
+        BotMapRecordLastTime := A_TickCount
+        AddLog("Discord bot: записано колесо вниз")
+    } else {
+        RejoinActions.Push({isWheel: true, delta: -120, delay: delayMs})
+        RejoinRecordLastTime := A_TickCount
+        AddLog("RejoinAction записан: колесо вниз (задержка " delayMs " мс)")
+        PushRejoinActionCount()
+    }
 return
 
 ; ---- Воспроизведение записанных Post-Rejoin действий ----
@@ -2141,6 +2315,12 @@ PushRejoinActionCount() {
     }
 }
 
+; ---- Отправка количества выполненных ранов в основную панель ----
+PushFarmRunCount() {
+    global FarmRunCount
+    WBH_CallJS("ahkUpdateRunCount(" . FarmRunCount . ")")
+}
+
 ; ---- Старт / стоп записи Post-Rejoin действий ----
 ToggleRejoinRecord:
     global RejoinRecordActive, RejoinActions, RejoinRecordLastTime, RejoinRecordPending, SelectedMapCtl, WinTitle
@@ -2178,14 +2358,15 @@ ToggleRejoinRecord:
             WinActivate, %WinTitle%
             WinWaitActive, %WinTitle%,, 2
         }
-        AddLog("RejoinRecord: запись начата для """ SelectedMapCtl """ — кликай/крути в Roblox (F1 = стоп)")
+        AddLog("RejoinRecord: запись начата для """ SelectedMapCtl """ — кликай/крути в Roblox (" RejoinRecordHotkey " = стоп)")
         try {
             WB_Modal.Document.parentWindow.execScript("ahkRejoinRecordState(true)")
         }
     }
 return
 
-; ---- F1 — старт/стоп записи Post-Rejoin действий ----
+; ---- Горячая клавиша — старт/стоп записи Post-Rejoin действий ----
+RejoinRecordHotkeyAction:
 RejoinF1:
     global RejoinRecordActive, SelectedMapCtl
     if (RejoinRecordActive) {
@@ -2202,6 +2383,31 @@ RejoinF1:
         }
         GoSub, ToggleRejoinRecord
     }
+return
+
+; ---- Горячая клавиша — запись действий входа на выбранную карту ----
+; Карта берётся из текущего выбора в сайдбаре. Эти действия выполняются
+; после победы/поражения, когда карта была поставлена через Discord.
+MapChangeRecordHotkeyAction:
+MapChangeF2:
+    global BotMapRecordActive, RejoinRecordActive, SelectedMapCtl
+    if (BotMapRecordActive) {
+        StopBotMapRecord()
+        return
+    }
+    if (RejoinRecordActive) {
+        AddLog("MapRecord: сначала остановите запись Post-Rejoin!", "warn")
+        return
+    }
+    if (SelectedMapCtl = "") {
+        AddLog("MapRecord: сначала выбери карту в сайдбаре!", "warn")
+        return
+    }
+    if (!WinExist(WinTitle)) {
+        AddLog("MapRecord: окно Roblox не найдено!", "warn")
+        return
+    }
+    StartBotMapRecord(SelectedMapCtl)
 return
 
 ; ---- Тестовое воспроизведение Post-Rejoin действий ----
@@ -2275,6 +2481,10 @@ WatchNextStage:
     }
     ; 1) Проверяем поражение/победу — ищем Defeat / Victory
     if (DetectDefeat()) {
+        if (PendingMapChange != "") {
+            HandlePendingMapChange("Defeat")
+            return
+        }
         AddLog("Обнаружено поражение! Кликаю Repeat Stage...")
         ClickRepeatStage()
         WBH_CallJS("ahkUpdateStatus('Defeat, restarting...', 'error')")
@@ -2282,6 +2492,10 @@ WatchNextStage:
         return
     }
     if (DetectVictory()) {
+        if (PendingMapChange != "") {
+            HandlePendingMapChange("Victory")
+            return
+        }
         AddLog("Обнаружена победа! Кликаю Repeat Stage...")
         ClickRepeatStage()
         WBH_CallJS("ahkUpdateStatus('Victory, restarting...', 'running')")
@@ -2594,6 +2808,377 @@ ClickRepeatStage() {
 	AddLog("ВНИМАНИЕ: Repeat Stage не нажалась за " attempts " попыток")
 }
 
+; ===================== DISCORD BOT =====================
+
+UpdateBotStatus(text, cls := "") {
+    safeText := JsEscape(text)
+    safeCls := JsEscape(cls)
+    WBH_CallJS("ahkUpdateBotStatus('" . safeText . "','" . safeCls . "')")
+    ModalCallJS("ahkUpdateBotStatus('" . safeText . "','" . safeCls . "')")
+}
+
+StartDiscordBot:
+    if (BotRunning)
+        return
+    if (BotToken = "") {
+        AddLog("Discord bot: токен не задан", "warn")
+        UpdateBotStatus("Token is empty", "error")
+        return
+    }
+    botScript := BotDir . "\bot.py"
+    if !FileExist(botScript) {
+        AddLog("Discord bot: файл bot.py не найден", "error")
+        UpdateBotStatus("bot.py not found", "error")
+        return
+    }
+    Run, % BotPython . " """ . botScript . """", %BotDir%, Hide, BotProcessPid
+    if (ErrorLevel) {
+        AddLog("Discord bot: не удалось запустить Python", "error")
+        UpdateBotStatus("Python start failed", "error")
+        return
+    }
+    BotRunning := true
+    AddLog("Discord bot: запуск запрошен", "success")
+    UpdateBotStatus("Starting...", "running")
+return
+
+StopDiscordBot:
+    if (BotProcessPid) {
+        Process, Close, %BotProcessPid%
+        BotProcessPid := 0
+    }
+    BotRunning := false
+    AddLog("Discord bot: остановлен")
+    UpdateBotStatus("Stopped", "")
+return
+
+RestartDiscordBot:
+    Gosub, StopDiscordBot
+    Sleep, 200
+    Gosub, StartDiscordBot
+return
+
+PublishBotState:
+    WriteBotState()
+return
+
+PollBotCommands:
+    if !FileExist(BotCommandsDir)
+        return
+    Loop, Files, %BotCommandsDir%\*.cmd, F
+    {
+        commandFile := A_LoopFileFullPath
+        FileRead, rawCommand, %commandFile%
+        FileDelete, %commandFile%
+        requestId := ""
+        botAction := ""
+        botArgument := ""
+        Loop, Parse, rawCommand, `n, `r
+        {
+            line := A_LoopField
+            equalPos := InStr(line, "=")
+            if (!equalPos)
+                continue
+            key := SubStr(line, 1, equalPos - 1)
+            value := SubStr(line, equalPos + 1)
+            if (key = "id")
+                requestId := value
+            else if (key = "action")
+                botAction := value
+            else if (key = "arg")
+                botArgument := UriDecode(value)
+        }
+        if (requestId != "" && botAction != "")
+            ProcessBotCommand(requestId, botAction, botArgument)
+        break
+    }
+return
+
+ProcessBotCommand(requestId, action, argument) {
+    global BotScreenshotFile, PendingMapChange, Running, MapCoords, SelectedMapCtl, LastCaptureX, LastCaptureY, LastCaptureW, LastCaptureH, WinTitle, GameAreaW, GameAreaH
+    if (action = "screenshot") {
+        ; Захват выполняет Python-бот: он умеет поднять Roblox, получить
+        ; изображение через mss и использовать desktop fallback. AHK только
+        ; быстро передаёт актуальную область, поэтому команда не блокирует
+        ; макрос на WinWaitActive/BitBlt/PrintWindow.
+        if (GameAreaOrigin(captureX, captureY)) {
+            LastCaptureX := captureX
+            LastCaptureY := captureY
+            LastCaptureW := GameAreaW
+            LastCaptureH := GameAreaH
+            BotWriteResponse(requestId, true, "Область для снимка передана боту", "", LastCaptureX . "," . LastCaptureY . "," . LastCaptureW . "," . LastCaptureH)
+        } else {
+            BotWriteResponse(requestId, true, "Игровая область не найдена; бот попробует снять рабочий стол")
+        }
+        return
+    }
+    if (action = "state") {
+        BotWriteResponse(requestId, true, BotStateText())
+        return
+    }
+    if (action = "switch-map") {
+        if (argument = "") {
+            BotWriteResponse(requestId, false, "Имя карты не указано")
+            return
+        }
+        if (!MapCoords.HasKey(argument)) {
+            BotWriteResponse(requestId, false, "Карта не найдена или не размечена: " argument)
+            return
+        }
+        if (Running) {
+            PendingMapChange := argument
+            AddLog("Discord bot: смена карты поставлена в очередь — " argument, "warn")
+            BotWriteResponse(requestId, true, "Карта " argument " будет запущена после текущего раунда")
+        } else {
+            SelectedMapCtl := argument
+            LoadRejoinActions(argument)
+            RefreshMapDropdown()
+            AddLog("Discord bot: выбрана карта " argument)
+            BotWriteResponse(requestId, true, "Карта переключена: " argument)
+        }
+        WriteBotState()
+        return
+    }
+    BotWriteResponse(requestId, false, "Неизвестная команда: " action)
+}
+
+BotWriteResponse(requestId, ok, message, path := "", region := "") {
+    global BotResponsesDir
+    responseFile := BotResponsesDir . "\" . requestId . ".result"
+    content := "ok=" . (ok ? 1 : 0) . "`n"
+    content .= "message=" . UriEncode(message) . "`n"
+    if (path != "")
+        content .= "path=" . UriEncode(path) . "`n"
+    if (region != "")
+        content .= "region=" . UriEncode(region) . "`n"
+    ; Сначала полностью записываем ответ во временный файл, затем заменяем
+    ; итоговый. Иначе Python может прочитать response в середине записи и
+    ; получить path без строки ok.
+    temporary := responseFile . ".tmp"
+    FileDelete, %temporary%
+    FileAppend, %content%, %temporary%, UTF-8
+    FileMove, %temporary%, %responseFile%, 1
+}
+
+WriteBotState() {
+    global BotStateFile, Running, SelectedMapCtl, FarmRunCount, PendingMapChange, MapList, BotRunning, BotMapRecordActive, BotMapRecordMap
+    content := "running=" . (Running ? 1 : 0) . "`n"
+    content .= "selected_map=" . UriEncode(SelectedMapCtl) . "`n"
+    content .= "pending_map=" . UriEncode(PendingMapChange) . "`n"
+    content .= "runs=" . FarmRunCount . "`n"
+    content .= "bot_running=" . (BotRunning ? 1 : 0) . "`n"
+    content .= "map_recording=" . (BotMapRecordActive ? 1 : 0) . "`n"
+    content .= "map_record_map=" . UriEncode(BotMapRecordMap) . "`n"
+    for i, mapName in MapList
+        content .= "map_" . i . "=" . UriEncode(mapName) . "`n"
+    temporary := BotStateFile . ".tmp"
+    FileDelete, %temporary%
+    FileAppend, %content%, %temporary%, UTF-8
+    FileMove, %temporary%, %BotStateFile%, 1
+}
+
+BotStateText() {
+    global Running, SelectedMapCtl, PendingMapChange, FarmRunCount, BotMapRecordActive, BotMapRecordMap
+    return "Фарм: " (Running ? "запущен" : "остановлен") " | карта: " (SelectedMapCtl != "" ? SelectedMapCtl : "не выбрана") " | ранов: " FarmRunCount (PendingMapChange != "" ? " | ожидает: " PendingMapChange : "") (BotMapRecordActive ? " | запись: " BotMapRecordMap : "")
+}
+
+UriEncode(str) {
+    result := ""
+    Loop, Parse, str
+    {
+        c := A_LoopField
+        if (c ~= "[A-Za-z0-9_.~-]")
+            result .= c
+        else {
+            code := Asc(c)
+            if (code < 256)
+                result .= "%" . Format("{:02X}", code)
+            else
+                result .= c
+        }
+    }
+    return result
+}
+
+BotMapActionsFile(mapName) {
+    global BotActionsDir
+    return BotActionsDir . "\" . SafeMapName(mapName) . ".ini"
+}
+
+LoadBotMapActions(mapName) {
+    global BotMapActions
+    BotMapActions := []
+    f := BotMapActionsFile(mapName)
+    if !FileExist(f)
+        return
+    IniRead, count, %f%, Actions, Count, 0
+    Loop, %count% {
+        IniRead, raw, %f%, Actions, %A_Index%, -
+        if (raw = "-")
+            continue
+        if (InStr(raw, "wheel,") = 1) {
+            rest := SubStr(raw, 7)
+            StringSplit, wheelParts, rest, `,
+            if (wheelParts0 >= 2)
+                BotMapActions.Push({isWheel: true, delta: wheelParts1, delay: wheelParts2})
+        } else {
+            StringSplit, parts, raw, `,
+            if (parts0 >= 3)
+                BotMapActions.Push({x: parts1, y: parts2, delay: parts3})
+        }
+    }
+}
+
+SaveBotMapActions(mapName) {
+    global BotMapRecordActions
+    f := BotMapActionsFile(mapName)
+    FileDelete, %f%
+    count := BotMapRecordActions.Length()
+    IniWrite, %count%, %f%, Actions, Count
+    Loop, %count% {
+        a := BotMapRecordActions[A_Index]
+        if (a.isWheel)
+            IniWrite, % "wheel," . a.delta . "," . a.delay, %f%, Actions, %A_Index%
+        else
+            IniWrite, % a.x . "," . a.y . "," . a.delay, %f%, Actions, %A_Index%
+    }
+}
+
+ClearBotMapActions(mapName, requestId := "") {
+    if (mapName = "")
+        mapName := "_invalid_"
+    f := BotMapActionsFile(mapName)
+    if FileExist(f)
+        FileDelete, %f%
+    if (requestId != "")
+        BotWriteResponse(requestId, true, "Запись действий для " mapName " очищена")
+}
+
+PushBotMapRecordState() {
+    global BotMapRecordActive, BotMapRecordMap, BotMapRecordActions
+    mapJS := JsEscape(BotMapRecordMap)
+    count := BotMapRecordActions.Length()
+    WBH_CallJS("ahkMapRecordState(" . (BotMapRecordActive ? "true" : "false") . ",'" . mapJS . "'," . count . ")")
+    ModalCallJS("ahkMapRecordState(" . (BotMapRecordActive ? "true" : "false") . ",'" . mapJS . "'," . count . ")")
+}
+
+StartBotMapRecord(mapName, requestId := "") {
+    global BotMapRecordActive, BotMapRecordMap, BotMapRecordActions, BotMapRecordLastTime, BotMapRecordPending, RejoinRecordActive
+    if (mapName = "") {
+        if (requestId != "")
+            BotWriteResponse(requestId, false, "Имя карты не указано")
+        return
+    }
+    if (RejoinRecordActive) {
+        if (requestId != "")
+            BotWriteResponse(requestId, false, "Сначала остановите обычную запись Rejoin")
+        return
+    }
+    BotMapRecordMap := mapName
+    BotMapRecordActions := []
+    BotMapRecordLastTime := A_TickCount
+    BotMapRecordPending := false
+    BotMapRecordActive := true
+    Hotkey, ~WheelUp, On
+    Hotkey, ~WheelDown, On
+    SetTimer, RejoinRecordTimer, 50
+    AddLog("Discord bot: запись входа на карту начата — " mapName, "success")
+    WriteBotState()
+    PushBotMapRecordState()
+    if (requestId != "")
+        BotWriteResponse(requestId, true, "Запись начата для " mapName)
+}
+
+StopBotMapRecord(requestId := "") {
+    global BotMapRecordActive, BotMapRecordMap, BotMapRecordActions, BotMapRecordPending, RejoinRecordActive
+    if (!BotMapRecordActive) {
+        if (requestId != "")
+            BotWriteResponse(requestId, false, "Запись сейчас не запущена")
+        return
+    }
+    BotMapRecordActive := false
+    BotMapRecordPending := false
+    SaveBotMapActions(BotMapRecordMap)
+    if (!RejoinRecordActive) {
+        SetTimer, RejoinRecordTimer, Off
+        Hotkey, ~WheelUp, Off
+        Hotkey, ~WheelDown, Off
+    }
+    count := BotMapRecordActions.Length()
+    AddLog("Discord bot: запись сохранена для " BotMapRecordMap " (" count " действий)")
+    WriteBotState()
+    PushBotMapRecordState()
+    if (requestId != "")
+        BotWriteResponse(requestId, true, "Запись сохранена: " count " действий")
+}
+
+PlayBotMapActions(mapName) {
+    global BotMapActions
+    LoadBotMapActions(mapName)
+    count := BotMapActions.Length()
+    if (count < 1) {
+        AddLog("Discord bot: для карты " mapName " нет записанных действий", "warn")
+        return false
+    }
+    AddLog("Discord bot: выполняю " count " действий входа на карту " mapName)
+    return PlayActionList(BotMapActions, "Discord bot")
+}
+
+PlayActionList(actions, source := "Actions") {
+    global Running, TS_X, TS_Y, WinTitle
+    ; Колесо через SendInput получает Roblox только у активного окна.
+    if (WinExist(WinTitle)) {
+        WinActivate, %WinTitle%
+        WinWaitActive, %WinTitle%,, 2
+    }
+    for i, a in actions {
+        if (!Running)
+            return false
+        if (a.delay > 0)
+            Sleep, % a.delay
+        if (!Running)
+            return false
+        if (a.isWheel) {
+            notches := Abs(a.delta) // 120
+            Loop, %notches% {
+                if (a.delta > 0)
+                    SendInput, {WheelUp}
+                else
+                    SendInput, {WheelDown}
+                Sleep, 30
+            }
+        } else {
+            ToScreen(a.x, a.y)
+            SmoothClick(TS_X, TS_Y, 80)
+        }
+    }
+    AddLog(source ": действия завершены")
+    return true
+}
+
+HandlePendingMapChange(resultName) {
+    global PendingMapChange, SelectedMapCtl, Running, MapCoords, BotMapPostActionsDelay
+    target := PendingMapChange
+    PendingMapChange := ""
+    if (target = "" || !MapCoords.HasKey(target))
+        return false
+    SetTimer, WatchNextStage, Off
+    SelectedMapCtl := target
+    LoadRejoinActions(target)
+    RefreshMapDropdown()
+    WBH_CallJS("ahkUpdateStatus('Changing map...', 'running')")
+    AddLog("Discord bot: " resultName " — переключаюсь на карту " target)
+    actionsPlayed := PlayBotMapActions(target)
+    if (Running && actionsPlayed && BotMapPostActionsDelay > 0) {
+        AddLog("Discord bot: жду " BotMapPostActionsDelay " сек после действий входа на карту")
+        Sleep, % BotMapPostActionsDelay * 1000
+    }
+    if (Running)
+        SetTimer, RunPlacementSequence, -100
+    WriteBotState()
+    return true
+}
+
 ; ===================== HTML ↔ AHK BRIDGE =====================
 
 ; ---- Выполнить JavaScript в HTML-панели ----
@@ -2631,7 +3216,7 @@ ProcessJSCmd(cmd) {
     ; Переменные ручного драга окна: без global они стали бы локальными в этой
     ; функции, и ManualDragLoop (метка, глобальная область) читал бы нули →
     ; сайдбар прыгал к курсору, а Roblox уезжал за левый край экрана.
-    global WinDragStartMX, WinDragStartMY, WinDragStartWX, WinDragStartWY, WinDragActive, MainGuiHwnd
+    global WinDragStartMX, WinDragStartMY, WinDragStartWX, WinDragStartWY, WinDragActive, MainGuiHwnd, GameHwnd, Embedded, GameAreaW
     
     ; Разбираем команду: "command" или "command/arg"
     slashPos := InStr(cmd, "/")
@@ -2649,6 +3234,14 @@ ProcessJSCmd(cmd) {
     }
     if (action = "start-farm") {
         Gosub, BtnStartStop
+        return
+    }
+    if (action = "bot-start") {
+        Gosub, StartDiscordBot
+        return
+    }
+    if (action = "bot-stop") {
+        Gosub, StopDiscordBot
         return
     }
     if (action = "select-map") {
@@ -2742,26 +3335,17 @@ ProcessJSCmd(cmd) {
             ; символ — пробел), что убивало поток и драг не стартовал.
             WinGetPos, WinDragStartWX, WinDragStartWY, , , ahk_id %MainGuiHwnd%
             WinDragActive := true
-            if (Embedded && GameHwnd && DllCall("IsWindow", "ptr", GameHwnd)) {
-                ; В host-режиме перемещаем общий контейнер — Roblox следует
-                ; за ним, а игровой ввод остаётся у окна игры.
-                SetTimer, SyncDockPosition, Off
-                SetTimer, ManualDragLoop, 16
-            } else {
-                SetTimer, SyncDockPosition, Off
-                SetTimer, ManualDragLoop, 16
-            }
+            SetTimer, SyncDockPosition, Off
+            SetTimer, ManualDragLoop, 16
         }
         return
     }
     if (InStr(cmd, "drag-end-main")) {
         WinDragActive := false
         SetTimer, ManualDragLoop, Off
-        if (Embedded) {
-            ; Сразу выравниваем панель после системного драга Roblox.
-            Gosub, SyncDockPosition
-            SetTimer, SyncDockPosition, 50
-        }
+        ; При закреплении оба окна уже перемещены одним defer-пакетом в
+        ; ManualDragLoop, поэтому дополнительная синхронизация не нужна.
+        SetTimer, SyncDockPosition, Off
         return
     }
     if (InStr(cmd, "drag-start-modal/")) {
@@ -2779,13 +3363,19 @@ ProcessJSCmd(cmd) {
 ; ---- Отправка начального состояния в HTML ----
 PushStateToHTML:
     global UpgradeX, UpgradeY, AutoX, AutoY, StartGameX, StartGameY, RepeatStageX, RepeatStageY
-    global Embedded, Running, AutoUpgradeEnabled, MapList, SelectedMapCtl
+    global Embedded, Running, FarmRunCount, AutoUpgradeEnabled, MapList, SelectedMapCtl, AppLanguage, FarmHotkey, RejoinRecordHotkey, MapChangeRecordHotkey
     
     ; Сообщаем JS что мы в AHK-режиме (не standalone браузер)
     WBH_CallJS("ahkSetMode()")
+    WBH_CallJS("ahkSetLanguage('" . AppLanguage . "')")
+    farmHotkeyJS := JsEscape(FarmHotkey)
+    rejoinHotkeyJS := JsEscape(RejoinRecordHotkey)
+    mapChangeHotkeyJS := JsEscape(MapChangeRecordHotkey)
+    WBH_CallJS("ahkSetHotkeys('" . farmHotkeyJS . "','" . rejoinHotkeyJS . "','" . mapChangeHotkeyJS . "')")
     WBH_CallJS("ahkUpdateVersion('" . CURRENT_VERSION . "', false)")
     WBH_CallJS("ahkUpdateEmbed(" . (Embedded ? "true" : "false") . ")")
     WBH_CallJS("ahkUpdateFarm(" . (Running ? "true" : "false") . ")")
+    WBH_CallJS("ahkUpdateRunCount(" . FarmRunCount . ")")
     WBH_CallJS("ahkUpdateAutoUpgrade(" . (AutoUpgradeEnabled ? "true" : "false") . ")")
     if (Running)
         WBH_CallJS("ahkUpdateStatus('Watching...', 'running')")
@@ -2799,6 +3389,8 @@ PushStateToHTML:
             mapOpts .= (i > 1 ? "|" : "") . m
         WBH_CallJS("ahkSetMapOptions(""" . mapOpts . """)")
     }
+    else
+        WBH_CallJS("ahkSetMapOptions("""")")
     
     ; Координаты
     upStr := "Up(" . UpgradeX . "," . UpgradeY . ")"
@@ -2837,6 +3429,8 @@ UpdateMapListHTML() {
             mapOpts .= (i > 1 ? "|" : "") . m
         WBH_CallJS("ahkSetMapOptions(""" . mapOpts . """)")
     }
+    else
+        WBH_CallJS("ahkSetMapOptions("""")")
 }
 
 ; ===================== MODAL WINDOWS (HTML sub-windows) =====================
@@ -2846,7 +3440,11 @@ UpdateMapListHTML() {
 ; title: заголовок окна
 ; w, h: размеры окна
 OpenModalWindow(name, title, w, h) {
-    global htmlURL, WB_Modal, ModalHwnd, MainGuiHwnd
+    global htmlURL, WB_Modal, ModalHwnd, MainGuiHwnd, AppLanguage
+    ; Пока открыты настройки, назначаемые комбинации не должны запускать макрос.
+    EnableConfiguredHotkeys()
+    if (name = "settings")
+        DisableConfiguredHotkeys()
     
     ; Закрываем предыдущее модальное окно если открыто
     Gui, Modal:Destroy
@@ -2870,6 +3468,8 @@ OpenModalWindow(name, title, w, h) {
     while (WB_Modal.ReadyState != 4 && A_TickCount - waitStart < 10000)
         Sleep, 80
     
+    ; Сначала применяем язык ко всей модалке, затем пушим её данные.
+    ModalCallJS("ahkSetLanguage('" . AppLanguage . "')")
     ; Пушим данные в модалку (текущие настройки / список пресетов / координаты)
     PushModalData(name)
     
@@ -2903,7 +3503,41 @@ OpenModalWindow(name, title, w, h) {
     SetTimer, PollModalClose, 20
 }
 
+; ---- Нативная запись горячей клавиши ----
+; HTML-кнопка открывает настоящий AHK Hotkey-контрол. Он корректно
+; распознаёт F-клавиши и комбинации даже во встроенном Shell.Explorer.
+ShowHotkeyCapture(target) {
+    global HotkeyCaptureTarget, HotkeyCaptureHwnd, HotkeyCaptureValue, HotkeyCaptureLastValue, FarmHotkey, RejoinRecordHotkey, MapChangeRecordHotkey
+    HotkeyCaptureTarget := (target = "rejoin") ? "rejoin" : ((target = "map-change") ? "map-change" : "farm")
+    DisableConfiguredHotkeys()
+    initial := (HotkeyCaptureTarget = "rejoin") ? RejoinRecordHotkey : ((HotkeyCaptureTarget = "map-change") ? MapChangeRecordHotkey : FarmHotkey)
+    HotkeyCaptureLastValue := initial
+
+    Gui, HotkeyCapture:Destroy
+    ; Само окно невидимое и нужно только как нативный источник ввода.
+    ; Визуальная часть назначения теперь полностью рисуется в HTML-overlay.
+    Gui, HotkeyCapture:New, +ToolWindow -Caption +HwndHotkeyCaptureHwnd
+    Gui, HotkeyCapture:Add, Hotkey, x0 y0 w240 h40 vHotkeyCaptureValue, %initial%
+    Gui, HotkeyCapture:Show, x0 y0 w240 h40
+    WinSet, Transparent, 0, ahk_id %HotkeyCaptureHwnd%
+    WinActivate, ahk_id %HotkeyCaptureHwnd%
+    GuiControl, HotkeyCapture:Focus, HotkeyCaptureValue
+    SetTimer, PollHotkeyCapture, 20
+    ModalCallJS("ahkOpenHotkeyCapture('" . HotkeyCaptureTarget . "','" . JsEscape(initial) . "')")
+}
+
 ; ---- Таймер: проверяем команды от JS (закрыть, свернуть, переместить) ----
+PollHotkeyCapture:
+    global HotkeyCaptureHwnd, HotkeyCaptureValue, HotkeyCaptureLastValue
+    if (!HotkeyCaptureHwnd || !WinExist("ahk_id " . HotkeyCaptureHwnd))
+        return
+    Gui, HotkeyCapture:Submit, NoHide
+    if (HotkeyCaptureValue != "" && HotkeyCaptureValue != HotkeyCaptureLastValue) {
+        HotkeyCaptureLastValue := HotkeyCaptureValue
+        ModalCallJS("ahkSetHotkeyCapture('" . JsEscape(HotkeyCaptureValue) . "')")
+    }
+return
+
 PollModalClose:
     if (!WB_Modal || WB_Modal.ReadyState != 4)
         return
@@ -2928,6 +3562,10 @@ PollModalClose:
         arg := ""
     }
     
+    ; Возвращаем хоткеи для любой команды, кроме начала захвата клавиши.
+    if (action != "hotkey-capture-start")
+        EnableConfiguredHotkeys()
+
     if (cmd = "close-modal") {
         SetTimer, PollModalClose, Off
         Gui, Modal:Destroy
@@ -2935,6 +3573,23 @@ PollModalClose:
     }
     else if (cmd = "minimize-modal") {
         Gui, Modal:Minimize
+    }
+    else if (action = "record-hotkey") {
+        ShowHotkeyCapture(arg)
+    }
+    else if (action = "record-hotkey-save") {
+        GoSub, HotkeyCaptureSave
+    }
+    else if (action = "record-hotkey-cancel") {
+        GoSub, HotkeyCaptureCancel
+    }
+    else if (action = "hotkey-capture-start") {
+        ; F1/F9 и другие назначенные сочетания не должны перехватываться
+        ; макросом, пока пользователь выбирает новую клавишу в поле.
+        DisableConfiguredHotkeys()
+    }
+    else if (action = "hotkey-capture-stop") {
+        EnableConfiguredHotkeys()
     }
     else if (InStr(cmd, "drag-start-modal/")) {
         params := SubStr(cmd, 18)
@@ -2962,6 +3617,12 @@ PollModalClose:
     }
     else if (action = "settings-save") {
         GoSub, ModalSaveSettings
+    }
+    else if (action = "bot-start") {
+        GoSub, StartDiscordBot
+    }
+    else if (action = "bot-stop") {
+        GoSub, StopDiscordBot
     }
     else if (action = "preview-top-camera") {
         SetTimer, PollModalClose, Off
@@ -3097,6 +3758,10 @@ PollModalClose:
         ; Старт/стоп записи Post-Rejoin действий
         GoSub, ToggleRejoinRecord
     }
+    else if (action = "record-map-entry") {
+        ; Старт/стоп записи входа на выбранную карту
+        GoSub, MapChangeRecordHotkeyAction
+    }
     else if (action = "test-rejoin") {
         ; Тестовое воспроизведение записанных действий
         GoSub, TestRejoinActions
@@ -3149,9 +3814,64 @@ PollModalClose:
     }
 return
 
+HotkeyCaptureSave:
+    global HotkeyCaptureTarget, HotkeyCaptureValue, FarmHotkey, RejoinRecordHotkey, MapChangeRecordHotkey
+    Gui, HotkeyCapture:Submit, NoHide
+    captured := HotkeyCaptureValue
+    if (captured = "") {
+        AddLog("Горячая клавиша не выбрана", "warn")
+        return
+    }
+    if (HotkeyCaptureTarget = "farm" && (captured = RejoinRecordHotkey || captured = MapChangeRecordHotkey)) {
+        AddLog("Эта комбинация уже используется для записи Rejoin", "warn")
+        return
+    }
+    if (HotkeyCaptureTarget = "rejoin" && (captured = FarmHotkey || captured = MapChangeRecordHotkey)) {
+        AddLog("Эта комбинация уже используется для запуска фарма", "warn")
+        return
+    }
+    if (HotkeyCaptureTarget = "map-change" && (captured = FarmHotkey || captured = RejoinRecordHotkey)) {
+        AddLog("Эта комбинация уже используется другой настройкой", "warn")
+        return
+    }
+    SetTimer, PollHotkeyCapture, Off
+    if (HotkeyCaptureTarget = "rejoin")
+        SetHotkeySettings(FarmHotkey, captured, MapChangeRecordHotkey)
+    else if (HotkeyCaptureTarget = "map-change")
+        SetHotkeySettings(FarmHotkey, RejoinRecordHotkey, captured)
+    else
+        SetHotkeySettings(captured, RejoinRecordHotkey, MapChangeRecordHotkey)
+    ApplyConfiguredHotkeys()
+    SaveSettings()
+    farmHotkeyJS := JsEscape(FarmHotkey)
+    rejoinHotkeyJS := JsEscape(RejoinRecordHotkey)
+    mapChangeHotkeyJS := JsEscape(MapChangeRecordHotkey)
+    WBH_CallJS("ahkHotkeyCaptureFinished('" . farmHotkeyJS . "','" . rejoinHotkeyJS . "','" . mapChangeHotkeyJS . "')")
+    ModalCallJS("ahkHotkeyCaptureFinished('" . farmHotkeyJS . "','" . rejoinHotkeyJS . "','" . mapChangeHotkeyJS . "')")
+    Gui, HotkeyCapture:Destroy
+return
+
+HotkeyCaptureCancel:
+    SetTimer, PollHotkeyCapture, Off
+    Gui, HotkeyCapture:Destroy
+    EnableConfiguredHotkeys()
+    ModalCallJS("ahkHotkeyCaptureCanceled()")
+return
+
+HotkeyCaptureDrag:
+    PostMessage, 0xA1, 2,,, ahk_id %HotkeyCaptureHwnd%
+return
+
+HotkeyCaptureGuiClose:
+    GoSub, HotkeyCaptureCancel
+return
+
 ; ---- Закрытие модалки через ✕ (крестик окна) ----
 ModalGuiClose:
     SetTimer, PollModalClose, Off
+    SetTimer, PollHotkeyCapture, Off
+    Gui, HotkeyCapture:Destroy
+    EnableConfiguredHotkeys()
     Gui, Modal:Destroy
     ModalHwnd := 0
 return
@@ -3178,6 +3898,12 @@ PushModalData(name) {
         colorHex := SubStr(StartGameColor, 3)  ; убираем "0x"
         rjLink := StrReplace(RejoinShareLink, "\", "\\")
         rjLink := StrReplace(rjLink, "'", "\'")
+        farmHotkeyJS := JsEscape(FarmHotkey)
+        rejoinHotkeyJS := JsEscape(RejoinRecordHotkey)
+        mapChangeHotkeyJS := JsEscape(MapChangeRecordHotkey)
+        botTokenJS := JsEscape(BotToken)
+        botGuildJS := JsEscape(BotGuildId)
+        botAllowedJS := JsEscape(BotAllowedUserIds)
         ModalCallJS("ahkLoadSettings("
             . ClickDelay . "," . SlotClickDelay . "," . UpgradeClickDelay . ","
             . AutoClickDelay . "," . UnitSleepDelay . "," . StartGameDelay . ","
@@ -3186,12 +3912,15 @@ PushModalData(name) {
             . StartGameCenterX . "," . StartGameCenterY . "," . StartGameRadius . ","
             . (RejoinEnabled ? 1 : 0) . ",'" . rjLink . "',"
             . RejoinMaxAttempts . "," . RejoinWaitTimeout . "," . RejoinPostJoinDelay . ","
-            . RejoinPostActionsDelay . "," . (MouseSpeedEnabled ? 1 : 0) . "," . ZoomScrolls . "," . (ZoomEnabled ? 1 : 0) . "," . (TopCameraEnabled ? 1 : 0) . ")")
+            . RejoinPostActionsDelay . "," . (MouseSpeedEnabled ? 1 : 0) . "," . ZoomScrolls . "," . (ZoomEnabled ? 1 : 0) . "," . (TopCameraEnabled ? 1 : 0) . ",'" . AppLanguage . "','" . farmHotkeyJS . "','" . rejoinHotkeyJS . "',"
+            . (BotEnabled ? 1 : 0) . "," . (BotAutoStart ? 1 : 0) . ",'" . botTokenJS . "','" . botGuildJS . "','" . botAllowedJS . "','" . mapChangeHotkeyJS . "'," . BotMapPostActionsDelay . ")")
         AddLog("Settings пушнуты в модалку (Rejoin: " (RejoinEnabled ? "on" : "off") ", link len=" StrLen(RejoinShareLink) ")")
         ; Также пушим количество записанных Post-Rejoin действий
         count := RejoinActions.Length()
         ModalCallJS("ahkRejoinActionCount(" count ")")
         ModalCallJS("ahkRejoinRecordState(" (RejoinRecordActive ? "true" : "false") ")")
+        PushBotMapRecordState()
+        ModalCallJS("ahkUpdateBotStatus('" . (BotRunning ? "Running" : "Stopped") . "','" . (BotRunning ? "running" : "") . "')")
     }
     else if (name = "presets") {
         ; Собираем список пресетов из presets.ini
@@ -3278,6 +4007,37 @@ ModalSaveSettings:
     if (vals0 >= 24) {
         TopCameraEnabled := (vals24 = "1" || vals24 = "true") ? true : false
     }
+    if (vals0 >= 25) {
+        SetAppLanguage(vals25)
+        WBH_CallJS("ahkSetLanguage('" . AppLanguage . "')")
+    }
+    if (vals0 >= 28) {
+        SetHotkeySettings(vals26, vals27, vals28)
+        ApplyConfiguredHotkeys()
+        farmHotkeyJS := JsEscape(FarmHotkey)
+        rejoinHotkeyJS := JsEscape(RejoinRecordHotkey)
+        mapChangeHotkeyJS := JsEscape(MapChangeRecordHotkey)
+        WBH_CallJS("ahkSetHotkeys('" . farmHotkeyJS . "','" . rejoinHotkeyJS . "','" . mapChangeHotkeyJS . "')")
+        ModalCallJS("ahkSetHotkeys('" . farmHotkeyJS . "','" . rejoinHotkeyJS . "','" . mapChangeHotkeyJS . "')")
+    }
+    if (vals0 >= 33) {
+        BotEnabled := (vals29 = "1" || vals29 = "true") ? true : false
+        BotAutoStart := (vals30 = "1" || vals30 = "true") ? true : false
+        BotToken := UriDecode(vals31)
+        BotGuildId := UriDecode(vals32)
+        BotAllowedUserIds := UriDecode(vals33)
+        if (BotToken = "__EMPTY__")
+            BotToken := ""
+        if (BotGuildId = "__EMPTY__")
+            BotGuildId := ""
+        if (BotAllowedUserIds = "__EMPTY__")
+            BotAllowedUserIds := ""
+    }
+    if (vals0 >= 34) {
+        BotMapPostActionsDelay := vals34
+        if (BotMapPostActionsDelay < 0)
+            BotMapPostActionsDelay := 0
+    }
     SaveSettings()
     AddLog("Settings saved from modal")
 return
@@ -3325,17 +4085,31 @@ ManualDragLoop:
     ; Только перемещение: без resize / z-order / activate
     moveFlags := 0x0015  ; SWP_NOSIZE(0x1) | SWP_NOZORDER(0x4) | SWP_NOACTIVATE(0x10)
     if (Embedded && GameHwnd && DllCall("IsWindow", "ptr", GameHwnd)) {
-        ; Roblox находится внутри host, поэтому двигаем только общий контейнер.
-        ; Игра и сайдбар перемещаются системой как единая поверхность.
-        DllCall("SetWindowPos", "ptr", MainGuiHwnd, "ptr", 0
-            , "int", newX, "int", newY, "int", 0, "int", 0
-            , "uint", moveFlags, "ptr")
-        DllCall("dwmapi\DwmFlush")
+        ; Roblox остаётся отдельным окном для нормального DirectX/raw input,
+        ; но во время drag оба окна перемещаются одним defer-пакетом.
+        gameX := newX - GameAreaW
+        hDefer := DllCall("BeginDeferWindowPos", "int", 2, "ptr")
+        if (hDefer) {
+            hDefer := DllCall("DeferWindowPos", "ptr", hDefer, "ptr", GameHwnd, "ptr", 0
+                , "int", gameX, "int", newY, "int", 0, "int", 0
+                , "uint", moveFlags, "ptr")
+            hDefer := DllCall("DeferWindowPos", "ptr", hDefer, "ptr", MainGuiHwnd, "ptr", 0
+                , "int", newX, "int", newY, "int", 0, "int", 0
+                , "uint", moveFlags, "ptr")
+            if (hDefer)
+                DllCall("EndDeferWindowPos", "ptr", hDefer)
+        } else {
+            DllCall("SetWindowPos", "ptr", GameHwnd, "ptr", 0
+                , "int", gameX, "int", newY, "int", 0, "int", 0
+                , "uint", moveFlags, "ptr")
+            DllCall("SetWindowPos", "ptr", MainGuiHwnd, "ptr", 0
+                , "int", newX, "int", newY, "int", 0, "int", 0
+                , "uint", moveFlags, "ptr")
+        }
     } else {
-        ; Roblox не встроен — двигаем только сайдбар
+        ; Roblox не закреплён — двигаем только сайдбар.
         DllCall("SetWindowPos", "ptr", MainGuiHwnd, "ptr", 0
             , "int", newX, "int", newY, "int", 0, "int", 0, "uint", moveFlags, "ptr")
-        DllCall("dwmapi\DwmFlush")
     }
 return
 
@@ -3347,6 +4121,13 @@ DoNativeDragModal(startMX, startMY) {
     DllCall("ReleaseCapture")
     SendMessage, 0xA1, 2, 0,, ahk_id %wid%
     DllCall("ReleaseCapture")
+}
+
+; ---- Экранирование значения для JavaScript-строки ----
+JsEscape(value) {
+    value := StrReplace(value, "\", "\\")
+    value := StrReplace(value, "'", "\'")
+    return value
 }
 
 ; ---- Простой URL-декодер (%XX → символ) ----
@@ -3374,157 +4155,6 @@ UriDecode(str) {
     }
     return result
 }
-
-; ---- Проверка обновлений через GitHub API ----
-CheckForUpdate:
-    global GH_API_URL, GH_TOKEN, GH_TOKEN_FILE, CURRENT_VERSION, WB
-    AddLog("Update: проверяю обновления...")
-
-    ; Проверяем наличие токена
-    if (GH_TOKEN = "") {
-        AddLog("Update: токен не найден в " . GH_TOKEN_FILE . " — запрос без аутентификации", "warn")
-    }
-
-    ; Формируем HTTP-запрос
-    try {
-        whr := ComObjCreate("WinHttp.WinHttpRequest.5.1")
-        whr.Option(9) := 2688  ; TLS 1.2
-        whr.Open("GET", GH_API_URL, False)
-        whr.SetRequestHeader("User-Agent", "TD-Macro-Updater")
-        whr.SetRequestHeader("Accept", "application/vnd.github+json")
-        if (GH_TOKEN != "")
-            whr.SetRequestHeader("Authorization", "Bearer " . GH_TOKEN)
-        whr.Send()
-        status := whr.Status
-        body := whr.ResponseText
-
-        if (status = 401) {
-            AddLog("Update: ошибка 401 — пробую без API (публичный режим)...", "warn")
-            GoSub, CheckUpdateNoAuth
-            return
-        }
-        if (status = 404) {
-            AddLog("Update: релизы не найдены — создай Release на GitHub (тег v1.0.1+)", "error")
-            WBH_CallJS("ahkUpdateVersion('NO REL', false)")
-            return
-        }
-        if (status = 403) {
-            AddLog("Update: ошибка 403 — пробую без API (публичный режим)...", "warn")
-            GoSub, CheckUpdateNoAuth
-            return
-        }
-        if (status != 200) {
-            AddLog("Update: GitHub API вернул статус " status, "error")
-            WBH_CallJS("ahkUpdateVersion('ERR " status "', false)")
-            return
-        }
-    } catch e {
-        AddLog("Update: ошибка HTTP-запроса — " e.Message, "error")
-        WBH_CallJS("ahkUpdateVersion('ERR', false)")
-        return
-    }
-
-    ; Парсим JSON — ищем "tag_name"
-    tagPos := InStr(body, """tag_name""")
-    if (!tagPos) {
-        AddLog("Update: не удалось найти tag_name в ответе", "error")
-        WBH_CallJS("ahkUpdateVersion('v?', false)")
-        return
-    }
-    tagStart := tagPos + 12  ; длина "tag_name":" = 11 + кавычка = 12
-    tagRest := SubStr(body, tagStart)
-    StringSplit, tparts, tagRest, "
-    latestTag := tparts1
-
-    AddLog("Update: текущая = " CURRENT_VERSION ", последняя = " latestTag)
-
-    ; Сравниваем версии (простое строковое сравнение; предполагаем формат vX.Y.Z)
-    if (latestTag = CURRENT_VERSION || latestTag = "v" . CURRENT_VERSION) {
-        AddLog("Update: у вас последняя версия!")
-        WBH_CallJS("ahkUpdateVersion('" CURRENT_VERSION "', false)")
-    } else {
-        AddLog("Update: доступна новая версия: " latestTag "!", "warn")
-        WBH_CallJS("ahkUpdateVersion('" latestTag "', true)")
-        ; Сохраняем URL для скачивания: сначала пробуем прикреплённый ассет,
-        ; если релиз без ассетов (только тег) — берём автосгенерированный zip GitHub'а
-        dlPos := InStr(body, """browser_download_url""")
-        if (dlPos) {
-            dlStart := dlPos + 25
-            dlRest := SubStr(body, dlStart)
-            StringSplit, dparts, dlRest, "
-            downloadURL := dparts1
-        } else {
-            downloadURL := "https://github.com/" . GH_REPO . "/archive/refs/tags/" . latestTag . ".zip"
-        }
-        global PendingUpdateURL, PendingUpdateOldVer, PendingUpdateNewVer
-        PendingUpdateURL := downloadURL
-        PendingUpdateOldVer := CURRENT_VERSION
-        PendingUpdateNewVer := latestTag
-        OpenModalWindow("update-confirm", "Update available", 340, 300)
-    }
-return
-
-; ---- Проверка обновлений БЕЗ GitHub API (через редирект releases/latest) ----
-; Работает для публичных репозиториев, токен не нужен.
-CheckUpdateNoAuth:
-    global GH_REPO, CURRENT_VERSION, WB
-    releasesURL := "https://github.com/" . GH_REPO . "/releases/latest"
-    AddLog("Update (no-auth): проверяю " releasesURL "...")
-
-    try {
-        whr := ComObjCreate("WinHttp.WinHttpRequest.5.1")
-        whr.Option(6) := False   ; не следовать редиректу
-        whr.Option(9) := 2688
-        whr.Open("GET", releasesURL, False)
-        whr.SetRequestHeader("User-Agent", "TD-Macro-Updater")
-        whr.Send()
-        status := whr.Status
-        if (status != 302 && status != 301) {
-            AddLog("Update (no-auth): статус " status " — репо приватный или нет релизов", "error")
-            WBH_CallJS("ahkUpdateVersion('ERR', false)")
-            return
-        }
-        location := whr.GetResponseHeader("Location")
-        if (location = "") {
-            AddLog("Update (no-auth): нет Location-заголовка", "error")
-            WBH_CallJS("ahkUpdateVersion('ERR', false)")
-            return
-        }
-        ; Извлекаем тег из URL: .../releases/tag/v1.0.2
-        ; Если нет тега — значит нет релизов
-        tagPos := InStr(location, "/tag/")
-        if (!tagPos) {
-            AddLog("Update (no-auth): релизы не найдены (нет /tag/ в " location ")", "warn")
-            AddLog("Update: создайте Release на GitHub: git tag v" CURRENT_VERSION " && git push origin v" CURRENT_VERSION)
-            WBH_CallJS("ahkUpdateVersion('NO REL', false)")
-            return
-        }
-        latestTag := SubStr(location, tagPos + 5)
-        ; Берём только до первого / или конца строки (убираем trailing path)
-        slashPos := InStr(latestTag, "/")
-        if (slashPos)
-            latestTag := SubStr(latestTag, 1, slashPos - 1)
-
-        AddLog("Update (no-auth): текущая = " CURRENT_VERSION ", последняя = " latestTag)
-
-        if (latestTag = CURRENT_VERSION || latestTag = "v" . CURRENT_VERSION) {
-            AddLog("Update: у вас последняя версия!")
-            WBH_CallJS("ahkUpdateVersion('" CURRENT_VERSION "', false)")
-        } else {
-            AddLog("Update: доступна новая версия: " latestTag "!", "warn")
-            WBH_CallJS("ahkUpdateVersion('" latestTag "', true)")
-            zipURL := "https://github.com/" . GH_REPO . "/archive/refs/tags/" . latestTag . ".zip"
-            global PendingUpdateURL, PendingUpdateOldVer, PendingUpdateNewVer
-            PendingUpdateURL := zipURL
-            PendingUpdateOldVer := CURRENT_VERSION
-            PendingUpdateNewVer := latestTag
-            OpenModalWindow("update-confirm", "Update available", 340, 300)
-        }
-    } catch e {
-        AddLog("Update (no-auth): ошибка сети — " e.Message, "error")
-        WBH_CallJS("ahkUpdateVersion('ERR', false)")
-    }
-return
 
 ; ---- Запуск PowerShell-скрипта обновления и выход ----
 ; Пишет самодостаточный .ps1 во временную папку и запускает его.
@@ -3585,8 +4215,8 @@ RunUpdateScript_Inner(zipURL) {
     script .= "Add-Type -AssemblyName System.Drawing`r`n"
     script .= "`r`n"
     script .= "$form = New-Object System.Windows.Forms.Form`r`n"
-    script .= "$form.Text = 'TD Macro - Update'`r`n"
-    script .= "$form.ClientSize = New-Object System.Drawing.Size(460, 170)`r`n"
+    script .= "$form.Text = 'Mmacro - Update'`r`n"
+    script .= "$form.ClientSize = New-Object System.Drawing.Size(520, 250)`r`n"
     script .= "$form.StartPosition = 'CenterScreen'`r`n"
     script .= "$form.FormBorderStyle = 'None'`r`n"
     script .= "$form.ShowInTaskbar = $true`r`n"
@@ -3595,46 +4225,69 @@ RunUpdateScript_Inner(zipURL) {
     script .= "$accent = New-Object System.Windows.Forms.Panel`r`n"
     script .= "$accent.BackColor = [System.Drawing.Color]::FromArgb(59, 130, 246)`r`n"
     script .= "$accent.Location = New-Object System.Drawing.Point(0, 0)`r`n"
-    script .= "$accent.Size = New-Object System.Drawing.Size(460, 3)`r`n"
+    script .= "$accent.Size = New-Object System.Drawing.Size(520, 3)`r`n"
     script .= "$form.Controls.Add($accent)`r`n"
     script .= "$brand = New-Object System.Windows.Forms.Label`r`n"
     script .= "$brand.AutoSize = $true`r`n"
-    script .= "$brand.Text = 'TD MACRO'`r`n"
+    script .= "$brand.Text = 'Mmacro'`r`n"
     script .= "$brand.Font = New-Object System.Drawing.Font('Segoe UI', 9, [System.Drawing.FontStyle]::Bold)`r`n"
     script .= "$brand.ForeColor = [System.Drawing.Color]::FromArgb(128, 128, 128)`r`n"
-    script .= "$brand.Location = New-Object System.Drawing.Point(28, 20)`r`n"
+    script .= "$brand.Location = New-Object System.Drawing.Point(30, 20)`r`n"
     script .= "$form.Controls.Add($brand)`r`n"
     script .= "$title = New-Object System.Windows.Forms.Label`r`n"
     script .= "$title.AutoSize = $true`r`n"
     script .= "$title.Text = 'Updating application'`r`n"
     script .= "$title.Font = New-Object System.Drawing.Font('Segoe UI', 13, [System.Drawing.FontStyle]::Bold)`r`n"
     script .= "$title.ForeColor = [System.Drawing.Color]::FromArgb(232, 232, 232)`r`n"
-    script .= "$title.Location = New-Object System.Drawing.Point(28, 43)`r`n"
+    script .= "$title.Location = New-Object System.Drawing.Point(30, 45)`r`n"
     script .= "$form.Controls.Add($title)`r`n"
     script .= "$label = New-Object System.Windows.Forms.Label`r`n"
     script .= "$label.AutoSize = $true`r`n"
     script .= "$label.Text = 'Downloading update...'`r`n"
     script .= "$label.Font = New-Object System.Drawing.Font('Segoe UI', 9)`r`n"
     script .= "$label.ForeColor = [System.Drawing.Color]::FromArgb(160, 160, 160)`r`n"
-    script .= "$label.Location = New-Object System.Drawing.Point(28, 76)`r`n"
+    script .= "$label.Location = New-Object System.Drawing.Point(30, 83)`r`n"
     script .= "$form.Controls.Add($label)`r`n"
+    script .= "$percent = New-Object System.Windows.Forms.Label`r`n"
+    script .= "$percent.AutoSize = $false`r`n"
+    script .= "$percent.Size = New-Object System.Drawing.Size(70, 22)`r`n"
+    script .= "$percent.Text = '0%'`r`n"
+    script .= "$percent.TextAlign = 'MiddleRight'`r`n"
+    script .= "$percent.Font = New-Object System.Drawing.Font('Segoe UI', 9, [System.Drawing.FontStyle]::Bold)`r`n"
+    script .= "$percent.ForeColor = [System.Drawing.Color]::FromArgb(59, 130, 246)`r`n"
+    script .= "$percent.Location = New-Object System.Drawing.Point(420, 81)`r`n"
+    script .= "$form.Controls.Add($percent)`r`n"
     script .= "$track = New-Object System.Windows.Forms.Panel`r`n"
     script .= "$track.BackColor = [System.Drawing.Color]::FromArgb(45, 45, 45)`r`n"
-    script .= "$track.Location = New-Object System.Drawing.Point(28, 105)`r`n"
-    script .= "$track.Size = New-Object System.Drawing.Size(404, 7)`r`n"
+    script .= "$track.Location = New-Object System.Drawing.Point(30, 116)`r`n"
+    script .= "$track.Size = New-Object System.Drawing.Size(460, 10)`r`n"
     script .= "$form.Controls.Add($track)`r`n"
     script .= "$fill = New-Object System.Windows.Forms.Panel`r`n"
     script .= "$fill.BackColor = [System.Drawing.Color]::FromArgb(59, 130, 246)`r`n"
-    script .= "$fill.Location = New-Object System.Drawing.Point(28, 105)`r`n"
-    script .= "$fill.Size = New-Object System.Drawing.Size(96, 7)`r`n"
+    script .= "$fill.Location = New-Object System.Drawing.Point(30, 116)`r`n"
+    script .= "$fill.Size = New-Object System.Drawing.Size(2, 10)`r`n"
     script .= "$form.Controls.Add($fill)`r`n"
+    script .= "$spinner = New-Object System.Windows.Forms.Label`r`n"
+    script .= "$spinner.AutoSize = $true`r`n"
+    script .= "$spinner.Text = [char]0x25D0`r`n"
+    script .= "$spinner.Font = New-Object System.Drawing.Font('Segoe UI Symbol', 10)`r`n"
+    script .= "$spinner.ForeColor = [System.Drawing.Color]::FromArgb(59, 130, 246)`r`n"
+    script .= "$spinner.Location = New-Object System.Drawing.Point(30, 145)`r`n"
+    script .= "$form.Controls.Add($spinner)`r`n"
     script .= "$hint = New-Object System.Windows.Forms.Label`r`n"
     script .= "$hint.AutoSize = $true`r`n"
     script .= "$hint.Text = 'Please wait, the application will restart automatically.'`r`n"
     script .= "$hint.Font = New-Object System.Drawing.Font('Segoe UI', 8)`r`n"
     script .= "$hint.ForeColor = [System.Drawing.Color]::FromArgb(100, 100, 100)`r`n"
-    script .= "$hint.Location = New-Object System.Drawing.Point(28, 130)`r`n"
+    script .= "$hint.Location = New-Object System.Drawing.Point(52, 148)`r`n"
     script .= "$form.Controls.Add($hint)`r`n"
+    script .= "$stage = New-Object System.Windows.Forms.Label`r`n"
+    script .= "$stage.AutoSize = $true`r`n"
+    script .= "$stage.Text = '1  Download    2  Install    3  Restart'`r`n"
+    script .= "$stage.Font = New-Object System.Drawing.Font('Segoe UI', 8)`r`n"
+    script .= "$stage.ForeColor = [System.Drawing.Color]::FromArgb(75, 75, 75)`r`n"
+    script .= "$stage.Location = New-Object System.Drawing.Point(30, 195)`r`n"
+    script .= "$form.Controls.Add($stage)`r`n"
     script .= "$form.Show()`r`n"
     script .= "[System.Windows.Forms.Application]::DoEvents()`r`n"
     script .= "`r`n"
@@ -3655,18 +4308,22 @@ RunUpdateScript_Inner(zipURL) {
     script .= "            $parsedProgress = 0`r`n"
     script .= "            if ($progressText -and [int]::TryParse($progressText.Trim(), [ref]$parsedProgress)) { $progressValue = $parsedProgress }`r`n"
     script .= "        }`r`n"
-    script .= "        $spinner = $spinFrames[$spinIndex]`r`n"
+    script .= "        $spinnerChar = $spinFrames[$spinIndex]`r`n"
     script .= "        $spinIndex = ($spinIndex + 1) % 4`r`n"
     script .= "        if ($progressValue -ge 0) {`r`n"
-    script .= "            $label.Text = ('Downloading update... {0}% {1}' -f $progressValue, $spinner)`r`n"
-    script .= "            $fill.Left = 28`r`n"
-    script .= "            $fill.Width = [int][Math]::Max(2, [Math]::Min(404, [Math]::Round(404 * $progressValue / 100)))`r`n"
+    script .= "            $label.Text = 'Downloading update...'`r`n"
+    script .= "            $percent.Text = ('{0}%' -f $progressValue)`r`n"
+    script .= "            $spinner.Text = $spinnerChar`r`n"
+    script .= "            $fill.Left = 30`r`n"
+    script .= "            $fill.Width = [int][Math]::Max(2, [Math]::Min(460, [Math]::Round(460 * $progressValue / 100)))`r`n"
     script .= "        } else {`r`n"
-    script .= "            $label.Text = ('Downloading update... ' + $spinner)`r`n"
-    script .= "            $fill.Left = 28 + $phase`r`n"
-    script .= "            $fill.Width = 96`r`n"
-    script .= "            $phase += 8`r`n"
-    script .= "            if ($phase -gt 308) { $phase = 0 }`r`n"
+    script .= "            $label.Text = 'Connecting to GitHub...'`r`n"
+    script .= "            $percent.Text = '...'`r`n"
+    script .= "            $spinner.Text = $spinnerChar`r`n"
+    script .= "            $fill.Left = 30 + $phase`r`n"
+    script .= "            $fill.Width = 90`r`n"
+    script .= "            $phase += 10`r`n"
+    script .= "            if ($phase -gt 370) { $phase = 0 }`r`n"
     script .= "        }`r`n"
     script .= "        [System.Windows.Forms.Application]::DoEvents()`r`n"
     script .= "        Start-Sleep -Milliseconds 40`r`n"
@@ -3675,25 +4332,30 @@ RunUpdateScript_Inner(zipURL) {
     script .= "    if ($worker.ExitCode -ne 0) { throw 'Download failed. Check your internet connection.' }`r`n"
     script .= "    if (-not (Test-Path '" . safeZip . "')) { throw 'Downloaded file was not created' }`r`n"
     script .= "    $label.Text = 'Installing update...'`r`n"
-    script .= "    $fill.Left = 28`r`n"
-    script .= "    $fill.Width = 404`r`n"
+    script .= "    $percent.Text = '100%'`r`n"
+    script .= "    $stage.Text = '1  Download    2  Installing    3  Restart'`r`n"
+    script .= "    $fill.Left = 30`r`n"
+    script .= "    $fill.Width = 460`r`n"
     script .= "    [System.Windows.Forms.Application]::DoEvents()`r`n"
     script .= "    Expand-Archive -Path '" . safeZip . "' -DestinationPath '" . safeExtr . "' -Force`r`n"
     script .= "    $srcDir = Get-ChildItem -Path '" . safeExtr . "' -Directory | Select-Object -First 1`r`n"
     script .= "    if (-not $srcDir) { $srcDir = '" . safeExtr . "' } else { $srcDir = $srcDir.FullName }`r`n"
     script .= "    $target = '" . safeTarget . "'`r`n"
     script .= "    Copy-Item -Path (Join-Path $srcDir '*') -Destination $target -Recurse -Force`r`n"
-    script .= "    $label.Text = 'Restarting...'`r`n"
+    script .= "    $label.Text = 'Restarting application...'`r`n"
+    script .= "    $stage.Text = '1  Download    2  Install    3  Restarting'`r`n"
     script .= "    [System.Windows.Forms.Application]::DoEvents()`r`n"
     script .= "    Start-Sleep -Milliseconds 500`r`n"
     script .= "} catch {`r`n"
     script .= "    Write-Host ('Update error: ' + $_.Exception.Message)`r`n"
     script .= "    $label.Text = 'Update failed'`r`n"
+    script .= "    $percent.Text = '!'`r`n"
+    script .= "    $stage.Text = 'The update could not be completed'`r`n"
     script .= "    $hint.Text = $_.Exception.Message`r`n"
     script .= "    $label.ForeColor = [System.Drawing.Color]::FromArgb(220, 80, 80)`r`n"
     script .= "    $fill.BackColor = [System.Drawing.Color]::FromArgb(220, 80, 80)`r`n"
-    script .= "    $fill.Left = 28`r`n"
-    script .= "    $fill.Width = 404`r`n"
+    script .= "    $fill.Left = 30`r`n"
+    script .= "    $fill.Width = 460`r`n"
     script .= "    [System.Windows.Forms.Application]::DoEvents()`r`n"
     script .= "    Start-Sleep -Seconds 8`r`n"
     script .= "    $form.Close()`r`n"
@@ -3727,6 +4389,7 @@ RunUpdateScript_Inner(zipURL) {
 }
 
 GuiClose:
+    Gosub, StopDiscordBot
     if (Embedded)
         UnembedGameWindow()
     ExitApp

@@ -160,10 +160,6 @@
     on(document, 'keydown', function (e) {
         e = e || window.event;
         if (e.keyCode === 27) closeAllModals();
-        if (e.keyCode === 120) {  // F9
-            if (e.preventDefault) e.preventDefault();
-            btnFarm.click();
-        }
     });
 
     /* ============================================================
@@ -609,7 +605,7 @@
     })();
 
     /* ---- Init ---- */
-    log('TD Macro v1.0 ready. [build: rejoin-fix-3-nocache]');
+    log('Mmacro v1.0 ready. [build: rejoin-fix-3-nocache]');
 
     /* ---- Auto-show modal if URL has hash ---- */
     (function () {

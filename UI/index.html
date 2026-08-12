@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
-    <title>TD Macro</title>
+    <title>Mmacro</title>
 <style>
 /* ============================================================
    TD Macro — Full Layout + Modals (IE11 Compatible)
@@ -79,11 +79,15 @@ html, body {
     -webkit-user-select: none; -ms-user-select: none; user-select: none;
 }
 .logo { display: -ms-flexbox; display: flex; -ms-flex-align: center; align-items: center; }
-.logo-dot {
-    width: 8px; height: 8px; border-radius: 50%;
-    background: #3b82f6; margin-right: 10px;
-    box-shadow: 0 0 8px rgba(59,130,246,0.15);
+.logo-mark {
+    width: 28px; height: 28px; border-radius: 6px;
+    display: -ms-flexbox; display: flex;
+    -ms-flex-align: center; align-items: center;
+    -ms-flex-pack: center; justify-content: center;
+    margin-right: 7px; background: transparent;
+    overflow: hidden;
 }
+.logo-mark img { width: 31px; height: 31px; display: block; object-fit: contain; }
 .logo h1 { font-size: 15px; font-weight: 600; letter-spacing: 1.5px; margin: 0; }
 
 /* Header buttons (minimize / close) */
@@ -196,6 +200,11 @@ html, body {
 .custom-select-item:last-child { border-bottom: none; }
 .custom-select-item:hover { background: #222; color: #e4e4e4; }
 .custom-select-item.active { color: #3b82f6; }
+.language-select { z-index: 210; }
+.language-select .custom-select-list {
+    position: absolute; left: 0; right: 0; top: 100%; z-index: 220;
+    box-shadow: 0 12px 26px rgba(0,0,0,0.45);
+}
 
 /* ---- Button Row ---- */
 .btn-row { display: -ms-flexbox; display: flex; }
@@ -250,6 +259,7 @@ html, body {
 .status-dot.running { background: #22c55e; }
 .status-dot.error   { background: #ef4444; }
 #statusText { font-size: 11px; color: #666; font-family: 'Consolas', monospace; }
+.run-count { margin-left: auto; color: #666; font-size: 11px; font-family: 'Consolas', monospace; }
 
 /* ---- Log ---- */
 .log-section {
@@ -473,6 +483,45 @@ html, body {
 .modal-foot .btn { margin-left: 8px; width: auto; -ms-flex-negative: 0; flex-shrink: 0; }
 .modal-foot .btn-danger { margin-left: 0; margin-right: auto; }
 
+/* ---- Hotkey capture overlay ---- */
+.hotkey-capture-overlay {
+    display: none; position: fixed; left: 0; top: 0; right: 0; bottom: 0;
+    z-index: 500; background: rgba(0,0,0,.72);
+    -ms-flex-align: center; align-items: center;
+    -ms-flex-pack: center; justify-content: center;
+}
+.hotkey-capture-overlay.open { display: -ms-flexbox; display: flex; }
+.hotkey-capture-card {
+    width: 340px; background: #121212; border: 1px solid #303030;
+    border-radius: 8px; box-shadow: 0 18px 50px rgba(0,0,0,.65);
+    overflow: hidden;
+}
+.hotkey-capture-head {
+    height: 42px; padding: 0 12px 0 16px; display: -ms-flexbox; display: flex;
+    -ms-flex-align: center; align-items: center; -ms-flex-pack: justify; justify-content: space-between;
+    background: #0f0f0f; border-bottom: 1px solid #252525;
+}
+.hotkey-capture-title { color: #e4e4e4; font-size: 13px; font-weight: 600; }
+.hotkey-capture-close {
+    width: 26px; height: 26px; padding: 0; border: 0; background: transparent;
+    color: #777; font-size: 18px; line-height: 26px; cursor: pointer;
+}
+.hotkey-capture-close:hover { color: #fff; background: #e81123; border-radius: 4px; }
+.hotkey-capture-body { padding: 18px 18px 14px; }
+.hotkey-capture-prompt { color: #cfcfcf; font-size: 12px; margin-bottom: 10px; }
+.hotkey-capture-key {
+    height: 42px; display: -ms-flexbox; display: flex; -ms-flex-align: center; align-items: center;
+    -ms-flex-pack: center; justify-content: center; border: 1px solid #3b82f6;
+    border-radius: 6px; background: #1e1e1e; color: #e4e4e4;
+    font: 600 14px 'Consolas', monospace; letter-spacing: .2px;
+}
+.hotkey-capture-hint { color: #666; font-size: 10px; margin-top: 9px; }
+.hotkey-capture-foot {
+    padding: 12px 18px; display: -ms-flexbox; display: flex; -ms-flex-pack: end; justify-content: flex-end;
+    gap: 8px; border-top: 1px solid #252525; background: #101010;
+}
+.hotkey-capture-foot .btn { min-width: 82px; }
+
 /* ---- Fieldset ---- */
 .fieldset {
     border: 1px solid #252525; border-radius: 8px;
@@ -518,6 +567,7 @@ html, body {
 .form-grid .field { width: 49%; margin-right: 2%; margin-bottom: 14px; }
 .form-grid .field:nth-child(even) { margin-right: 0; }
 .form-grid-3 .field { width: 32%; margin-right: 2%; margin-bottom: 14px; }
+.form-grid-3 .field:nth-child(even) { margin-right: 2%; }
 .form-grid-3 .field:nth-child(3n) { margin-right: 0; }
 
 /* ---- Field ---- */
@@ -532,12 +582,24 @@ html, body {
 .input:hover { border-color: #2e2e2e; }
 .input:focus { outline: none; border-color: #3b82f6; }
 .input:disabled { opacity: .45; cursor: not-allowed; }
+.hotkey-control { display: -ms-flexbox; display: flex; gap: 6px; align-items: stretch; }
+.hotkey-control .hotkey-input { min-width: 0; flex: 1; cursor: default; }
+.hotkey-record { width: 78px; flex-shrink: 0; }
+.hotkey-record.recording { color: #fff; background: #ef4444; border-color: #ef4444; }
 .color-field { display: -ms-flexbox; display: flex; }
 .input-color {
-    width: 32px; height: 32px; padding: 1px;
-    background: #1e1e1e; border: 1px solid #252525;
+    display: none;
+}
+.color-swatch {
+    width: 32px; height: 32px; padding: 0;
+    background: #4ECD0C; border: 1px solid #3a3a3a;
     border-radius: 6px; cursor: pointer;
     -ms-flex-negative: 0; flex-shrink: 0; margin-right: 6px;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.05);
+}
+.color-swatch:hover { border-color: #3b82f6; }
+.color-swatch:focus { outline: none; border-color: #3b82f6; }
+.color-field .input:not(.input-color) { min-width: 0; }
 }
 
 /* ---- Calib Grid ---- */
@@ -743,9 +805,9 @@ body.modal-only .modal-foot {
     <div class="modal update-modal" id="modal-update-confirm">
         <div class="modal-panel">
             <div class="modal-head">
-                <h2 class="modal-title">Update available</h2>
+                <h2 class="modal-title" data-i18n="updateAvailable">Update available</h2>
                 <div class="modal-actions">
-                    <button class="modal-btn modal-cls" id="btnUpdateConfirmClose" data-tip="Close">
+                    <button class="modal-btn modal-cls" id="btnUpdateConfirmClose" data-tip="Close" data-i18n-tip="close">
                         <svg viewBox="0 0 16 16" fill="none"><path d="m4 4 8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
                     </button>
                 </div>
@@ -754,8 +816,8 @@ body.modal-only .modal-foot {
                 <div class="update-modal-icon">
                     <svg viewBox="0 0 16 16" fill="none"><path d="M8 3v6M5 6l3-3 3 3M3 12v1a1 1 0 001 1h8a1 1 0 001-1v-1" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
                 </div>
-                <p class="um-title">New version of TD Macro</p>
-                <p class="um-sub">A newer build is ready to install</p>
+                <p class="um-title" data-i18n="newVersion">New version of Mmacro</p>
+                <p class="um-sub" data-i18n="newBuild">A newer build is ready to install</p>
                 <div class="um-versions">
                     <span class="um-old" id="umOldVersion">v1.0.0</span>
                     <span class="um-arrow">&#8594;</span>
@@ -763,8 +825,8 @@ body.modal-only .modal-foot {
                 </div>
             </div>
             <div class="modal-foot">
-                <button class="btn" id="btnUpdateLater">Later</button>
-                <button class="btn btn-primary" id="btnUpdateNow">Update now</button>
+                <button class="btn" id="btnUpdateLater" data-i18n="later">Later</button>
+                <button class="btn btn-primary" id="btnUpdateNow" data-i18n="updateNow">Update now</button>
             </div>
         </div>
     </div>
@@ -777,18 +839,18 @@ body.modal-only .modal-foot {
 
             <header class="sidebar-header" id="mainDragBar">
                 <div class="logo">
-                    <span class="logo-dot"></span>
-                    <h1>TD MACRO</h1>
-                    <span class="hdr-version" id="hdrVersion" data-tip="Current version" data-tip-pos="down">v1.0.1</span>
+                    <span class="logo-mark"><img src="../macro/logo/logomm.png" alt="Mmacro"></span>
+                    <h1>Mmacro</h1>
+                    <span class="hdr-version" id="hdrVersion" data-tip="Current version" data-i18n-tip="currentVersion" data-tip-pos="down">v1.0.1</span>
                 </div>
-                <button class="hdr-btn hdr-update" id="btnUpdate" data-tip="Check for updates" data-tip-pos="down">
+                <button class="hdr-btn hdr-update" id="btnUpdate" data-tip="Check for updates" data-i18n-tip="checkUpdates" data-tip-pos="down">
                     <svg viewBox="0 0 16 16" fill="none" width="14" height="14"><path d="M8 3v5M5 6l3-3 3 3M3 11v1a1 1 0 001 1h8a1 1 0 001-1v-1" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
                 </button>
                 <div class="header-actions">
-                    <button class="hdr-btn hdr-min" id="btnMainMin" data-tip="Minimize" data-tip-pos="down">
+                    <button class="hdr-btn hdr-min" id="btnMainMin" data-tip="Minimize" data-i18n-tip="minimize" data-tip-pos="down">
                         <svg viewBox="0 0 16 16" fill="none"><path d="M3 13h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
                     </button>
-                    <button class="hdr-btn hdr-cls" id="btnMainClose" data-tip="Close" data-tip-pos="down-right">
+                    <button class="hdr-btn hdr-cls" id="btnMainClose" data-tip="Close" data-i18n-tip="close" data-tip-pos="down-right">
                         <svg viewBox="0 0 16 16" fill="none"><path d="m4 4 8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
                     </button>
                 </div>
@@ -798,12 +860,12 @@ body.modal-only .modal-foot {
 
             <section class="ctrl">
                 <div class="row between">
-                    <span class="label">Game Window</span>
-                    <span class="badge" id="embedBadge">Disconnected</span>
+                    <span class="label" data-i18n="gameWindow">Game Window</span>
+                    <span class="badge" id="embedBadge" data-i18n="disconnected">Disconnected</span>
                 </div>
                 <button class="btn btn-primary" id="btnEmbed">
                     <svg viewBox="0 0 16 16" fill="none"><path d="M3 2a1 1 0 0 0-1 1v4h1V3h10v10H9v1h4a1 1 0 0 0 1-1V3a1 1 0 0 0-1-1H3Zm6 4.5V3.7l3.15 3.15L9.3 9.7l-.7-.7L10.3 7H6V6h5.3L9.6 4.3l.7-.7L12.15 5.5H9Z" fill="currentColor"/></svg>
-                    <span>Embed</span>
+                    <span data-i18n="embed">Embed</span>
                 </button>
             </section>
 
@@ -811,12 +873,12 @@ body.modal-only .modal-foot {
 
             <section class="ctrl">
                 <div class="row between">
-                    <span class="label">Map</span>
-                    <span class="badge" id="mapBadge">None</span>
+                    <span class="label" data-i18n="map">Map</span>
+                    <span class="badge" id="mapBadge" data-i18n="none">None</span>
                 </div>
                 <div class="select-wrap custom-select" id="mapCustomSelect">
                     <button type="button" class="select custom-select-btn" id="mapSelectBtn">
-                        <span id="mapSelectLabel">-- Select Map --</span>
+                        <span id="mapSelectLabel" data-i18n="selectMap">-- Select Map --</span>
                     </button>
                     <svg class="select-chevron" viewBox="0 0 16 16"><path d="m4 6 4 4 4-4" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
                     <div class="custom-select-list" id="mapSelectList"></div>
@@ -827,15 +889,15 @@ body.modal-only .modal-foot {
                 <div class="btn-row">
                     <button class="btn btn-ghost btn-sm" id="btnSnapshot">
                         <svg viewBox="0 0 16 16" fill="none"><rect x="1.5" y="4.5" width="13" height="10" rx="2" stroke="currentColor" stroke-width="1.2"/><circle cx="8" cy="9.5" r="2.5" stroke="currentColor" stroke-width="1.2"/><circle cx="12.5" cy="7.5" r="0.8" fill="currentColor"/><path d="M5 4.5 6.2 2.8a.5.5 0 0 1 .4-.3h2.8a.5.5 0 0 1 .4.3L11 4.5" stroke="currentColor" stroke-width="1.2"/></svg>
-                        <span>Snapshot</span>
+                        <span data-i18n="snapshot">Snapshot</span>
                     </button>
                     <button class="btn btn-ghost btn-sm" id="btnMark">
                         <svg viewBox="0 0 16 16" fill="none"><path d="M8 1.5C6.2 4.5 2.5 5.5 2.5 8c0 3 2.5 5.5 5.5 5.5s5.5-2.5 5.5-5.5c0-2.5-3.7-3.5-5.5-6.5Z" stroke="currentColor" stroke-width="1.2"/><circle cx="8" cy="8" r="1.8" stroke="currentColor" stroke-width="1.2"/></svg>
-                        <span>Mark</span>
+                        <span data-i18n="mark">Mark</span>
                     </button>
                     <button class="btn btn-ghost btn-sm btn-danger" id="btnClear">
                         <svg viewBox="0 0 16 16" fill="none"><path d="m4 4 8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
-                        <span>Clear</span>
+                        <span data-i18n="clear">Clear</span>
                     </button>
                 </div>
             </section>
@@ -844,14 +906,14 @@ body.modal-only .modal-foot {
 
             <section class="ctrl">
                 <div class="row between">
-                    <span class="label">Coordinates</span>
-                    <span class="badge" id="coordBadge">Not set</span>
+                    <span class="label" data-i18n="coordinates">Coordinates</span>
+                    <span class="badge" id="coordBadge" data-i18n="notSet">Not set</span>
                 </div>
                 <div class="coord-grid">
-                    <div class="coord-item"><span class="coord-key">Upgrade</span><span class="coord-val">—</span></div>
-                    <div class="coord-item"><span class="coord-key">Start</span><span class="coord-val">—</span></div>
-                    <div class="coord-item"><span class="coord-key">Repeat</span><span class="coord-val">—</span></div>
-                    <div class="coord-item"><span class="coord-key">AutoUp</span><span class="coord-val">—</span></div>
+                    <div class="coord-item"><span class="coord-key" data-i18n="upgrade">Upgrade</span><span class="coord-val">—</span></div>
+                    <div class="coord-item"><span class="coord-key" data-i18n="start">Start</span><span class="coord-val">—</span></div>
+                    <div class="coord-item"><span class="coord-key" data-i18n="repeat">Repeat</span><span class="coord-val">—</span></div>
+                    <div class="coord-item"><span class="coord-key" data-i18n="autoUp">AutoUp</span><span class="coord-val">—</span></div>
                 </div>
             </section>
 
@@ -860,17 +922,17 @@ body.modal-only .modal-foot {
             <section class="ctrl">
                 <button class="btn btn-start" id="btnFarm">
                     <svg viewBox="0 0 16 16" fill="currentColor"><path d="M5 3.5 13 8l-8 4.5v-9Z"/></svg>
-                    <span>Start Farm</span>
+                    <span data-i18n="startFarm">Start Farm</span>
                 </button>
                 <div class="row between" style="margin-top:8px">
                     <label class="check-label">
                         <input type="checkbox" id="chkAutoUpgrade" class="check">
                         <span class="check-custom"></span>
-                        <span>Auto Upgrade</span>
+                        <span data-i18n="autoUpgrade">Auto Upgrade</span>
                     </label>
                     <button class="btn btn-ghost btn-sm" id="btnUpgradeCfg">
                         <svg viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="3" stroke="currentColor" stroke-width="1.2"/><path d="M8 1.5v2M8 12.5v2M2.5 8h2M11.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
-                        <span>Configure</span>
+                        <span data-i18n="configure">Configure</span>
                     </button>
                 </div>
             </section>
@@ -879,16 +941,17 @@ body.modal-only .modal-foot {
 
             <div class="status-bar">
                 <div class="status-dot" id="statusDot"></div>
-                <span id="statusText">Idle</span>
+                <span id="statusText" data-i18n="idle">Idle</span>
+                <span id="runCount" class="run-count" data-i18n="runs">Runs: 0</span>
             </div>
 
             <section class="log-section">
                 <div class="row between log-header">
-                    <span class="label">Log</span>
-                    <button class="btn btn-ghost btn-xs" id="btnClearLog">Clear</button>
+                    <span class="label" data-i18n="log">Log</span>
+                    <button class="btn btn-ghost btn-xs" id="btnClearLog" data-i18n="clear">Clear</button>
                 </div>
                 <div class="log-box" id="logBox">
-                    <div class="log-entry"><span class="log-time">--:--:--</span> Loading...</div>
+                    <div class="log-entry"><span class="log-time">--:--:--</span> <span data-i18n="loading">Loading...</span></div>
                 </div>
             </section>
 
@@ -897,15 +960,15 @@ body.modal-only .modal-foot {
             <nav class="bottom-actions">
                 <button class="btn btn-ghost btn-sm" id="btnSettings">
                     <svg viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="3" stroke="currentColor" stroke-width="1.2"/><path d="M8 1.5v2M8 12.5v2M2.5 8h2M11.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
-                    <span>Settings</span>
+                    <span data-i18n="settingsTitle">Settings</span>
                 </button>
                 <button class="btn btn-ghost btn-sm" id="btnPresets">
                     <svg viewBox="0 0 16 16" fill="none"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M5.5 8h5M8 5.5v5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
-                    <span>Presets</span>
+                    <span data-i18n="presetsTitle">Presets</span>
                 </button>
                 <button class="btn btn-ghost btn-sm" id="btnCalibrate">
                     <svg viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.2"/><circle cx="8" cy="8" r="1.5" stroke="currentColor" stroke-width="1.2"/><line x1="8" y1="2" x2="8" y2="5" stroke="currentColor" stroke-width="1.2"/><line x1="8" y1="11" x2="8" y2="14" stroke="currentColor" stroke-width="1.2"/><line x1="2" y1="8" x2="5" y2="8" stroke="currentColor" stroke-width="1.2"/><line x1="11" y1="8" x2="14" y2="8" stroke="currentColor" stroke-width="1.2"/></svg>
-                    <span>Calibrate</span>
+                    <span data-i18n="calibration">Calibrate</span>
                 </button>
             </nav>
 
@@ -918,106 +981,158 @@ body.modal-only .modal-foot {
     <div class="modal" id="modal-settings">
         <div class="modal-panel">
             <div class="modal-head" id="dragHandle-settings">
-                <h2 class="modal-title">Settings</h2>
+                <h2 class="modal-title" data-i18n="settingsTitle">Settings</h2>
                 <div class="modal-actions">
-                    <button class="modal-btn modal-min" data-min data-tip="Minimize">
+                    <button class="modal-btn modal-min" data-min data-tip="Minimize" data-i18n-tip="minimize">
                         <svg viewBox="0 0 16 16" fill="none"><path d="M3 13h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
                     </button>
-                    <button class="modal-btn modal-cls" data-close data-tip="Close">
+                    <button class="modal-btn modal-cls" data-close data-tip="Close" data-i18n-tip="close">
                         <svg viewBox="0 0 16 16" fill="none"><path d="m4 4 8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
                     </button>
                 </div>
             </div>
             <div class="modal-body">
+                <fieldset class="fieldset language-fieldset">
+                    <legend class="fieldset-legend" data-i18n="language">Language</legend>
+                    <div class="select-wrap custom-select language-select" id="languageCustomSelect">
+                        <button type="button" class="select custom-select-btn" id="setLanguageBtn">
+                            <span id="setLanguageLabel">English</span>
+                            <svg class="select-chevron" viewBox="0 0 16 16"><path d="m4 6 4 4 4-4" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+                        </button>
+                        <div class="custom-select-list" id="setLanguageList">
+                            <div class="custom-select-item active" data-language-value="en">English</div>
+                            <div class="custom-select-item" data-language-value="ru">Русский</div>
+                        </div>
+                    </div>
+                    <select id="setLanguage" class="select" style="display:none">
+                        <option value="en">English</option>
+                        <option value="ru">Русский</option>
+                    </select>
+                    <div class="field-hint" data-i18n="languageHint">The language is saved for the next launch.</div>
+                </fieldset>
                 <fieldset class="fieldset">
-                    <legend class="fieldset-legend">Delays (ms)</legend>
+                    <legend class="fieldset-legend" data-i18n="hotkeys">Hotkeys</legend>
                     <div class="form-grid">
-                        <div class="field"><label class="field-label">Place Unit</label><input type="number" class="input" id="setClickDelay" value="300"></div>
-                        <div class="field"><label class="field-label">Between Units</label><input type="number" class="input" id="setSlotClickDelay" value="500"></div>
-                        <div class="field"><label class="field-label">Upgrade Click</label><input type="number" class="input" id="setUpgradeClickDelay" value="100"></div>
-                        <div class="field"><label class="field-label">Auto Click</label><input type="number" class="input" id="setAutoClickDelay" value="200"></div>
-                        <div class="field"><label class="field-label">Start Game</label><input type="number" class="input" id="setStartGameDelay" value="1000"></div>
-                        <div class="field"><label class="field-label">Stage Check</label><input type="number" class="input" id="setUnitSleepDelay" value="1000"></div>
-                        <div class="field"><label class="field-label">After Hover</label><input type="number" class="input" id="setHoverDelay" value="380"></div>
-                        <div class="field"><label class="field-label">Mouse Speed</label><input type="number" class="input" id="setMouseSpeed" value="70" min="0" max="100"></div>
+                        <div class="field"><label class="field-label" data-i18n="farmHotkey">Start / Stop Farm</label><div class="hotkey-control"><input type="text" class="input hotkey-input" id="setFarmHotkey" value="F9" readonly autocomplete="off"><button type="button" class="btn btn-ghost btn-sm hotkey-record" id="btnCaptureFarmHotkey" data-i18n="recordKey">Record</button></div></div>
+                        <div class="field"><label class="field-label" data-i18n="rejoinHotkey">Rejoin Record</label><div class="hotkey-control"><input type="text" class="input hotkey-input" id="setRejoinHotkey" value="F1" readonly autocomplete="off"><button type="button" class="btn btn-ghost btn-sm hotkey-record" id="btnCaptureRejoinHotkey" data-i18n="recordKey">Record</button></div></div>
+                        <div class="field"><label class="field-label" data-i18n="mapChangeHotkey">Map Entry Record</label><div class="hotkey-control"><input type="text" class="input hotkey-input" id="setMapChangeHotkey" value="F2" readonly autocomplete="off"><button type="button" class="btn btn-ghost btn-sm hotkey-record" id="btnCaptureMapChangeHotkey" data-i18n="recordKey">Record</button></div></div>
+                    </div>
+                    <div class="field-hint" data-i18n="hotkeyHint">Click Record, then press a key or combination, for example Ctrl+F8.</div>
+                    <div class="rejoin-actions-row" style="margin-top:8px;">
+                        <span class="field-label" data-i18n="mapEntryActions" style="display:inline; margin-right:6px;">Map Entry Actions:</span>
+                        <button class="btn btn-primary btn-sm" id="btnMapEntryRecord" data-i18n="record">Record</button>
+                        <span class="rejoin-action-count" id="mapEntryActionCount" style="color:#666; font-size:10px; margin-left:6px;">0 actions</span>
+                    </div>
+                    <div class="field" style="margin-top:10px; max-width:180px;"><label class="field-label" data-i18n="mapEntryActionsDelay">Map Entry Actions Delay (s)</label><input type="number" class="input" id="setBotMapPostActionsDelay" value="3" min="0" step="0.1"></div>
+                </fieldset>
+                <fieldset class="fieldset">
+                    <legend class="fieldset-legend" data-i18n="discordBot">Discord bot</legend>
+                    <label class="check-label" style="margin-bottom:10px">
+                        <input type="checkbox" id="setBotAutoStart" class="check">
+                        <span class="check-custom"></span>
+                        <span data-i18n="botAutoStart">Start Discord bot with macro</span>
+                    </label>
+                    <div class="form-grid">
+                        <div class="field" style="grid-column: span 2;"><label class="field-label" data-i18n="botToken">Bot token</label><input type="password" class="input" id="setBotToken" autocomplete="off" placeholder="Discord bot token"></div>
+                        <div class="field"><label class="field-label" data-i18n="botGuildId">Server ID (optional)</label><input type="text" class="input" id="setBotGuildId" autocomplete="off" placeholder="123456789012345678"></div>
+                        <div class="field"><label class="field-label" data-i18n="botAllowedUsers">Allowed user IDs (optional)</label><input type="text" class="input" id="setBotAllowedUsers" autocomplete="off" placeholder="ID1, ID2"></div>
+                    </div>
+                    <div class="row" style="margin-top:10px; gap:8px; flex-wrap:wrap;">
+                        <button class="btn btn-primary btn-sm" id="btnBotStart" data-i18n="botStart">Start bot</button>
+                        <button class="btn btn-ghost btn-sm" id="btnBotStop" data-i18n="botStop">Stop bot</button>
+                        <span class="field-label" id="botStatus" data-i18n="botStopped">Stopped</span>
+                    </div>
+                    <div class="field-hint" data-i18n="botHint">Install dependencies from bot/requirements.txt. Keep the token private.</div>
+                </fieldset>
+                <fieldset class="fieldset">
+                    <legend class="fieldset-legend" data-i18n="delays">Delays (ms)</legend>
+                    <div class="form-grid">
+                        <div class="field"><label class="field-label" data-i18n="placeUnit">Place Unit</label><input type="number" class="input" id="setClickDelay" value="300"></div>
+                        <div class="field"><label class="field-label" data-i18n="betweenUnits">Between Units</label><input type="number" class="input" id="setSlotClickDelay" value="500"></div>
+                        <div class="field"><label class="field-label" data-i18n="upgradeClick">Upgrade Click</label><input type="number" class="input" id="setUpgradeClickDelay" value="100"></div>
+                        <div class="field"><label class="field-label" data-i18n="autoClick">Auto Click</label><input type="number" class="input" id="setAutoClickDelay" value="200"></div>
+                        <div class="field"><label class="field-label" data-i18n="startGame">Start Game</label><input type="number" class="input" id="setStartGameDelay" value="1000"></div>
+                        <div class="field"><label class="field-label" data-i18n="stageCheck">Stage Check</label><input type="number" class="input" id="setUnitSleepDelay" value="1000"></div>
+                        <div class="field"><label class="field-label" data-i18n="afterHover">After Hover</label><input type="number" class="input" id="setHoverDelay" value="380"></div>
+                        <div class="field"><label class="field-label" data-i18n="mouseSpeed">Mouse Speed</label><input type="number" class="input" id="setMouseSpeed" value="70" min="0" max="100"></div>
                     </div>
                     <label class="check-label" style="margin-top:10px">
                         <input type="checkbox" id="setMouseSpeedEnabled" class="check" checked>
                         <span class="check-custom"></span>
-                        <span>Enable smooth mouse movement</span>
+                        <span data-i18n="smoothMouse">Enable smooth mouse movement</span>
                     </label>
                 </fieldset>
                 <fieldset class="fieldset">
-                    <legend class="fieldset-legend">Camera</legend>
+                    <legend class="fieldset-legend" data-i18n="camera">Camera</legend>
                     <div class="form-grid">
                         <div class="field">
-                            <label class="field-label">Zoom Scrolls</label>
+                            <label class="field-label" data-i18n="zoomScrolls">Zoom Scrolls</label>
                             <input type="number" class="input" id="setZoomScrolls" value="0" min="-50" max="50" step="1">
                         </div>
                     </div>
                     <label class="check-label" style="margin-top:10px">
                         <input type="checkbox" id="setZoomEnabled" class="check">
                         <span class="check-custom"></span>
-                        <span>Enable camera zoom before placing units</span>
+                        <span data-i18n="enableZoom">Enable camera zoom before placing units</span>
                     </label>
                     <label class="check-label" style="margin-top:10px">
                         <input type="checkbox" id="setTopCameraEnabled" class="check">
                         <span class="check-custom"></span>
-                        <span>Enable top camera angle</span>
+                        <span data-i18n="enableTopCamera">Enable top camera angle</span>
                     </label>
-                    <div class="field-hint">Top angle moves the camera forward and down first, then applies Zoom Scrolls.</div>
+                    <div class="field-hint" data-i18n="topHint">Top angle moves the camera forward and down first, then applies Zoom Scrolls.</div>
                     <div class="row" style="margin-top:10px; gap:8px; flex-wrap:wrap;">
-                        <button class="btn btn-ghost btn-sm" id="btnPreviewTopCamera">Apply Top Camera</button>
-                        <button class="btn btn-primary btn-sm" id="btnPreviewZoom">Apply Zoom</button>
-                        <button class="btn btn-ghost btn-sm" id="btnPreviewZoomSnapshot">Zoom + Snapshot</button>
+                        <button class="btn btn-ghost btn-sm" id="btnPreviewTopCamera" data-i18n="applyTop">Apply Top Camera</button>
+                        <button class="btn btn-primary btn-sm" id="btnPreviewZoom" data-i18n="applyZoom">Apply Zoom</button>
+                        <button class="btn btn-ghost btn-sm" id="btnPreviewZoomSnapshot" data-i18n="zoomSnapshot">Zoom + Snapshot</button>
                     </div>
                 </fieldset>
                 <fieldset class="fieldset">
-                    <legend class="fieldset-legend">ImageSearch</legend>
+                    <legend class="fieldset-legend" data-i18n="imageSearch">ImageSearch</legend>
                     <div class="form-grid">
-                        <div class="field"><label class="field-label">Variation (*N)</label><input type="number" class="input" id="setImgVariation" value="30"></div>
+                        <div class="field"><label class="field-label" data-i18n="variation">Variation (*N)</label><input type="number" class="input" id="setImgVariation" value="30"></div>
                     </div>
                 </fieldset>
                 <fieldset class="fieldset">
-                    <legend class="fieldset-legend">PixelSearch</legend>
+                    <legend class="fieldset-legend" data-i18n="pixelSearch">PixelSearch</legend>
                     <div class="form-grid">
-                        <div class="field"><label class="field-label">Center X</label><input type="number" class="input" id="setStartGameCenterX" value="640"></div>
-                        <div class="field"><label class="field-label">Center Y</label><input type="number" class="input" id="setStartGameCenterY" value="580"></div>
-                        <div class="field"><label class="field-label">Radius</label><input type="number" class="input" id="setStartGameRadius" value="30"></div>
-                        <div class="field"><label class="field-label">Color</label><div class="color-field"><input type="color" class="input-color" id="setStartGameColorPicker" value="#4ECD0C"><input type="text" class="input" id="setStartGameColor" value="4ECD0C"></div></div>
-                        <div class="field"><label class="field-label">Color Var</label><input type="number" class="input" id="setStartGameColorVar" value="30"></div>
+                        <div class="field"><label class="field-label" data-i18n="centerX">Center X</label><input type="number" class="input" id="setStartGameCenterX" value="640"></div>
+                        <div class="field"><label class="field-label" data-i18n="centerY">Center Y</label><input type="number" class="input" id="setStartGameCenterY" value="580"></div>
+                        <div class="field"><label class="field-label" data-i18n="radius">Radius</label><input type="number" class="input" id="setStartGameRadius" value="30"></div>
+                        <div class="field"><label class="field-label" data-i18n="color">Color</label><div class="color-field"><button type="button" class="color-swatch" id="setStartGameColorSwatch" aria-label="Color preview"></button><input type="color" class="input-color" id="setStartGameColorPicker" value="#4ECD0C"><input type="text" class="input" id="setStartGameColor" value="4ECD0C"></div></div>
+                        <div class="field"><label class="field-label" data-i18n="colorVar">Color Var</label><input type="number" class="input" id="setStartGameColorVar" value="30"></div>
                     </div>
                 </fieldset>
                 <fieldset class="fieldset">
                     <legend class="fieldset-legend">
-                        Auto-Rejoin (on crash/error)
-                        <button class="btn-help-inline" id="btnRejoinHelp" data-tip="How to get VIP share link">?</button>
+                        <span data-i18n="autoRejoin">Auto-Rejoin (on crash/error)</span>
+                        <button class="btn-help-inline" id="btnRejoinHelp" data-tip="How to get VIP share link" data-i18n-tip="vipHelp">?</button>
                     </legend>
                     <label class="check-label" style="margin-bottom:10px">
                         <input type="checkbox" id="setRejoinEnabled" class="check">
                         <span class="check-custom"></span>
-                        <span>Enabled</span>
+                        <span data-i18n="enabled">Enabled</span>
                     </label>
                     <div class="form-grid">
                         <div class="field" style="grid-column: span 2;">
-                            <label class="field-label">VIP Share Link</label>
+                            <label class="field-label" data-i18n="vipShareLink">VIP Share Link</label>
                             <input type="text" class="input" id="setRejoinShareLink" placeholder="https://www.roblox.com/share?code=...&amp;type=Server">
                         </div>
-                        <div class="field"><label class="field-label">Max Attempts</label><input type="number" class="input" id="setRejoinMaxAttempts" value="3" min="1" max="10"></div>
-                        <div class="field"><label class="field-label">Wait Timeout (s)</label><input type="number" class="input" id="setRejoinWaitTimeout" value="40" min="5"></div>
-                        <div class="field"><label class="field-label">Resume Delay (s)</label><input type="number" class="input" id="setRejoinPostJoinDelay" value="6" min="0"></div>
-                        <div class="field"><label class="field-label">Post-Actions Delay (s)</label><input type="number" class="input" id="setRejoinPostActionsDelay" value="3" min="0"></div>
+                        <div class="field"><label class="field-label" data-i18n="maxAttempts">Max Attempts</label><input type="number" class="input" id="setRejoinMaxAttempts" value="3" min="1" max="10"></div>
+                        <div class="field"><label class="field-label" data-i18n="waitTimeout">Wait Timeout (s)</label><input type="number" class="input" id="setRejoinWaitTimeout" value="40" min="5"></div>
+                        <div class="field"><label class="field-label" data-i18n="resumeDelay">Resume Delay (s)</label><input type="number" class="input" id="setRejoinPostJoinDelay" value="6" min="0"></div>
+                        <div class="field"><label class="field-label" data-i18n="postActionsDelay">Post-Actions Delay (s)</label><input type="number" class="input" id="setRejoinPostActionsDelay" value="3" min="0"></div>
                     </div>
                     <div class="row" style="margin-top:10px; gap:8px; flex-wrap:wrap;">
-                        <button class="btn btn-primary btn-sm" id="btnCaptureDisconnected">Capture Disconnected</button>
-                        <button class="btn btn-ghost btn-sm" id="btnTestDisconnected">Test Detection</button>
+                        <button class="btn btn-primary btn-sm" id="btnCaptureDisconnected" data-i18n="captureDisconnected">Capture Disconnected</button>
+                        <button class="btn btn-ghost btn-sm" id="btnTestDisconnected" data-i18n="testDetection">Test Detection</button>
                     </div>
                     <div class="rejoin-actions-row" style="margin-top:8px;">
-                        <span class="field-label" style="display:inline; margin-right:6px;">Post-Rejoin:</span>
-                        <button class="btn btn-primary btn-sm" id="btnRejoinRecord">Record</button>
-                        <button class="btn btn-ghost btn-sm" id="btnRejoinTest">Test</button>
-                        <button class="btn btn-ghost btn-sm" id="btnRejoinClear">Clear</button>
-                        <span class="rejoin-action-count" id="rejoinActionCount" style="color:#666; font-size:10px; margin-left:6px;">0 actions</span>
+                        <span class="field-label" data-i18n="postRejoin" style="display:inline; margin-right:6px;">Post-Rejoin:</span>
+                        <button class="btn btn-primary btn-sm" id="btnRejoinRecord" data-i18n="record">Record</button>
+                        <button class="btn btn-ghost btn-sm" id="btnRejoinTest" data-i18n="test">Test</button>
+                        <button class="btn btn-ghost btn-sm" id="btnRejoinClear" data-i18n="clear">Clear</button>
+                        <span class="rejoin-action-count" id="rejoinActionCount" data-i18n="actions" style="color:#666; font-size:10px; margin-left:6px;">0 actions</span>
                     </div>
                 </fieldset>
 
@@ -1025,22 +1140,40 @@ body.modal-only .modal-foot {
                 <div class="rejoin-guide" id="rejoinGuide" style="display:none">
                     <div class="rejoin-guide-inner">
                         <div class="rejoin-guide-head">
-                            <strong>How to get VIP Share Link</strong>
+                        <strong data-i18n="vipGuideTitle">How to get VIP Share Link</strong>
                             <button class="modal-btn modal-cls" id="rejoinGuideClose">&times;</button>
                         </div>
                         <div class="rejoin-guide-body">
-                            <p><b>1.</b> Open Roblox → game page → <b>⋮</b> (three dots) → <b>Configure Private Servers</b></p>
-                            <p><b>2.</b> Click <b>Regenerate</b> to create a new link (or use existing one)</p>
-                            <p><b>3.</b> Copy the full link — it looks like:<br><code>https://www.roblox.com/share?code=abc123...&amp;type=Server</code></p>
-                            <p><b>4.</b> Paste it into the <b>VIP Share Link</b> field above</p>
-                            <p><b>5.</b> Check <b>Enabled</b> and click <b>Save</b></p>
+                            <p data-i18n="vipGuide1"><b>1.</b> Open Roblox → game page → <b>⋮</b> (three dots) → <b>Configure Private Servers</b></p>
+                            <p data-i18n="vipGuide2"><b>2.</b> Click <b>Regenerate</b> to create a new link (or use existing one)</p>
+                            <p data-i18n="vipGuide3"><b>3.</b> Copy the full link — it looks like:<br><code>https://www.roblox.com/share?code=abc123...&amp;type=Server</code></p>
+                            <p data-i18n="vipGuide4"><b>4.</b> Paste it into the <b>VIP Share Link</b> field above</p>
+                            <p data-i18n="vipGuide5"><b>5.</b> Check <b>Enabled</b> and click <b>Save</b></p>
                         </div>
                     </div>
                 </div>
             </div>
             <div class="modal-foot">
-                <button class="btn btn-ghost btn-sm" data-close>Cancel</button>
-                <button class="btn btn-primary btn-sm" id="btnSettingsSave">Save</button>
+                <button class="btn btn-ghost btn-sm" data-close data-i18n="cancel">Cancel</button>
+                <button class="btn btn-primary btn-sm" id="btnSettingsSave" data-i18n="save">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="hotkey-capture-overlay" id="hotkeyCaptureOverlay">
+        <div class="hotkey-capture-card">
+            <div class="hotkey-capture-head">
+                <span class="hotkey-capture-title" data-i18n="hotkeyCaptureTitle">Assign hotkey</span>
+                <button type="button" class="hotkey-capture-close" id="btnHotkeyCaptureClose">×</button>
+            </div>
+            <div class="hotkey-capture-body">
+                <div class="hotkey-capture-prompt" data-i18n="hotkeyCapturePrompt">Press the key or combination:</div>
+                <div class="hotkey-capture-key" id="hotkeyCaptureKey">Waiting...</div>
+                <div class="hotkey-capture-hint" data-i18n="hotkeyCaptureHint">For example: Ctrl+F8 or F9</div>
+            </div>
+            <div class="hotkey-capture-foot">
+                <button type="button" class="btn btn-ghost btn-sm" id="btnHotkeyCaptureCancel" data-i18n="cancel">Cancel</button>
+                <button type="button" class="btn btn-primary btn-sm" id="btnHotkeyCaptureSave" data-i18n="save">Save</button>
             </div>
         </div>
     </div>
@@ -1051,27 +1184,27 @@ body.modal-only .modal-foot {
     <div class="modal" id="modal-presets">
         <div class="modal-panel">
             <div class="modal-head" id="dragHandle-presets">
-                <h2 class="modal-title">Presets</h2>
+                <h2 class="modal-title" data-i18n="presetsTitle">Presets</h2>
                 <div class="modal-actions">
-                    <button class="modal-btn modal-min" data-min data-tip="Minimize">
+                    <button class="modal-btn modal-min" data-min data-tip="Minimize" data-i18n-tip="minimize">
                         <svg viewBox="0 0 16 16" fill="none"><path d="M3 13h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
                     </button>
-                    <button class="modal-btn modal-cls" data-close data-tip="Close">
+                    <button class="modal-btn modal-cls" data-close data-tip="Close" data-i18n-tip="close">
                         <svg viewBox="0 0 16 16" fill="none"><path d="m4 4 8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
                     </button>
                 </div>
             </div>
             <div class="modal-body">
-                <div class="field"><label class="field-label">Preset Name</label><input type="text" class="input" id="presetName" placeholder="My Farm Config"></div>
-                <div class="preset-list" id="presetList"><div class="preset-empty" id="presetEmpty">No saved presets</div></div>
+                <div class="field"><label class="field-label" data-i18n="presetName">Preset Name</label><input type="text" class="input" id="presetName" placeholder="My Farm Config"></div>
+                <div class="preset-list" id="presetList"><div class="preset-empty" id="presetEmpty" data-i18n="noSavedPresets">No saved presets</div></div>
             </div>
             <div class="modal-foot">
                 <button class="btn btn-ghost btn-sm btn-danger" id="btnPresetDelete">
                     <svg viewBox="0 0 16 16" fill="none"><path d="M3 5h10M6 5V3.5a.5.5 0 0 1 .5-.5h3a.5.5 0 0 1 .5.5V5M12.5 5v7.5a1 1 0 0 1-1 1h-7a1 1 0 0 1-1-1V5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
-                    <span>Delete</span>
+                    <span data-i18n="delete">Delete</span>
                 </button>
-                <button class="btn btn-primary btn-sm" id="btnPresetSave">Save</button>
-                <button class="btn btn-ghost btn-sm" id="btnPresetLoad">Load</button>
+                <button class="btn btn-primary btn-sm" id="btnPresetSave" data-i18n="save">Save</button>
+                <button class="btn btn-ghost btn-sm" id="btnPresetLoad" data-i18n="load">Load</button>
             </div>
         </div>
     </div>
@@ -1082,53 +1215,53 @@ body.modal-only .modal-foot {
     <div class="modal" id="modal-calibrate">
         <div class="modal-panel">
             <div class="modal-head" id="dragHandle-calibrate">
-                <h2 class="modal-title">Calibration</h2>
+                <h2 class="modal-title" data-i18n="calibration">Calibration</h2>
                 <div class="modal-actions">
-                    <button class="modal-btn modal-min" data-min data-tip="Minimize">
+                    <button class="modal-btn modal-min" data-min data-tip="Minimize" data-i18n-tip="minimize">
                         <svg viewBox="0 0 16 16" fill="none"><path d="M3 13h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
                     </button>
-                    <button class="modal-btn modal-cls" data-close data-tip="Close">
+                    <button class="modal-btn modal-cls" data-close data-tip="Close" data-i18n-tip="close">
                         <svg viewBox="0 0 16 16" fill="none"><path d="m4 4 8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
                     </button>
                 </div>
             </div>
             <div class="modal-body">
                 <fieldset class="fieldset">
-                    <legend class="fieldset-legend">Button positions (click a card)</legend>
+                    <legend class="fieldset-legend" data-i18n="buttonPositions">Button positions (click a card)</legend>
                     <div class="calib-grid">
-                        <div class="calib-card" data-action="calibrate-upgrade"><div class="calib-card-head"><span class="calib-key">Upgrade</span><span class="calib-val" id="calibValUpgrade">—</span></div><div class="calib-preview"><svg viewBox="0 0 80 40" fill="none"><rect x="10" y="5" width="60" height="30" rx="4" stroke="currentColor" stroke-width="1" stroke-dasharray="4 3"/><text x="40" y="23" text-anchor="middle" fill="currentColor" font-size="9">Click to set</text></svg></div></div>
-                        <div class="calib-card" data-action="calibrate-startgame"><div class="calib-card-head"><span class="calib-key">Start Game/span><span class="calib-val" id="calibValStartGame">—</span></div><div class="calib-preview"><svg viewBox="0 0 80 40" fill="none"><rect x="10" y="5" width="60" height="30" rx="4" stroke="currentColor" stroke-width="1" stroke-dasharray="4 3"/><text x="40" y="23" text-anchor="middle" fill="currentColor" font-size="9">Click to set</text></svg></div></div>
-                        <div class="calib-card" data-action="calibrate-repeatstage"><div class="calib-card-head"><span class="calib-key">Repeat Stage</span><span class="calib-val" id="calibValRepeatStage">—</span></div><div class="calib-preview"><svg viewBox="0 0 80 40" fill="none"><rect x="10" y="5" width="60" height="30" rx="4" stroke="currentColor" stroke-width="1" stroke-dasharray="4 3"/><text x="40" y="23" text-anchor="middle" fill="currentColor" font-size="9">Click to set</text></svg></div></div>
-                        <div class="calib-card" data-action="calibrate-autoupgrade"><div class="calib-card-head"><span class="calib-key">AutoUpgrade</span><span class="calib-val" id="calibValAutoUpgrade">—</span></div><div class="calib-preview"><svg viewBox="0 0 80 40" fill="none"><rect x="10" y="5" width="60" height="30" rx="4" stroke="currentColor" stroke-width="1" stroke-dasharray="4 3"/><text x="40" y="23" text-anchor="middle" fill="currentColor" font-size="9">Click to set</text></svg></div></div>
+                        <div class="calib-card" data-action="calibrate-upgrade"><div class="calib-card-head"><span class="calib-key" data-i18n="upgrade">Upgrade</span><span class="calib-val" id="calibValUpgrade">—</span></div><div class="calib-preview"><svg viewBox="0 0 80 40" fill="none"><rect x="10" y="5" width="60" height="30" rx="4" stroke="currentColor" stroke-width="1" stroke-dasharray="4 3"/><text x="40" y="23" text-anchor="middle" fill="currentColor" font-size="9" data-i18n="clickToSet">Click to set</text></svg></div></div>
+                        <div class="calib-card" data-action="calibrate-startgame"><div class="calib-card-head"><span class="calib-key" data-i18n="startGame">Start Game</span><span class="calib-val" id="calibValStartGame">—</span></div><div class="calib-preview"><svg viewBox="0 0 80 40" fill="none"><rect x="10" y="5" width="60" height="30" rx="4" stroke="currentColor" stroke-width="1" stroke-dasharray="4 3"/><text x="40" y="23" text-anchor="middle" fill="currentColor" font-size="9" data-i18n="clickToSet">Click to set</text></svg></div></div>
+                        <div class="calib-card" data-action="calibrate-repeatstage"><div class="calib-card-head"><span class="calib-key" data-i18n="repeatStage">Repeat Stage</span><span class="calib-val" id="calibValRepeatStage">—</span></div><div class="calib-preview"><svg viewBox="0 0 80 40" fill="none"><rect x="10" y="5" width="60" height="30" rx="4" stroke="currentColor" stroke-width="1" stroke-dasharray="4 3"/><text x="40" y="23" text-anchor="middle" fill="currentColor" font-size="9" data-i18n="clickToSet">Click to set</text></svg></div></div>
+                        <div class="calib-card" data-action="calibrate-autoupgrade"><div class="calib-card-head"><span class="calib-key" data-i18n="autoUpgrade">AutoUpgrade</span><span class="calib-val" id="calibValAutoUpgrade">—</span></div><div class="calib-preview"><svg viewBox="0 0 80 40" fill="none"><rect x="10" y="5" width="60" height="30" rx="4" stroke="currentColor" stroke-width="1" stroke-dasharray="4 3"/><text x="40" y="23" text-anchor="middle" fill="currentColor" font-size="9" data-i18n="clickToSet">Click to set</text></svg></div></div>
                     </div>
                 </fieldset>
                 <fieldset class="fieldset">
-                    <legend class="fieldset-legend">Detection templates (Defeat / Victory)</legend>
-                    <p class="modal-desc" style="margin:0 0 8px">Drag-select a SMALL region (e.g. the word "VICTORY"). Large templates won't be found by ImageSearch.</p>
+                    <legend class="fieldset-legend" data-i18n="detectionTemplates">Detection templates (Defeat / Victory)</legend>
+                    <p class="modal-desc" style="margin:0 0 8px" data-i18n="detectionDesc">Drag-select a SMALL region (e.g. the word "VICTORY"). Large templates won't be found by ImageSearch.</p>
                     <div class="btn-row">
-                        <button class="btn btn-primary btn-sm" data-action="capture-template"><span>Capture Template</span></button>
-                        <button class="btn btn-ghost btn-sm" data-action="test-detection"><span>Test Detection</span></button>
+                        <button class="btn btn-primary btn-sm" data-action="capture-template"><span data-i18n="captureTemplate">Capture Template</span></button>
+                        <button class="btn btn-ghost btn-sm" data-action="test-detection"><span data-i18n="testDetection">Test Detection</span></button>
                     </div>
                 </fieldset>
                 <fieldset class="fieldset">
-                    <legend class="fieldset-legend">Start Game template</legend>
-                    <p class="modal-desc" style="margin:0 0 8px">Drag-select a PART of the Start button (the word "START" — without border/edges).</p>
+                    <legend class="fieldset-legend" data-i18n="startGameTemplate">Start Game template</legend>
+                    <p class="modal-desc" style="margin:0 0 8px" data-i18n="startGameDesc">Drag-select a PART of the Start button (the word "START" — without border/edges).</p>
                     <div class="btn-row">
-                        <button class="btn btn-primary btn-sm" data-action="capture-startgame"><span>Capture Start Game</span></button>
-                        <button class="btn btn-ghost btn-sm" data-action="test-startgame"><span>Test Start Game</span></button>
+                        <button class="btn btn-primary btn-sm" data-action="capture-startgame"><span data-i18n="captureStartGame">Capture Start Game</span></button>
+                        <button class="btn btn-ghost btn-sm" data-action="test-startgame"><span data-i18n="testStartGame">Test Start Game</span></button>
                     </div>
                 </fieldset>
                 <fieldset class="fieldset">
-                    <legend class="fieldset-legend">AutoUpgrade template</legend>
-                    <p class="modal-desc" style="margin:0 0 8px">Drag-select the AutoUpgrade button. Saved as images\AutoUpgrade.bmp.</p>
+                    <legend class="fieldset-legend" data-i18n="autoUpgradeTemplate">AutoUpgrade template</legend>
+                    <p class="modal-desc" style="margin:0 0 8px" data-i18n="autoUpgradeDesc">Drag-select the AutoUpgrade button. Saved as images\AutoUpgrade.bmp.</p>
                     <div class="btn-row">
-                        <button class="btn btn-primary btn-sm" data-action="capture-autoupgrade"><span>Capture AutoUpgrade</span></button>
-                        <button class="btn btn-ghost btn-sm" data-action="test-autoupgrade"><span>Test AutoUpgrade</span></button>
+                        <button class="btn btn-primary btn-sm" data-action="capture-autoupgrade"><span data-i18n="captureAutoUpgrade">Capture AutoUpgrade</span></button>
+                        <button class="btn btn-ghost btn-sm" data-action="test-autoupgrade"><span data-i18n="testAutoUpgrade">Test AutoUpgrade</span></button>
                     </div>
                 </fieldset>
             </div>
             <div class="modal-foot">
-                <button class="btn btn-ghost btn-sm" data-close>Close</button>
+                <button class="btn btn-ghost btn-sm" data-close data-i18n="close">Close</button>
             </div>
         </div>
     </div>
@@ -1139,34 +1272,34 @@ body.modal-only .modal-foot {
     <div class="modal" id="modal-upgrade">
         <div class="modal-panel">
             <div class="modal-head" id="dragHandle-upgrade">
-                <h2 class="modal-title">Auto Upgrade</h2>
+                <h2 class="modal-title" data-i18n="autoUpgradeTitle">Auto Upgrade</h2>
                 <div class="modal-actions">
-                    <button class="modal-btn modal-min" data-min data-tip="Minimize">
+                    <button class="modal-btn modal-min" data-min data-tip="Minimize" data-i18n-tip="minimize">
                         <svg viewBox="0 0 16 16" fill="none"><path d="M3 13h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
                     </button>
-                    <button class="modal-btn modal-cls" data-close data-tip="Close">
+                    <button class="modal-btn modal-cls" data-close data-tip="Close" data-i18n-tip="close">
                         <svg viewBox="0 0 16 16" fill="none"><path d="m4 4 8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
                     </button>
                 </div>
             </div>
             <div class="modal-body">
-                <p class="modal-desc">Set upgrade priority (clicks) per unit slot.</p>
+                <p class="modal-desc" data-i18n="priorityDesc">Set upgrade priority (clicks) per unit slot.</p>
                 <div class="form-grid form-grid-3">
-                    <div class="field"><label class="field-label">Slot 1</label><input type="number" class="input" id="upgSlot1" value="3" min="0" max="9"></div>
-                    <div class="field"><label class="field-label">Slot 2</label><input type="number" class="input" id="upgSlot2" value="3" min="0" max="9"></div>
-                    <div class="field"><label class="field-label">Slot 3</label><input type="number" class="input" id="upgSlot3" value="3" min="0" max="9"></div>
-                    <div class="field"><label class="field-label">Slot 4</label><input type="number" class="input" id="upgSlot4" value="3" min="0" max="9"></div>
-                    <div class="field"><label class="field-label">Slot 5</label><input type="number" class="input" id="upgSlot5" value="3" min="0" max="9"></div>
-                    <div class="field"><label class="field-label">Slot 6</label><input type="number" class="input" id="upgSlot6" value="3" min="0" max="9"></div>
+                    <div class="field"><label class="field-label" data-i18n="slot1">Slot 1</label><input type="number" class="input" id="upgSlot1" value="3" min="0" max="9"></div>
+                    <div class="field"><label class="field-label" data-i18n="slot2">Slot 2</label><input type="number" class="input" id="upgSlot2" value="3" min="0" max="9"></div>
+                    <div class="field"><label class="field-label" data-i18n="slot3">Slot 3</label><input type="number" class="input" id="upgSlot3" value="3" min="0" max="9"></div>
+                    <div class="field"><label class="field-label" data-i18n="slot4">Slot 4</label><input type="number" class="input" id="upgSlot4" value="3" min="0" max="9"></div>
+                    <div class="field"><label class="field-label" data-i18n="slot5">Slot 5</label><input type="number" class="input" id="upgSlot5" value="3" min="0" max="9"></div>
+                    <div class="field"><label class="field-label" data-i18n="slot6">Slot 6</label><input type="number" class="input" id="upgSlot6" value="3" min="0" max="9"></div>
                 </div>
                 <div class="field" style="margin-top:4px">
-                    <label class="field-label">Unit Select Y-Offset (px)</label>
+                    <label class="field-label" data-i18n="unitOffset">Unit Select Y-Offset (px)</label>
                     <input type="number" class="input" id="upgYOffset" value="20" style="max-width:120px">
                 </div>
             </div>
             <div class="modal-foot">
-                <button class="btn btn-ghost btn-sm" data-close>Cancel</button>
-                <button class="btn btn-primary btn-sm" id="btnUpgradeSave">Save</button>
+                <button class="btn btn-ghost btn-sm" data-close data-i18n="cancel">Cancel</button>
+                <button class="btn btn-primary btn-sm" id="btnUpgradeSave" data-i18n="save">Save</button>
             </div>
         </div>
     </div>
@@ -1177,33 +1310,33 @@ body.modal-only .modal-foot {
     <div class="modal" id="modal-mark">
         <div class="modal-panel">
             <div class="modal-head" id="dragHandle-mark">
-                <h2 class="modal-title" id="markTitle">Marking</h2>
+                <h2 class="modal-title" id="markTitle" data-i18n="marking">Marking</h2>
                 <div class="modal-actions">
-                    <button class="modal-btn modal-min" data-min data-tip="Minimize">
+                    <button class="modal-btn modal-min" data-min data-tip="Minimize" data-i18n-tip="minimize">
                         <svg viewBox="0 0 16 16" fill="none"><path d="M3 13h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
                     </button>
-                    <button class="modal-btn modal-cls" data-close data-tip="Close">
+                    <button class="modal-btn modal-cls" data-close data-tip="Close" data-i18n-tip="close">
                         <svg viewBox="0 0 16 16" fill="none"><path d="m4 4 8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
                     </button>
                 </div>
             </div>
             <div class="modal-body" style="padding:0">
-                <p class="modal-desc" id="markPrompt" style="padding:8px 14px 0">Click on the image to mark.</p>
+                <p class="modal-desc" id="markPrompt" data-i18n="clickImage" style="padding:8px 14px 0">Click on the image to mark.</p>
                 <div class="mark-canvas-wrap" id="markCanvasWrap">
                     <img id="markImg" class="mark-img" alt="screenshot" draggable="false" unselectable="on">
                     <div class="mark-overlay" id="markOverlay"></div>
                 </div>
                 <div class="mark-side">
                     <div class="mark-list-head">
-                        <span class="label">Slots</span>
-                        <button class="btn btn-ghost btn-xs" id="btnMarkUndo">Undo</button>
+                        <span class="label" data-i18n="slots">Slots</span>
+                        <button class="btn btn-ghost btn-xs" id="btnMarkUndo" data-i18n="undo">Undo</button>
                     </div>
                     <div class="preset-list" id="markList" style="min-height:120px"></div>
                 </div>
             </div>
             <div class="modal-foot">
-                <button class="btn btn-ghost btn-sm" data-close>Cancel</button>
-                <button class="btn btn-primary btn-sm" id="btnMarkDone">Done / Save</button>
+                <button class="btn btn-ghost btn-sm" data-close data-i18n="cancel">Cancel</button>
+                <button class="btn btn-primary btn-sm" id="btnMarkDone" data-i18n="doneSave">Done / Save</button>
             </div>
         </div>
     </div>
@@ -1214,12 +1347,12 @@ body.modal-only .modal-foot {
     <div class="modal" id="modal-snap">
         <div class="modal-panel">
             <div class="modal-head" id="dragHandle-snap">
-                <h2 class="modal-title">Snapshot Preview</h2>
+                <h2 class="modal-title" data-i18n="snapshotPreview">Snapshot Preview</h2>
                 <div class="modal-actions">
-                    <button class="modal-btn modal-min" data-min data-tip="Minimize">
+                    <button class="modal-btn modal-min" data-min data-tip="Minimize" data-i18n-tip="minimize">
                         <svg viewBox="0 0 16 16" fill="none"><path d="M3 13h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
                     </button>
-                    <button class="modal-btn modal-cls" data-close data-tip="Close">
+                    <button class="modal-btn modal-cls" data-close data-tip="Close" data-i18n-tip="close">
                         <svg viewBox="0 0 16 16" fill="none"><path d="m4 4 8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
                     </button>
                 </div>
@@ -1229,13 +1362,13 @@ body.modal-only .modal-foot {
                     <img id="snapImg" class="snap-img" alt="snapshot">
                 </div>
                 <div class="field">
-                    <label class="field-label" for="snapName">Map name</label>
+                    <label class="field-label" for="snapName" data-i18n="mapName">Map name</label>
                     <input type="text" class="input" id="snapName" placeholder="e.g. FlowerForest_start">
                 </div>
             </div>
             <div class="modal-foot">
-                <button class="btn btn-ghost btn-sm" data-close>Cancel</button>
-                <button class="btn btn-primary btn-sm" id="btnSnapConfirm">Confirm</button>
+                <button class="btn btn-ghost btn-sm" data-close data-i18n="cancel">Cancel</button>
+                <button class="btn btn-primary btn-sm" id="btnSnapConfirm" data-i18n="confirm">Confirm</button>
             </div>
         </div>
     </div>
@@ -1322,13 +1455,13 @@ body.modal-only .modal-foot {
         state.embedded = !state.embedded;
         sendCmd('embed');
         if (state.embedded) {
-            embedBadge.textContent = 'Connected';
+            embedBadge.textContent = uiText('connected');
             embedBadge.className = 'badge connected';
-            this.querySelector('span').textContent = 'Unembed';
+            this.querySelector('span').textContent = uiText('unembed');
         } else {
-            embedBadge.textContent = 'Disconnected';
+            embedBadge.textContent = uiText('disconnected');
             embedBadge.className = 'badge';
-            this.querySelector('span').textContent = 'Embed';
+            this.querySelector('span').textContent = uiText('embed');
         }
     });
 
@@ -1369,7 +1502,7 @@ body.modal-only .modal-foot {
                 mapList.appendChild(div);
             })(opts[i]);
         }
-        mapLabel.textContent = mapSelect.value ? mapSelect.options[mapSelect.selectedIndex].text : '-- Select Map --';
+        mapLabel.textContent = mapSelect.value ? mapSelect.options[mapSelect.selectedIndex].text : uiText('selectMap');
     }
     on(mapBtn, 'click', function (e) {
         e = e || window.event;
@@ -1397,7 +1530,7 @@ body.modal-only .modal-foot {
     });
     on($('#btnClear'), 'click', function () {
         mapSelect.value = ''; state.map = null;
-        mapBadge.textContent = 'None'; mapBadge.className = 'badge';
+        mapBadge.textContent = uiText('none'); mapBadge.className = 'badge';
         syncMapCustomUI();
         sendCmd('clear-map');
     });
@@ -1409,11 +1542,11 @@ body.modal-only .modal-foot {
     function setFarmUI(running) {
         if (running) {
             btnFarm.className = 'btn btn-start running';
-            btnFarm.querySelector('span').textContent = 'Stop Farm F9';
+            btnFarm.querySelector('span').textContent = uiText('stopFarm') + ' ' + formatHotkeyLabel(currentFarmHotkey);
             btnFarm.querySelector('svg').innerHTML = '<rect x="4" y="3.5" width="3.5" height="9" rx="1" fill="currentColor"/><rect x="8.5" y="3.5" width="3.5" height="9" rx="1" fill="currentColor"/>';
         } else {
             btnFarm.className = 'btn btn-start';
-            btnFarm.querySelector('span').textContent = 'Start Farm F9';
+            btnFarm.querySelector('span').textContent = uiText('startFarm') + ' ' + formatHotkeyLabel(currentFarmHotkey);
             btnFarm.querySelector('svg').innerHTML = '<path d="M5 3.5 13 8l-8 4.5v-9Z"/>';
         }
     }
@@ -1450,10 +1583,6 @@ body.modal-only .modal-foot {
     on(document, 'keydown', function (e) {
         e = e || window.event;
         if (e.keyCode === 27) closeAllModals();
-        if (e.keyCode === 120) {  // F9
-            if (e.preventDefault) e.preventDefault();
-            btnFarm.click();
-        }
     });
 
     /* ============================================================
@@ -1462,27 +1591,44 @@ body.modal-only .modal-foot {
     window.ahkLog = function (msg, cls) { log(msg, cls); };
 
     window.ahkUpdateStatus = function (text, cls) {
-        statusText.textContent = text || 'Idle';
+        currentStatusRaw = text || 'Idle';
+        currentStatusClass = cls || '';
+        var statusKeys = {
+            'Idle': 'idle', 'Watching...': 'watching', 'Starting game...': 'startingGame',
+            'Reconnecting...': 'reconnecting', 'Reconnected, resuming...': 'reconnectedResuming',
+            'Game lost': 'gameLost', 'Defeat, restarting...': 'defeatRestarting',
+            'Victory, restarting...': 'victoryRestarting', 'Restarting stage...': 'restartingStage',
+            'Select a map': 'selectMapStatus', 'Map not marked': 'mapNotMarked', 'Game not found': 'gameNotFoundStatus'
+        };
+        statusText.textContent = text ? uiText(statusKeys[text], text) : uiText('idle');
         statusDot.className = 'status-dot' + (cls ? ' ' + cls : '');
     };
 
     window.ahkUpdateEmbed = function (connected) {
         state.embedded = connected;
         if (connected) {
-            embedBadge.textContent = 'Connected';
+            embedBadge.textContent = uiText('connected');
             embedBadge.className = 'badge connected';
-            $('#btnEmbed').querySelector('span').textContent = 'Unembed';
+            $('#btnEmbed').querySelector('span').textContent = uiText('unembed');
         } else {
-            embedBadge.textContent = 'Disconnected';
+            embedBadge.textContent = uiText('disconnected');
             embedBadge.className = 'badge';
-            $('#btnEmbed').querySelector('span').textContent = 'Embed';
+            $('#btnEmbed').querySelector('span').textContent = uiText('embed');
         }
     };
 
-window.ahkUpdateFarm = function (running) {
-	        state.farming = running;
-	        setFarmUI(running);
-	    };
+    window.ahkUpdateFarm = function (running) {
+        state.farming = running;
+        setFarmUI(running);
+    };
+
+    window.ahkUpdateBotStatus = function (text, cls) {
+        var el = document.getElementById('botStatus');
+        if (el) {
+            el.textContent = text || uiText('botStopped', 'Stopped');
+            el.style.color = cls === 'error' ? '#ef4444' : (cls === 'running' ? '#22c55e' : '#666');
+        }
+    };
 
 	    window.ahkUpdateAutoUpgrade = function (enabled) {
 	        var cb = document.getElementById('chkAutoUpgrade');
@@ -1490,6 +1636,7 @@ window.ahkUpdateFarm = function (running) {
 	    };
 
     window.ahkUpdateCoords = function (up, st, rp, au) {
+        currentCoords = [up || '', st || '', rp || '', au || ''];
         var items = $$('.coord-val');
         var vals = [up, st, rp, au];
         var allSet = true;
@@ -1504,11 +1651,12 @@ window.ahkUpdateFarm = function (running) {
             }
         }
         var cb = $('#coordBadge');
-        cb.textContent = allSet ? 'All set' : 'Not set';
+        cb.textContent = allSet ? uiText('allSet') : uiText('notSet');
         cb.className = allSet ? 'badge connected' : 'badge';
     };
 
     window.ahkUpdateMap = function (mapName) {
+        currentMapName = mapName || '';
         if (mapName) {
             mapSelect.value = mapName;
             state.map = mapName;
@@ -1517,7 +1665,7 @@ window.ahkUpdateFarm = function (running) {
         } else {
             mapSelect.value = '';
             state.map = null;
-            mapBadge.textContent = 'None';
+            mapBadge.textContent = uiText('none');
             mapBadge.className = 'badge';
         }
         syncMapCustomUI();
@@ -1525,7 +1673,7 @@ window.ahkUpdateFarm = function (running) {
 
     window.ahkSetMapOptions = function (optStr) {
         var names = optStr.split('|');
-        mapSelect.innerHTML = '<option value="">-- Select Map --</option>';
+        mapSelect.innerHTML = '<option value="">' + uiText('selectMap') + '</option>';
         for (var i = 0; i < names.length; i++) {
             if (!names[i]) continue;
             var opt = document.createElement('option');
@@ -1625,10 +1773,417 @@ window.ahkUpdateFarm = function (running) {
         }, 0);
     };
 
+    /* ---- Settings language ---- */
+    var settingsI18n = {
+        en: {
+            settingsTitle: 'Settings', minimize: 'Minimize', close: 'Close', language: 'Language',
+            updateAvailable: 'Update available', newVersion: 'New version of Mmacro',
+            newBuild: 'A newer build is ready to install', later: 'Later', updateNow: 'Update now',
+            currentVersion: 'Current version', checkUpdates: 'Check for updates', gameWindow: 'Game Window',
+            connected: 'Connected', disconnected: 'Disconnected', embed: 'Embed', unembed: 'Unembed',
+            map: 'Map', none: 'None', selectMap: '-- Select Map --', snapshot: 'Snapshot', mark: 'Mark',
+            coordinates: 'Coordinates', allSet: 'All set', notSet: 'Not set', upgrade: 'Upgrade', start: 'Start', runs: 'Runs',
+            repeat: 'Repeat', autoUp: 'AutoUp', startFarm: 'Start Farm', stopFarm: 'Stop Farm',
+            autoUpgrade: 'Auto Upgrade', configure: 'Configure', idle: 'Idle', watching: 'Watching...',
+            startingGame: 'Starting game...', reconnecting: 'Reconnecting...', reconnectedResuming: 'Reconnected, resuming...',
+            gameLost: 'Game lost', defeatRestarting: 'Defeat, restarting...', victoryRestarting: 'Victory, restarting...',
+            restartingStage: 'Restarting stage...', selectMapStatus: 'Select a map', mapNotMarked: 'Map not marked',
+            gameNotFoundStatus: 'Game not found', stop: 'Stop', recordF1: 'Record F1', loading: 'Loading...', log: 'Log',
+            presetsTitle: 'Presets', calibration: 'Calibration', delete: 'Delete', load: 'Load',
+            presetName: 'Preset Name', noSavedPresets: 'No saved presets', buttonPositions: 'Button positions (click a card)',
+            clickToSet: 'Click to set', repeatStage: 'Repeat Stage', detectionTemplates: 'Detection templates (Defeat / Victory)',
+            detectionDesc: 'Drag-select a SMALL region (e.g. the word "VICTORY"). Large templates won\'t be found by ImageSearch.',
+            captureTemplate: 'Capture Template', startGameTemplate: 'Start Game template',
+            startGameDesc: 'Drag-select a PART of the Start button (the word "START" — without border/edges).',
+            captureStartGame: 'Capture Start Game', testStartGame: 'Test Start Game',
+            autoUpgradeTemplate: 'AutoUpgrade template', autoUpgradeDesc: 'Drag-select the AutoUpgrade button. Saved as images\\AutoUpgrade.bmp.',
+            captureAutoUpgrade: 'Capture AutoUpgrade', testAutoUpgrade: 'Test AutoUpgrade',
+            autoUpgradeTitle: 'Auto Upgrade', priorityDesc: 'Set upgrade priority (clicks) per unit slot.',
+            calibrate: 'Calibrate', markSlots: 'Mark Slots', unitNumber: 'Unit number', slot: 'Slot', unit: 'unit',
+            clickUpgrade: 'Click the Upgrade button.', clickStartGame: 'Click the Start Game button.',
+            clickRepeatStage: 'Click the Repeat Stage button.', templatePrompt: 'Hold the mouse button and select a region (for example, the word VICTORY). Release to save the template.',
+            startTemplatePrompt: 'Hold the mouse button and select part of the Start Game button (the word START or the icon, without the border). Release to save it as StartGame.bmp.',
+            slot1: 'Slot 1', slot2: 'Slot 2', slot3: 'Slot 3', slot4: 'Slot 4', slot5: 'Slot 5', slot6: 'Slot 6',
+            unitOffset: 'Unit Select Y-Offset (px)', marking: 'Marking', clickImage: 'Click on the image to mark.',
+            slots: 'Slots', undo: 'Undo', doneSave: 'Done / Save', snapshotPreview: 'Snapshot Preview',
+            mapName: 'Map name', confirm: 'Confirm',
+            languageHint: 'The language is saved for the next launch.', hotkeys: 'Hotkeys',
+            farmHotkey: 'Start / Stop Farm', rejoinHotkey: 'Rejoin Record', recordKey: 'Record', pressKey: 'Press key...',
+            hotkeyCaptureTitle: 'Assign hotkey', hotkeyCapturePrompt: 'Press the key or combination:', hotkeyCaptureHint: 'For example: Ctrl+F8 or F9',
+            hotkeyHint: 'Click Record, then press a key or combination, for example Ctrl+F8.', delays: 'Delays (ms)',
+            placeUnit: 'Place Unit', betweenUnits: 'Between Units', upgradeClick: 'Upgrade Click',
+            autoClick: 'Auto Click', startGame: 'Start Game', stageCheck: 'Stage Check',
+            afterHover: 'After Hover', mouseSpeed: 'Mouse Speed', smoothMouse: 'Enable smooth mouse movement',
+            camera: 'Camera', zoomScrolls: 'Zoom Scrolls', enableZoom: 'Enable camera zoom before placing units',
+            enableTopCamera: 'Enable top camera angle', topHint: 'Top angle moves the camera forward and down first, then applies Zoom Scrolls.',
+            applyTop: 'Apply Top Camera', applyZoom: 'Apply Zoom', zoomSnapshot: 'Zoom + Snapshot',
+            imageSearch: 'ImageSearch', variation: 'Variation (*N)', pixelSearch: 'PixelSearch',
+            centerX: 'Center X', centerY: 'Center Y', radius: 'Radius', color: 'Color', colorVar: 'Color Var',
+            autoRejoin: 'Auto-Rejoin (on crash/error)', vipHelp: 'How to get VIP share link', enabled: 'Enabled',
+            vipShareLink: 'VIP Share Link', maxAttempts: 'Max Attempts', waitTimeout: 'Wait Timeout (s)',
+            resumeDelay: 'Resume Delay (s)', postActionsDelay: 'Post-Actions Delay (s)',
+            captureDisconnected: 'Capture Disconnected', testDetection: 'Test Detection', postRejoin: 'Post-Rejoin:',
+            record: 'Record', test: 'Test', clear: 'Clear', actions: '0 actions', vipGuideTitle: 'How to get VIP Share Link',
+            vipGuide1: '<b>1.</b> Open Roblox → game page → <b>⋮</b> (three dots) → <b>Configure Private Servers</b>',
+            vipGuide2: '<b>2.</b> Click <b>Regenerate</b> to create a new link (or use existing one)',
+            vipGuide3: '<b>3.</b> Copy the full link — it looks like:<br><code>https://www.roblox.com/share?code=abc123...&amp;type=Server</code>',
+            vipGuide4: '<b>4.</b> Paste it into the <b>VIP Share Link</b> field above',
+            vipGuide5: '<b>5.</b> Check <b>Enabled</b> and click <b>Save</b>', cancel: 'Cancel', save: 'Save'
+        },
+        ru: {
+            settingsTitle: 'Настройки', minimize: 'Свернуть', close: 'Закрыть', language: 'Язык',
+            updateAvailable: 'Доступно обновление', newVersion: 'Новая версия Mmacro',
+            newBuild: 'Доступна новая сборка для установки', later: 'Позже', updateNow: 'Обновить',
+            currentVersion: 'Текущая версия', checkUpdates: 'Проверить обновления', gameWindow: 'Окно игры',
+            connected: 'Подключено', disconnected: 'Отключено', embed: 'Закрепить', unembed: 'Открепить',
+            map: 'Карта', none: 'Нет', selectMap: '-- Выбери карту --', snapshot: 'Снимок', mark: 'Разметка',
+            coordinates: 'Координаты', allSet: 'Всё задано', notSet: 'Не задано', upgrade: 'Улучшение', start: 'Старт', runs: 'Ранов',
+            repeat: 'Повтор', autoUp: 'Автоапгрейд', startFarm: 'Запустить фарм', stopFarm: 'Остановить фарм',
+            autoUpgrade: 'Автопрокачка', configure: 'Настроить', idle: 'Ожидание', watching: 'Наблюдение...',
+            startingGame: 'Запуск игры...', reconnecting: 'Переподключение...', reconnectedResuming: 'Подключено, продолжаю...',
+            gameLost: 'Игра потеряна', defeatRestarting: 'Поражение, перезапуск...', victoryRestarting: 'Победа, перезапуск...',
+            restartingStage: 'Перезапуск этапа...', selectMapStatus: 'Выбери карту', mapNotMarked: 'Карта не размечена',
+            gameNotFoundStatus: 'Игра не найдена', stop: 'Стоп', recordF1: 'Записать F1', loading: 'Загрузка...', log: 'Лог',
+            presetsTitle: 'Пресеты', calibration: 'Калибровка', delete: 'Удалить', load: 'Загрузить',
+            presetName: 'Имя пресета', noSavedPresets: 'Нет сохранённых пресетов', buttonPositions: 'Позиции кнопок (нажми на карточку)',
+            clickToSet: 'Нажми для задания', repeatStage: 'Повтор этапа', detectionTemplates: 'Шаблоны обнаружения (Defeat / Victory)',
+            detectionDesc: 'Выдели небольшую область (например, слово «VICTORY»). Большие шаблоны ImageSearch не найдёт.',
+            captureTemplate: 'Снять шаблон', startGameTemplate: 'Шаблон Start Game',
+            startGameDesc: 'Выдели часть кнопки Start (слово «START», без рамки и краёв).',
+            captureStartGame: 'Снять Start Game', testStartGame: 'Проверить Start Game',
+            autoUpgradeTemplate: 'Шаблон AutoUpgrade', autoUpgradeDesc: 'Выдели кнопку AutoUpgrade. Сохраняется как images\\AutoUpgrade.bmp.',
+            captureAutoUpgrade: 'Снять AutoUpgrade', testAutoUpgrade: 'Проверить AutoUpgrade',
+            autoUpgradeTitle: 'Автопрокачка', priorityDesc: 'Задай приоритет улучшений (количество кликов) для каждого слота.',
+            calibrate: 'Калибровать', markSlots: 'Разметить слоты', unitNumber: 'Номер юнита', slot: 'Слот', unit: 'юнит',
+            clickUpgrade: 'Нажми на кнопку Upgrade.', clickStartGame: 'Нажми на кнопку Start Game.',
+            clickRepeatStage: 'Нажми на кнопку Repeat Stage.', templatePrompt: 'Зажми кнопку мыши и обведи область (например, слово VICTORY). Отпусти, чтобы сохранить шаблон.',
+            startTemplatePrompt: 'Зажми кнопку мыши и обведи часть кнопки Start Game (слово START или иконку, без рамки). Отпусти, чтобы сохранить StartGame.bmp.',
+            slot1: 'Слот 1', slot2: 'Слот 2', slot3: 'Слот 3', slot4: 'Слот 4', slot5: 'Слот 5', slot6: 'Слот 6',
+            unitOffset: 'Смещение выбора юнита по Y (px)', marking: 'Разметка', clickImage: 'Нажми на изображение для разметки.',
+            slots: 'Слоты', undo: 'Отменить', doneSave: 'Готово / Сохранить', snapshotPreview: 'Предпросмотр снимка',
+            mapName: 'Название карты', confirm: 'Подтвердить',
+            languageHint: 'Язык сохранится для следующего запуска.', hotkeys: 'Горячие клавиши',
+            farmHotkey: 'Запуск / остановка фарма', rejoinHotkey: 'Запись переподключения', recordKey: 'Записать', pressKey: 'Нажми клавишу...',
+            hotkeyCaptureTitle: 'Назначение горячей клавиши', hotkeyCapturePrompt: 'Нажмите клавишу или сочетание:', hotkeyCaptureHint: 'Например: Ctrl+F8 или F9',
+            hotkeyHint: 'Нажми «Записать», затем клавишу или сочетание, например Ctrl+F8.', delays: 'Задержки (мс)',
+            placeUnit: 'Установка юнита', betweenUnits: 'Между юнитами', upgradeClick: 'Клик улучшения',
+            autoClick: 'Автоклик', startGame: 'Старт игры', stageCheck: 'Проверка этапа',
+            afterHover: 'После наведения', mouseSpeed: 'Скорость мыши', smoothMouse: 'Включить плавное движение мыши',
+            camera: 'Камера', zoomScrolls: 'Прокрутка зума', enableZoom: 'Включить зум камеры перед установкой юнитов',
+            enableTopCamera: 'Включить верхний ракурс камеры', topHint: 'Сначала камера двигается вперёд и вниз, затем применяется прокрутка зума.',
+            applyTop: 'Применить верхний ракурс', applyZoom: 'Применить зум', zoomSnapshot: 'Зум + снимок',
+            imageSearch: 'Поиск изображения', variation: 'Допуск (*N)', pixelSearch: 'Поиск пикселей',
+            centerX: 'Центр X', centerY: 'Центр Y', radius: 'Радиус', color: 'Цвет', colorVar: 'Допуск цвета',
+            autoRejoin: 'Автопереподключение (сбой/ошибка)', vipHelp: 'Как получить VIP-ссылку', enabled: 'Включено',
+            vipShareLink: 'VIP-ссылка', maxAttempts: 'Максимум попыток', waitTimeout: 'Тайм-аут ожидания (с)',
+            resumeDelay: 'Задержка продолжения (с)', postActionsDelay: 'Задержка действий (с)',
+            captureDisconnected: 'Снять Disconnected', testDetection: 'Проверить обнаружение', postRejoin: 'После переподключения:',
+            record: 'Записать', test: 'Проверить', clear: 'Очистить', actions: '0 действий', vipGuideTitle: 'Как получить VIP-ссылку',
+            vipGuide1: '<b>1.</b> Открой Roblox → страницу игры → <b>⋮</b> (три точки) → <b>Configure Private Servers</b>',
+            vipGuide2: '<b>2.</b> Нажми <b>Regenerate</b>, чтобы создать новую ссылку (или используй существующую)',
+            vipGuide3: '<b>3.</b> Скопируй полную ссылку, например:<br><code>https://www.roblox.com/share?code=abc123...&amp;type=Server</code>',
+            vipGuide4: '<b>4.</b> Вставь её в поле <b>VIP-ссылка</b> выше',
+            vipGuide5: '<b>5.</b> Включи настройку и нажми <b>Сохранить</b>', cancel: 'Отмена', save: 'Сохранить'
+        }
+    };
+    settingsI18n.en.discordBot = 'Discord bot';
+    settingsI18n.en.mapChangeHotkey = 'Map Entry Record';
+    settingsI18n.en.mapEntryActions = 'Map Entry Actions:';
+    settingsI18n.en.mapEntryActionsDelay = 'Map Entry Actions Delay (s)';
+    settingsI18n.en.botAutoStart = 'Start Discord bot with macro';
+    settingsI18n.en.botToken = 'Bot token';
+    settingsI18n.en.botGuildId = 'Server ID (optional)';
+    settingsI18n.en.botAllowedUsers = 'Allowed user IDs (optional)';
+    settingsI18n.en.botStart = 'Start bot';
+    settingsI18n.en.botStop = 'Stop bot';
+    settingsI18n.en.botStopped = 'Stopped';
+    settingsI18n.en.botHint = 'Install dependencies from bot/requirements.txt. Keep the token private.';
+    settingsI18n.ru.discordBot = '\u0411\u043e\u0442 Discord';
+    settingsI18n.ru.mapChangeHotkey = '\u0417\u0430\u043f\u0438\u0441\u044c \u0432\u0445\u043e\u0434\u0430 \u043d\u0430 \u043a\u0430\u0440\u0442\u0443';
+    settingsI18n.ru.mapEntryActions = '\u0414\u0435\u0439\u0441\u0442\u0432\u0438\u044f \u0432\u0445\u043e\u0434\u0430 \u043d\u0430 \u043a\u0430\u0440\u0442\u0443:';
+    settingsI18n.ru.mapEntryActionsDelay = '\u0417\u0430\u0434\u0435\u0440\u0436\u043a\u0430 \u043f\u043e\u0441\u043b\u0435 \u0434\u0435\u0439\u0441\u0442\u0432\u0438\u0439 \u0432\u0445\u043e\u0434\u0430 (\u0441)';
+    settingsI18n.ru.botAutoStart = '\u0417\u0430\u043f\u0443\u0441\u043a\u0430\u0442\u044c Discord-\u0431\u043e\u0442\u0430 \u0432\u043c\u0435\u0441\u0442\u0435 \u0441 \u043c\u0430\u043a\u0440\u043e\u0441\u043e\u043c';
+    settingsI18n.ru.botToken = '\u0422\u043e\u043a\u0435\u043d \u0431\u043e\u0442\u0430';
+    settingsI18n.ru.botGuildId = '\u0418\u0434\u0435\u043d\u0442\u0438\u0444\u0438\u043a\u0430\u0442\u043e\u0440 \u0441\u0435\u0440\u0432\u0435\u0440\u0430 (\u043d\u0435\u043e\u0431\u044f\u0437\u0430\u0442\u0435\u043b\u044c\u043d\u043e)';
+    settingsI18n.ru.botAllowedUsers = '\u0420\u0430\u0437\u0440\u0435\u0448\u0451\u043d\u043d\u044b\u0435 Discord ID (\u043d\u0435\u043e\u0431\u044f\u0437\u0430\u0442\u0435\u043b\u044c\u043d\u043e)';
+    settingsI18n.ru.botStart = '\u0417\u0430\u043f\u0443\u0441\u0442\u0438\u0442\u044c \u0431\u043e\u0442\u0430';
+    settingsI18n.ru.botStop = '\u041e\u0441\u0442\u0430\u043d\u043e\u0432\u0438\u0442\u044c \u0431\u043e\u0442\u0430';
+    settingsI18n.ru.botStopped = '\u041e\u0441\u0442\u0430\u043d\u043e\u0432\u043b\u0435\u043d';
+    settingsI18n.ru.botHint = '\u0423\u0441\u0442\u0430\u043d\u043e\u0432\u0438 \u0437\u0430\u0432\u0438\u0441\u0438\u043c\u043e\u0441\u0442\u0438 \u0438\u0437 bot/requirements.txt. \u041d\u0435 \u043f\u0443\u0431\u043b\u0438\u043a\u0443\u0439 \u0442\u043e\u043a\u0435\u043d.';
+    var currentLanguage = 'en';
+    var currentStatusRaw = 'Idle';
+    var currentStatusClass = '';
+    var currentCoords = ['', '', '', ''];
+    var currentMapName = '';
+    var currentRunCount = 0;
+    var rejoinRecordActive = false;
+    var mapEntryRecordActive = false;
+    var currentFarmHotkey = 'F9';
+    var currentRejoinRecordHotkey = 'F1';
+    var currentMapChangeHotkey = 'F2';
+    function formatHotkeyLabel(value) {
+        value = String(value || '');
+        var modifiers = '';
+        while (value.length && (value.charAt(0) === '^' || value.charAt(0) === '!' || value.charAt(0) === '+' || value.charAt(0) === '#')) {
+            var modifier = value.charAt(0);
+            modifiers += modifier === '^' ? 'Ctrl+' : modifier === '!' ? 'Alt+' : modifier === '+' ? 'Shift+' : 'Win+';
+            value = value.substr(1);
+        }
+        var names = { 'Esc': 'Esc', 'PgUp': 'Page Up', 'PgDn': 'Page Down', 'Space': 'Space', 'Enter': 'Enter', 'Tab': 'Tab', 'Backspace': 'Backspace', 'Delete': 'Delete', 'Insert': 'Insert', 'Up': 'Up', 'Down': 'Down', 'Left': 'Left', 'Right': 'Right' };
+        return modifiers + (names[value] || value || '—');
+    }
+    function setHotkeyInputValue(input, value) {
+        if (!input) return;
+        value = value || 'F9';
+        input.setAttribute('data-hotkey-value', value);
+        input.value = formatHotkeyLabel(value);
+    }
+    function getHotkeyInputValue(selector, fallback) {
+        var input = $(selector);
+        if (!input) return fallback;
+        return input.getAttribute('data-hotkey-value') || fallback;
+    }
+    var activeHotkeyInput = null;
+    var activeHotkeyButton = null;
+    var nativeHotkeyCapture = false;
+    function stopHotkeyCapture() {
+        if (activeHotkeyButton) {
+            activeHotkeyButton.className = 'btn btn-ghost btn-sm hotkey-record';
+            activeHotkeyButton.textContent = uiText('recordKey');
+        }
+        activeHotkeyInput = null;
+        activeHotkeyButton = null;
+        nativeHotkeyCapture = false;
+        window.ahkCmd = 'hotkey-capture-stop';
+    }
+    function startHotkeyCapture(input, button) {
+        if (activeHotkeyInput) stopHotkeyCapture();
+        activeHotkeyInput = input;
+        activeHotkeyButton = button;
+        if (button) {
+            button.className = 'btn btn-ghost btn-sm hotkey-record recording';
+            button.textContent = uiText('pressKey');
+        }
+        if (input && input.select) input.select();
+        nativeHotkeyCapture = true;
+        var target = input && input.id === 'setRejoinHotkey' ? 'rejoin' : (input && input.id === 'setMapChangeHotkey' ? 'map-change' : 'farm');
+        window.ahkCmd = 'record-hotkey/' + target;
+    }
+    function uiText(key, fallback) {
+        var dict = settingsI18n[currentLanguage] || settingsI18n.en;
+        return dict[key] !== undefined ? dict[key] : (fallback || key);
+    }
+    function renderRunCount() {
+        var el = document.getElementById('runCount');
+        if (el) el.textContent = uiText('runs', 'Runs') + ': ' + currentRunCount;
+    }
+    window.ahkUpdateRunCount = function (count) {
+        count = parseInt(count, 10);
+        currentRunCount = isNaN(count) ? 0 : count;
+        renderRunCount();
+    };
+    function applySettingsLanguage(lang) {
+        var code = (lang === 'ru') ? 'ru' : 'en';
+        var dict = settingsI18n[code];
+        currentLanguage = code;
+        var nodes = document.querySelectorAll('[data-i18n]');
+        for (var i = 0; i < nodes.length; i++) {
+            var key = nodes[i].getAttribute('data-i18n');
+            if (dict[key] !== undefined) nodes[i].innerHTML = dict[key];
+        }
+        var tips = document.querySelectorAll('[data-i18n-tip]');
+        for (var j = 0; j < tips.length; j++) {
+            var tipKey = tips[j].getAttribute('data-i18n-tip');
+            if (dict[tipKey] !== undefined) tips[j].setAttribute('data-tip', dict[tipKey]);
+        }
+        var language = document.getElementById('setLanguage');
+        if (language) {
+            language.options[0].text = (code === 'ru') ? 'Английский' : 'English';
+            language.options[1].text = (code === 'ru') ? 'Русский' : 'Russian';
+            language.value = code;
+        }
+        var languageLabel = document.getElementById('setLanguageLabel');
+        if (languageLabel) languageLabel.textContent = (code === 'ru') ? 'Русский' : 'English';
+        var languageItems = document.querySelectorAll('#setLanguageList .custom-select-item');
+        for (var k = 0; k < languageItems.length; k++) {
+            var itemCode = languageItems[k].getAttribute('data-language-value');
+            languageItems[k].textContent = (itemCode === 'ru') ? 'Русский' : (code === 'ru' ? 'Английский' : 'English');
+            languageItems[k].className = 'custom-select-item' + (itemCode === code ? ' active' : '');
+        }
+        var actionCount = document.getElementById('rejoinActionCount');
+        var countMatch = actionCount && /\d+/.exec(actionCount.textContent);
+        if (countMatch && window.ahkRejoinActionCount)
+            window.ahkRejoinActionCount(parseInt(countMatch[0], 10));
+        if (window.ahkUpdateStatus) window.ahkUpdateStatus(currentStatusRaw, currentStatusClass);
+        renderRunCount();
+        if (window.ahkUpdateEmbed) window.ahkUpdateEmbed(state.embedded);
+        if (window.ahkUpdateFarm) window.ahkUpdateFarm(state.farming);
+        if (window.ahkUpdateCoords) window.ahkUpdateCoords(currentCoords[0], currentCoords[1], currentCoords[2], currentCoords[3]);
+        if (window.ahkUpdateMap) window.ahkUpdateMap(currentMapName);
+        if (window.ahkRejoinRecordState) window.ahkRejoinRecordState(rejoinRecordActive);
+        if (window.ahkMapRecordState) window.ahkMapRecordState(mapEntryRecordActive);
+        if (window.ahkSetHotkeys) window.ahkSetHotkeys(currentFarmHotkey, currentRejoinRecordHotkey, currentMapChangeHotkey);
+    }
+    window.ahkSetSettingsLanguage = function (lang) { applySettingsLanguage(lang); };
+    window.ahkSetLanguage = function (lang) { applySettingsLanguage(lang); };
+    window.ahkSetHotkeys = function (farmKey, rejoinKey, mapChangeKey) {
+        currentFarmHotkey = farmKey || 'F9';
+        currentRejoinRecordHotkey = rejoinKey || 'F1';
+        currentMapChangeHotkey = mapChangeKey || 'F2';
+        var farmInput = document.getElementById('setFarmHotkey');
+        var rejoinInput = document.getElementById('setRejoinHotkey');
+        var mapChangeInput = document.getElementById('setMapChangeHotkey');
+        setHotkeyInputValue(farmInput, currentFarmHotkey);
+        setHotkeyInputValue(rejoinInput, currentRejoinRecordHotkey);
+        setHotkeyInputValue(mapChangeInput, currentMapChangeHotkey);
+        if (typeof setFarmUI === 'function') setFarmUI(state.farming);
+        if (window.ahkRejoinRecordState) window.ahkRejoinRecordState(rejoinRecordActive);
+    };
+    window.ahkHotkeyCaptureFinished = function (farmKey, rejoinKey, mapChangeKey) {
+        nativeHotkeyCapture = false;
+        var overlay = document.getElementById('hotkeyCaptureOverlay');
+        if (overlay) overlay.className = 'hotkey-capture-overlay';
+        if (window.ahkSetHotkeys) window.ahkSetHotkeys(farmKey, rejoinKey, mapChangeKey);
+        if (activeHotkeyInput) stopHotkeyCapture();
+    };
+    window.ahkHotkeyCaptureCanceled = function () {
+        nativeHotkeyCapture = false;
+        var overlay = document.getElementById('hotkeyCaptureOverlay');
+        if (overlay) overlay.className = 'hotkey-capture-overlay';
+        if (activeHotkeyInput) stopHotkeyCapture();
+    };
+    window.ahkOpenHotkeyCapture = function (target, value) {
+        nativeHotkeyCapture = true;
+        var overlay = document.getElementById('hotkeyCaptureOverlay');
+        var key = document.getElementById('hotkeyCaptureKey');
+        if (key) key.textContent = formatHotkeyLabel(value || (target === 'rejoin' ? currentRejoinRecordHotkey : (target === 'map-change' ? currentMapChangeHotkey : currentFarmHotkey)));
+        if (overlay) overlay.className = 'hotkey-capture-overlay open';
+    };
+    window.ahkSetHotkeyCapture = function (value) {
+        var key = document.getElementById('hotkeyCaptureKey');
+        if (key) key.textContent = formatHotkeyLabel(value);
+    };
+
+    function syncColorSwatch(hex) {
+        var swatch = document.getElementById('setStartGameColorSwatch');
+        if (!swatch) return;
+        hex = (hex || '').replace('#', '');
+        if (/^[0-9A-Fa-f]{6}$/.test(hex)) swatch.style.backgroundColor = '#' + hex;
+    }
+
     /* ---- Settings Modal Init ---- */
 function initSettingsModal(m) {
-	        var btnSave = document.getElementById('btnSettingsSave');
-	        if (btnSave) on(btnSave, 'click', function () {
+	        var languageSelect = $('#setLanguage');
+	        if (languageSelect) on(languageSelect, 'change', function () { applySettingsLanguage(languageSelect.value); });
+	        var languageBtn = $('#setLanguageBtn');
+	        var languageList = $('#setLanguageList');
+	        if (languageBtn && languageList) {
+	            on(languageBtn, 'click', function (e) {
+	                e = e || window.event;
+	                if (e.stopPropagation) e.stopPropagation();
+	                languageList.className = 'custom-select-list' + (languageList.className.indexOf('open') === -1 ? ' open' : '');
+	            });
+	            var languageItems = languageList.querySelectorAll('.custom-select-item');
+	            for (var li = 0; li < languageItems.length; li++) {
+	                (function (item) {
+	                    on(item, 'click', function () {
+	                        if (languageSelect) languageSelect.value = item.getAttribute('data-language-value');
+	                        applySettingsLanguage(languageSelect ? languageSelect.value : 'en');
+	                        languageList.className = 'custom-select-list';
+	                    });
+	                })(languageItems[li]);
+	            }
+	            on(document, 'click', function (e) {
+	                var tgt = (e || window.event).target || (e || window.event).srcElement;
+	                if (tgt !== languageBtn && !languageBtn.contains(tgt) && tgt !== languageList && !languageList.contains(tgt))
+	                    languageList.className = 'custom-select-list';
+	            });
+	        }
+	        applySettingsLanguage(languageSelect ? languageSelect.value : 'en');
+        setHotkeyInputValue(document.getElementById('setFarmHotkey'), currentFarmHotkey);
+        setHotkeyInputValue(document.getElementById('setRejoinHotkey'), currentRejoinRecordHotkey);
+        setHotkeyInputValue(document.getElementById('setMapChangeHotkey'), currentMapChangeHotkey);
+        var btnSave = document.getElementById('btnSettingsSave');
+        var hotkeyNames = {
+            ' ': 'Space', 'Escape': 'Esc', 'Esc': 'Esc', 'Enter': 'Enter', 'Tab': 'Tab',
+            'Backspace': 'Backspace', 'Delete': 'Delete', 'Insert': 'Insert',
+            'Home': 'Home', 'End': 'End', 'PageUp': 'PgUp', 'PageDown': 'PgDn',
+            'ArrowUp': 'Up', 'ArrowDown': 'Down', 'ArrowLeft': 'Left', 'ArrowRight': 'Right',
+            'CapsLock': 'CapsLock', 'PrintScreen': 'PrintScreen', 'ScrollLock': 'ScrollLock',
+            'Pause': 'Pause', 'NumLock': 'NumLock'
+        };
+        function keyNameFromCode(code) {
+            var names = { 8: 'Backspace', 9: 'Tab', 13: 'Enter', 19: 'Pause', 20: 'CapsLock', 27: 'Esc', 32: 'Space', 33: 'PgUp', 34: 'PgDn', 35: 'End', 36: 'Home', 37: 'Left', 38: 'Up', 39: 'Right', 40: 'Down', 44: 'PrintScreen', 45: 'Insert', 46: 'Delete', 144: 'NumLock', 145: 'ScrollLock' };
+            if (code >= 112 && code <= 135) return 'F' + (code - 111);
+            if (code >= 65 && code <= 90) return String.fromCharCode(code);
+            if (code >= 48 && code <= 57) return String.fromCharCode(code);
+            return names[code] || '';
+        }
+        function captureHotkey(e) {
+            e = e || window.event;
+            var target = activeHotkeyInput;
+            if (!target) return false;
+            var key = e.key || '';
+            if (!key || key === 'Unidentified') key = keyNameFromCode(e.keyCode || e.which || 0);
+            if (key === 'Control' || key === 'Alt' || key === 'Shift' || key === 'Meta') {
+                if (e.preventDefault) e.preventDefault();
+                e.returnValue = false;
+                return false;
+            }
+            var name = hotkeyNames[key] || key;
+            if (/^F([1-9]|1[0-9]|2[0-4])$/i.test(name)) name = name.toUpperCase();
+            else if (/^[a-z]$/i.test(name)) name = name.toUpperCase();
+            if (!name || name.length > 20) return false;
+            var value = '';
+            if (e.ctrlKey) value += '^';
+            if (e.altKey) value += '!';
+            if (e.shiftKey) value += '+';
+            if (e.metaKey) value += '#';
+            value += name;
+            if (e.preventDefault) e.preventDefault();
+            e.returnValue = false;
+            setHotkeyInputValue(target, value);
+            captureHotkey.lastEvent = value;
+            captureHotkey.lastAt = new Date().getTime();
+            stopHotkeyCapture();
+            return true;
+        }
+        var hotkeyCapturePairs = [
+            { input: document.getElementById('setFarmHotkey'), button: document.getElementById('btnCaptureFarmHotkey') },
+            { input: document.getElementById('setRejoinHotkey'), button: document.getElementById('btnCaptureRejoinHotkey') },
+            { input: document.getElementById('setMapChangeHotkey'), button: document.getElementById('btnCaptureMapChangeHotkey') }
+        ];
+        for (var hk = 0; hk < hotkeyCapturePairs.length; hk++) {
+            (function (pair) {
+                if (pair.button) on(pair.button, 'click', function (e) {
+                    e = e || window.event;
+                    if (e.preventDefault) e.preventDefault();
+                    startHotkeyCapture(pair.input, pair.button);
+                });
+            })(hotkeyCapturePairs[hk]);
+        }
+        var btnHotkeyCaptureSave = document.getElementById('btnHotkeyCaptureSave');
+        var btnHotkeyCaptureCancel = document.getElementById('btnHotkeyCaptureCancel');
+        var btnHotkeyCaptureClose = document.getElementById('btnHotkeyCaptureClose');
+        if (btnHotkeyCaptureSave) on(btnHotkeyCaptureSave, 'click', function () { window.ahkCmd = 'record-hotkey-save'; });
+        if (btnHotkeyCaptureCancel) on(btnHotkeyCaptureCancel, 'click', function () { window.ahkCmd = 'record-hotkey-cancel'; });
+        if (btnHotkeyCaptureClose) on(btnHotkeyCaptureClose, 'click', function () { window.ahkCmd = 'record-hotkey-cancel'; });
+        // Делегируем события на документ: клавиша может быть нажата, пока
+        // фокус остаётся на кнопке записи, а не на readonly-поле.
+        function captureFromDocument(e) {
+            e = e || window.event;
+            if (!activeHotkeyInput || nativeHotkeyCapture) return;
+            captureHotkey(e);
+        }
+        on(document, 'keydown', captureFromDocument);
+        on(document, 'keyup', function (e) {
+            e = e || window.event;
+            if (!activeHotkeyInput || nativeHotkeyCapture) return;
+            var nowMs = new Date().getTime();
+            if (!captureHotkey.lastAt || nowMs - captureHotkey.lastAt > 250)
+                captureHotkey(e);
+        });
+        if (btnSave) on(btnSave, 'click', function () {
 	            var vals = [
 	                $('#setClickDelay').value,
 	                $('#setSlotClickDelay').value,
@@ -1653,10 +2208,24 @@ function initSettingsModal(m) {
 	                $('#setMouseSpeedEnabled').checked ? '1' : '0',
 	                $('#setZoomScrolls').value,
 	                $('#setZoomEnabled').checked ? '1' : '0',
-	                $('#setTopCameraEnabled').checked ? '1' : '0'
-	            ];
+	                $('#setTopCameraEnabled').checked ? '1' : '0',
+                $('#setLanguage').value || 'en',
+                getHotkeyInputValue('#setFarmHotkey', 'F9'),
+                getHotkeyInputValue('#setRejoinHotkey', 'F1'),
+                getHotkeyInputValue('#setMapChangeHotkey', 'F2'),
+                $('#setBotAutoStart').checked ? '1' : '0',
+                $('#setBotAutoStart').checked ? '1' : '0',
+                encodeURIComponent($('#setBotToken').value || '__EMPTY__'),
+                encodeURIComponent($('#setBotGuildId').value || '__EMPTY__'),
+                encodeURIComponent($('#setBotAllowedUsers').value || '__EMPTY__'),
+                $('#setBotMapPostActionsDelay').value
+            ];
             window.ahkCmd = 'settings-save/' + vals.join('/');
         });
+        var btnBotStart = document.getElementById('btnBotStart');
+        var btnBotStop = document.getElementById('btnBotStop');
+        if (btnBotStart) on(btnBotStart, 'click', function () { window.ahkCmd = 'bot-start'; });
+        if (btnBotStop) on(btnBotStop, 'click', function () { window.ahkCmd = 'bot-stop'; });
         var mouseSpeedEnabled = $('#setMouseSpeedEnabled');
         var mouseSpeedInput = $('#setMouseSpeed');
         function syncMouseSpeedControl() {
@@ -1680,15 +2249,24 @@ function initSettingsModal(m) {
 	        // Sync color picker <-> text
 	        var picker = $('#setStartGameColorPicker');
 	        var text = $('#setStartGameColor');
+	        var swatch = $('#setStartGameColorSwatch');
 	        if (picker && text) {
 	            on(picker, 'input', function () {
 	                text.value = picker.value.replace('#', '');
+	                syncColorSwatch(text.value);
 	            });
 	            on(text, 'input', function () {
-	                if (/^[0-9A-Fa-f]{6}$/.test(text.value))
+                if (/^[0-9A-Fa-f]{6}$/.test(text.value)) {
 	                    picker.value = '#' + text.value;
+	                    syncColorSwatch(text.value);
+	                }
 	            });
 	        }
+	        if (swatch) on(swatch, 'click', function () {
+	            if (picker && picker.click) picker.click();
+	            if (text) text.focus();
+	        });
+	        if (text) syncColorSwatch(text.value);
 	        // Auto-Rejoin: capture / test Disconnected screen template
 	        var btnCapDc = document.getElementById('btnCaptureDisconnected');
 	        if (btnCapDc) on(btnCapDc, 'click', function () {
@@ -1736,11 +2314,20 @@ var btnTestDc = document.getElementById('btnTestDisconnected');
         if (btnClear2) on(btnClear2, 'click', function () {
             window.ahkCmd = 'clear-rejoin';
         });
+        var btnMapEntryRecord = document.getElementById('btnMapEntryRecord');
+        if (btnMapEntryRecord) on(btnMapEntryRecord, 'click', function () {
+            window.ahkCmd = 'record-map-entry';
+        });
     }
     window.ahkLoadSettings = function(cd, scd, ucd, acd, usd, sgd, hd, ms, iv, sgc, sgcv, sgcx, sgcy, sgr,
                                        rjEnabled, rjLink, rjMaxAttempts, rjWaitTimeout, rjPostJoinDelay, rjPostActionsDelay,
-                                       msEnabled, zoomScrolls, zoomEnabled, topCameraEnabled) {
+                                       msEnabled, zoomScrolls, zoomEnabled, topCameraEnabled, language, farmHotkey, rejoinHotkey,
+                                       botEnabled, botAutoStart, botToken, botGuildId, botAllowedUsers, mapChangeHotkey, botMapPostActionsDelay) {
 	        var set = function(id, v) { var el = $(id); if (el) el.value = v; };
+	        var languageSelect = $('#setLanguage');
+	        if (languageSelect) languageSelect.value = (language === 'ru') ? 'ru' : 'en';
+	        applySettingsLanguage(language === 'ru' ? 'ru' : 'en');
+        if (window.ahkSetHotkeys) window.ahkSetHotkeys(farmHotkey || 'F9', rejoinHotkey || 'F1', mapChangeHotkey || 'F2');
 	        set('#setClickDelay', cd); set('#setSlotClickDelay', scd);
 	        set('#setUpgradeClickDelay', ucd); set('#setAutoClickDelay', acd);
         set('#setUnitSleepDelay', usd); set('#setStartGameDelay', sgd);
@@ -1759,6 +2346,7 @@ var btnTestDc = document.getElementById('btnTestDisconnected');
 	        set('#setStartGameColor', colorHex);
 	        var picker = $('#setStartGameColorPicker');
 	        if (picker && colorHex) picker.value = '#' + colorHex;
+	        syncColorSwatch(colorHex);
 	        set('#setStartGameColorVar', sgcv);
 	        set('#setStartGameCenterX', sgcx); set('#setStartGameCenterY', sgcy);
 	        set('#setStartGameRadius', sgr);
@@ -1768,7 +2356,13 @@ var btnTestDc = document.getElementById('btnTestDisconnected');
 	        set('#setRejoinMaxAttempts', rjMaxAttempts);
 	        set('#setRejoinWaitTimeout', rjWaitTimeout);
 	        set('#setRejoinPostJoinDelay', rjPostJoinDelay);
-	        set('#setRejoinPostActionsDelay', rjPostActionsDelay || '3');
+        set('#setRejoinPostActionsDelay', rjPostActionsDelay || '3');
+        var botAutoStartChk = $('#setBotAutoStart');
+        if (botAutoStartChk) botAutoStartChk.checked = (botAutoStart == '1' || botAutoStart === true);
+        set('#setBotToken', botToken === '__EMPTY__' ? '' : (botToken || ''));
+        set('#setBotGuildId', botGuildId === '__EMPTY__' ? '' : (botGuildId || ''));
+        set('#setBotAllowedUsers', botAllowedUsers === '__EMPTY__' ? '' : (botAllowedUsers || ''));
+        set('#setBotMapPostActionsDelay', botMapPostActionsDelay === undefined ? '3' : botMapPostActionsDelay);
 	    };
 
     /* ---- Presets Modal Init ---- */
@@ -1817,7 +2411,7 @@ var btnTestDc = document.getElementById('btnTestDisconnected');
             list.innerHTML = '';
             var div = document.createElement('div');
             div.className = 'preset-empty';
-            div.textContent = 'No saved presets';
+            div.textContent = uiText('noSavedPresets');
             list.appendChild(div);
         } else {
             list.innerHTML = '';
@@ -1887,16 +2481,32 @@ var btnTestDc = document.getElementById('btnTestDisconnected');
     window.ahkRejoinActionCount = function (count) {
         var el = document.getElementById('rejoinActionCount');
         if (el) {
-            el.textContent = count + ' action' + (count !== 1 ? 's' : '');
+            var langEl = document.getElementById('setLanguage');
+            if (langEl && langEl.value === 'ru')
+                el.textContent = count + (count === 1 ? ' действие' : ' действий');
+            else
+                el.textContent = count + ' action' + (count !== 1 ? 's' : '');
         }
     };
     window.ahkRejoinRecordState = function (active) {
+        rejoinRecordActive = !!active;
         var btn = document.getElementById('btnRejoinRecord');
         if (btn) {
-            btn.textContent = active ? 'Stop' : 'Record F1';
+                btn.textContent = active ? uiText('stop') : uiText('record') + ' ' + formatHotkeyLabel(currentRejoinRecordHotkey);
             btn.style.background = active ? '#ef4444' : '';
             btn.style.borderColor = active ? '#ef4444' : '';
         }
+    };
+    window.ahkMapRecordState = function (active, mapName, count) {
+        mapEntryRecordActive = !!active;
+        var btn = document.getElementById('btnMapEntryRecord');
+        if (btn) {
+            btn.textContent = active ? uiText('stop') : uiText('record') + ' ' + formatHotkeyLabel(currentMapChangeHotkey);
+            btn.style.background = active ? '#ef4444' : '';
+            btn.style.borderColor = active ? '#ef4444' : '';
+        }
+        var countEl = document.getElementById('mapEntryActionCount');
+        if (countEl && count !== undefined) countEl.textContent = String(count) + ' actions';
     };
 
     /* ---- Update status bridge (called from AHK via execScript) ---- */
@@ -2039,7 +2649,7 @@ var btnTestDc = document.getElementById('btnTestDisconnected');
                 popEl.className = 'mark-unitpop';
                 var headEl = document.createElement('div');
                 headEl.className = 'mark-unitpop-head';
-                headEl.textContent = 'Unit number';
+                headEl.textContent = uiText('unitNumber');
                 popEl.appendChild(headEl);
                 var gridEl = document.createElement('div');
                 gridEl.className = 'mark-unitpop-grid';
@@ -2094,6 +2704,15 @@ var btnTestDc = document.getElementById('btnTestDisconnected');
             });
         }
     }
+    function translateMarkPrompt(prompt) {
+        if (!prompt || currentLanguage === 'ru') return prompt;
+        if (prompt.indexOf('Кликни на кнопку Upgrade') === 0) return uiText('clickUpgrade');
+        if (prompt.indexOf('Кликни на кнопку Start Game') === 0) return uiText('clickStartGame');
+        if (prompt.indexOf('Кликни на кнопку Repeat Stage') === 0) return uiText('clickRepeatStage');
+        if (prompt.indexOf('Зажми кнопку мыши') === 0 && prompt.indexOf('Start Game') !== -1) return uiText('startTemplatePrompt');
+        if (prompt.indexOf('Зажми кнопку мыши') === 0) return uiText('templatePrompt');
+        return prompt;
+    }
     // AHK → JS: задаёт режим модалки ('slots' / 'template' / 'calib') и путь к картинке
     window.ahkLoadMark = function(imgUrl, mode, prompt) {
         var img = $('#markImg');
@@ -2106,12 +2725,12 @@ var btnTestDc = document.getElementById('btnTestDisconnected');
         var list = $('#markList');
         if (list) list.innerHTML = '';
         var pEl = $('#markPrompt');
-        if (pEl && prompt) pEl.textContent = prompt;
+        if (pEl && prompt) pEl.textContent = translateMarkPrompt(prompt);
         var tEl = $('#markTitle');
         if (tEl) {
-            if (mode === 'template') tEl.textContent = 'Capture Template';
-            else if (mode === 'calib') tEl.textContent = 'Calibrate';
-            else tEl.textContent = 'Mark Slots';
+            if (mode === 'template') tEl.textContent = uiText('captureTemplate');
+            else if (mode === 'calib') tEl.textContent = uiText('calibrate');
+            else tEl.textContent = uiText('markSlots');
         }
         // Режим теперь известен — ставим drag-select (template) или клик (slots/calib).
         // Делается здесь, а не в initMarkModal(), т.к. ahkLoadMark вызывается уже
@@ -2139,7 +2758,7 @@ var btnTestDc = document.getElementById('btnTestDisconnected');
             if (list) {
                 var div = document.createElement('div');
                 div.className = 'preset-item';
-                div.textContent = 'Slot ' + (i + 1) + ': unit ' + s.num + ' \u2192 (' + s.x + ', ' + s.y + ')';
+                div.textContent = uiText('slot') + ' ' + (i + 1) + ': ' + uiText('unit') + ' ' + s.num + ' \u2192 (' + s.x + ', ' + s.y + ')';
                 list.appendChild(div);
             }
             if (overlay && rect) {
@@ -2180,7 +2799,7 @@ var btnTestDc = document.getElementById('btnTestDisconnected');
     };
 
     /* ---- Init ---- */
-    log('TD Macro v1.0 ready.');
+    log('Mmacro v1.0 ready.');
 
     /* ---- Auto-show modal if URL has hash ---- */
     (function () {
