@@ -100,7 +100,7 @@ IfNotExist, %BotActionsDir%
     FileCreateDir, %BotActionsDir%
 
 ; ---- Автообновление с GitHub ----
-CURRENT_VERSION := "1.0.11"
+CURRENT_VERSION := "1.0.12"
 GH_REPO := "mozrze/Mmacro"           ; пользователь/репозиторий
 GH_TOKEN_FILE := A_ScriptDir . "\ahk\token.ini"
 GH_TOKEN := ""
@@ -174,6 +174,19 @@ OrigRH := 0
 AutoUpgradeEnabled := false
 AutoUpgradePriority := {1: 1, 2: 1, 3: 1, 4: 1, 5: 1, 6: 1}
 AutoUpgradeUnitOffsetY := 20   ; смещение вверх при клике по юниту
+
+; Режим фарма: units = расстановка юнитов, autoplay = только AutoPlay.
+; В AutoPlay-режиме шаблоны AutoPlayOff/AutoPlayOn проверяются постоянно,
+; поэтому после перезапуска этапа кнопка снова будет включена автоматически.
+FarmMode := "units"
+AutoPlayLastClickTick := 0
+AutoPlayLastStartClickTick := 0
+AutoPlayStartPending := false
+AutoPlayStartPendingSince := 0
+AutoPlayLastStageClickTick := 0
+AutoPlayLastHeartbeatTick := 0
+AutoPlayMissingTemplateWarned := false
+AutoPlayLastDetectionState := ""
 
 ; ---- состояние окна разметки/калибровки ----
 MarkMode := ""
@@ -466,6 +479,7 @@ LoadSettings() {
     global AutoClickDelay, UnitSleepDelay, StartGameDelay, HoverDelay, MouseSpeed, MouseSpeedEnabled, ZoomEnabled, ZoomScrolls, TopCameraEnabled, ImgVariation
     global StartGameColor, StartGameColorVar, StartGameCenterX, StartGameCenterY, StartGameRadius
     global AutoUpgradePriority, AutoUpgradeUnitOffsetY, AutoUpgradeEnabled
+    global FarmMode
     global RejoinEnabled, RejoinShareLink, RejoinMaxAttempts, RejoinWaitTimeout, RejoinPostJoinDelay
     global RejoinPostActionsDelay, BotMapPostActionsDelay
     global BotToken, BotEnabled, BotAutoStart, BotGuildId, BotAllowedUserIds
@@ -520,6 +534,9 @@ LoadSettings() {
     IniRead, v, %SettingsFile%, AutoUpgrade, Enabled, %AutoUpgradeEnabled%
     AutoUpgradeEnabled := (v = 1 || v = "true") ? true : false
 
+    IniRead, v, %SettingsFile%, Farm, Mode, %FarmMode%
+    FarmMode := (v = "autoplay") ? "autoplay" : "units"
+
     IniRead, v, %SettingsFile%, Rejoin, Enabled, %RejoinEnabled%
     RejoinEnabled := (v = 1 || v = "true") ? true : false
     IniRead, v, %SettingsFile%, Rejoin, ShareLink, %RejoinShareLink%
@@ -554,6 +571,7 @@ SaveSettings() {
     global AutoClickDelay, UnitSleepDelay, StartGameDelay, HoverDelay, MouseSpeed, MouseSpeedEnabled, ZoomEnabled, ZoomScrolls, TopCameraEnabled, ImgVariation
     global StartGameColor, StartGameColorVar, StartGameCenterX, StartGameCenterY, StartGameRadius
     global AutoUpgradePriority, AutoUpgradeUnitOffsetY, AutoUpgradeEnabled
+    global FarmMode
     global RejoinEnabled, RejoinShareLink, RejoinMaxAttempts, RejoinWaitTimeout, RejoinPostJoinDelay
     global RejoinPostActionsDelay, BotMapPostActionsDelay
     global BotToken, BotEnabled, BotAutoStart, BotGuildId, BotAllowedUserIds
@@ -579,6 +597,7 @@ SaveSettings() {
         IniWrite, % AutoUpgradePriority[A_Index], %SettingsFile%, AutoUpgrade, Priority%A_Index%
     IniWrite, %AutoUpgradeUnitOffsetY%, %SettingsFile%, AutoUpgrade, UnitOffsetY
     IniWrite, % (AutoUpgradeEnabled ? 1 : 0), %SettingsFile%, AutoUpgrade, Enabled
+    IniWrite, %FarmMode%, %SettingsFile%, Farm, Mode
 
     IniWrite, % (RejoinEnabled ? 1 : 0), %SettingsFile%, Rejoin, Enabled
     IniWrite, %RejoinShareLink%, %SettingsFile%, Rejoin, ShareLink
@@ -770,11 +789,29 @@ GetClientSize(hwnd, ByRef cw, ByRef ch) {
 
 ; ===================== ПОИСК ИЗОБРАЖЕНИЙ (fallback) =====================
 FindGameButton(imageFile, ByRef foundX, ByRef foundY) {
-    global GameAreaW, GameAreaH, ImgVariation
+    global GameAreaW, GameAreaH, ImgVariation, WinTitle, Embedded, GameHwnd
     if (!GameAreaOrigin(sx, sy))
         return false
-    ex := sx + GameAreaW
-    ey := sy + GameAreaH
+    ; После перезапуска Roblox клиентская область может получить другой
+    ; размер. Не ищем за её пределами, иначе ImageSearch может молча не найти
+    ; кнопку, хотя она видна на экране.
+    ; При встраивании WinTitle указывает на исходное окно Roblox, а поиск
+    ; выполняется по GameHwnd. После SetParent размеры этих окон могут
+    ; отличаться, поэтому берём размер того же окна, откуда взят origin.
+    hwnd := WinExist(WinTitle)
+    if (Embedded && GameHwnd && DllCall("IsWindow", "ptr", GameHwnd))
+        hwnd := GameHwnd
+    if (hwnd) {
+        GetClientSize(hwnd, clientW, clientH)
+        searchW := (clientW > 0 && clientW < GameAreaW) ? clientW : GameAreaW
+        searchH := (clientH > 0 && clientH < GameAreaH) ? clientH : GameAreaH
+    }
+    if (searchW = "")
+        searchW := GameAreaW
+    if (searchH = "")
+        searchH := GameAreaH
+    ex := sx + searchW
+    ey := sy + searchH
     ImageSearch, foundX, foundY, sx, sy, ex, ey, *%ImgVariation% %imageFile%
     if (ErrorLevel = 0)
         return true
@@ -794,6 +831,28 @@ FindGameButtonByColor(color, variation, ByRef foundX, ByRef foundY) {
     sy := cy - StartGameRadius
     ex := cx + StartGameRadius
     ey := cy + StartGameRadius
+    PixelSearch, foundX, foundY, sx, sy, ex, ey, %color%, %variation%, Fast RGB
+    return (ErrorLevel = 0)
+}
+
+; Поиск зелёной кнопки Start Game около её калиброванной точки.
+; Старый поиск использовал StartGameCenterY=500, тогда как в текущем UI
+; кнопка находится примерно на Y=214, поэтому он искал ниже кнопки.
+FindStartGameByColor(color, variation, ByRef foundX, ByRef foundY) {
+    global StartGameX, StartGameY, GameAreaW, GameAreaH
+    if (!GameAreaOrigin(baseX, baseY))
+        return false
+    if (StartGameX > 0 && StartGameY > 0) {
+        sx := baseX + StartGameX - 180
+        sy := baseY + StartGameY - 35
+        ex := baseX + StartGameX + 180
+        ey := baseY + StartGameY + 90
+    } else {
+        sx := baseX + 300
+        sy := baseY + 120
+        ex := baseX + GameAreaW - 300
+        ey := baseY + 360
+    }
     PixelSearch, foundX, foundY, sx, sy, ex, ey, %color%, %variation%, Fast RGB
     return (ErrorLevel = 0)
 }
@@ -1782,6 +1841,65 @@ BtnCaptureAutoUpgrade:
     OpenMarkGui("Зажми кнопку мыши и обведи кнопку AutoUpgrade. Отпусти — шаблон сохранится как AutoUpgrade.bmp.")
 return
 
+; ===================== ФАРМ ТОЛЬКО ЧЕРЕЗ AUTOPLAY =====================
+; Для надёжности используются два отдельных шаблона кнопки:
+; AutoPlayOff.bmp и AutoPlayOn.bmp. Снимай только кнопку, без большого фона.
+BtnCaptureAutoPlayOff:
+    if !WinExist(WinTitle) {
+        AddLog("Игра не найдена — сначала встрой Roblox")
+        return
+    }
+    CaptureForMarking(TempShot)
+    MarkMode := "template"
+    TemplateName := "AutoPlayOff"
+    MarkList := []
+    OpenMarkGui("Обведи кнопку AutoPlay в выключенном состоянии. Отпусти — шаблон сохранится как AutoPlayOff.bmp.")
+return
+
+BtnCaptureAutoPlayOn:
+    if !WinExist(WinTitle) {
+        AddLog("Игра не найдена — сначала встрой Roblox")
+        return
+    }
+    CaptureForMarking(TempShot)
+    MarkMode := "template"
+    TemplateName := "AutoPlayOn"
+    MarkList := []
+    OpenMarkGui("Обведи кнопку AutoPlay во включенном состоянии. Отпусти — шаблон сохранится как AutoPlayOn.bmp.")
+return
+
+BtnTestAutoPlayOff:
+    full := AutoPlayTemplateFile("off")
+    if !FileExist(full) {
+        AddLog("AutoPlayOff-шаблон отсутствует в images\\ — сначала сними выключенную кнопку.", "warn")
+        return
+    }
+    if (IsTemplateTooBig(full)) {
+        AddLog("AutoPlayOff-шаблон слишком большой — сними только кнопку или её текст.", "warn")
+        return
+    }
+    if (FindGameButton(full, bx, by))
+        AddLog("Проверка: выключенный AutoPlay найден в (" bx "," by ")")
+    else
+        AddLog("Проверка: выключенный AutoPlay не найден на текущем экране", "warn")
+return
+
+BtnTestAutoPlayOn:
+    full := AutoPlayTemplateFile("on")
+    if !FileExist(full) {
+        AddLog("AutoPlayOn-шаблон отсутствует в images\\ — сначала сними включённую кнопку.", "warn")
+        return
+    }
+    if (IsTemplateTooBig(full)) {
+        AddLog("AutoPlayOn-шаблон слишком большой — сними только кнопку или её текст.", "warn")
+        return
+    }
+    if (FindGameButton(full, bx, by))
+        AddLog("Проверка: включённый AutoPlay найден в (" bx "," by ")")
+    else
+        AddLog("Проверка: включённый AutoPlay не найден на текущем экране", "warn")
+return
+
 BtnTestAutoUpgrade:
     global ImagesDir
     full := ImagesDir . "\AutoUpgrade.bmp"
@@ -1840,15 +1958,17 @@ return
 ; ===================== СТАРТ / СТОП ФАРМА =====================
 BtnStartStop:
 FarmHotkeyAction:
-    if (SelectedMapCtl = "") {
-        AddLog("Сначала выбери карту", "warn")
-        WBH_CallJS("ahkUpdateStatus('Select a map', 'error')")
-        return
-    }
-    if (!MapCoords.HasKey(SelectedMapCtl)) {
-        AddLog("Нельзя запустить: """ SelectedMapCtl """ не размечена", "warn")
-        WBH_CallJS("ahkUpdateStatus('Map not marked', 'error')")
-        return
+    if (FarmMode != "autoplay") {
+        if (SelectedMapCtl = "") {
+            AddLog("Сначала выбери карту", "warn")
+            WBH_CallJS("ahkUpdateStatus('Select a map', 'error')")
+            return
+        }
+        if (!MapCoords.HasKey(SelectedMapCtl)) {
+            AddLog("Нельзя запустить: """ SelectedMapCtl """ не размечена", "warn")
+            WBH_CallJS("ahkUpdateStatus('Map not marked', 'error')")
+            return
+        }
     }
     if !WinExist(WinTitle) {
         AddLog("Игра не найдена", "warn")
@@ -1863,11 +1983,33 @@ FarmHotkeyAction:
         WBH_CallJS("ahkUpdateFarm(true)")
         PushFarmRunCount()
         WriteBotState()
-        AddLog("Старт фарма: " SelectedMapCtl)
-        SetTimer, RunPlacementSequence, -100
+        if (FarmMode = "autoplay") {
+            AutoPlayLastClickTick := 0
+            AutoPlayLastStartClickTick := 0
+            AutoPlayStartPending := false
+            AutoPlayStartPendingSince := 0
+            AutoPlayLastStageClickTick := 0
+            AutoPlayLastHeartbeatTick := 0
+            AutoPlayMissingTemplateWarned := false
+            AutoPlayLastDetectionState := ""
+            AddLog("Старт фарма AutoPlay: карта и расстановка не используются")
+            WBH_CallJS("ahkUpdateStatus('Watching AutoPlay...', 'running')")
+            SetTimer, AutoPlayWatch, 250
+            ; Не ставим здесь отрицательный период: в AHK он заменяет
+            ; периодический таймер одноразовым запуском.
+            Gosub, AutoPlayWatch
+            ; Резервный наблюдатель использует тот же таймер, что и обычный
+            ; режим больше не нужен: AutoPlayWatch сам является постоянным
+            ; наблюдателем и запускается каждые 250 мс.
+        } else {
+            AddLog("Старт фарма: " SelectedMapCtl)
+            SetTimer, RunPlacementSequence, -100
+        }
     } else {
         WBH_CallJS("ahkUpdateFarm(false)")
+        WBH_CallJS("ahkUpdateStatus('Idle', '')")
         AddLog("Фарм остановлен")
+        SetTimer, AutoPlayWatch, Off
         SetTimer, WatchNextStage, Off
         WriteBotState()
     }
@@ -2468,7 +2610,206 @@ ClearRejoinActions:
 return
 
 ; ---- Наблюдение за окончанием волны / победы / поражения ----
+AutoPlayTemplateFile(state) {
+    global ImagesDir
+    name := (state = "on") ? "AutoPlayOn" : "AutoPlayOff"
+    full := ImagesDir . "\" . name . ".bmp"
+    if !FileExist(full)
+        full := ImagesDir . "\" . name . ".png"
+    return full
+}
+
+GetTemplateSize(imageFile, ByRef tplW, ByRef tplH) {
+    tplW := 0
+    tplH := 0
+    if !FileExist(imageFile)
+        return false
+    file := FileOpen(imageFile, "r")
+    if !file
+        return false
+    file.Seek(0)
+    b0 := file.ReadUChar()
+    b1 := file.ReadUChar()
+    if (b0 = 0x42 && b1 = 0x4D) {
+        file.Seek(18)
+        tplW := file.ReadUInt()
+        file.Seek(22)
+        rawH := file.ReadUInt()
+        tplH := rawH
+        if (tplH > 0x7FFFFFFF)
+            tplH := 0x100000000 - tplH
+        file.Close()
+        return (tplW > 0 && tplH > 0)
+    }
+    if (b0 = 0x89 && b1 = 0x50) {
+        file.Seek(16)
+        tplW := file.ReadUChar()*16777216 + file.ReadUChar()*65536 + file.ReadUChar()*256 + file.ReadUChar()
+        file.Seek(20)
+        tplH := file.ReadUChar()*16777216 + file.ReadUChar()*65536 + file.ReadUChar()*256 + file.ReadUChar()
+        file.Close()
+        return (tplW > 0 && tplH > 0)
+    }
+    file.Close()
+    return false
+}
+
+ClickAutoPlayTemplate(imageFile, foundX, foundY) {
+    FocusEmbeddedGame()
+    if (!GetTemplateSize(imageFile, tplW, tplH))
+        return false
+    ; Кликаем по центру выделенной кнопки, а не по левому верхнему углу ImageSearch.
+    SmoothClick(foundX + tplW//2, foundY + tplH//2, 120)
+    return true
+}
+
+; Ищет Start Game заново и нажимает только после свежего ImageSearch/PixelSearch.
+; Возвращает true, если клик действительно выполнен.
+AutoPlayClickStartGame(startFile := "") {
+    global ImagesDir, StartGameColor, StartGameColorVar, StartGameX, StartGameY, TS_X, TS_Y
+    global AutoPlayLastStartClickTick
+    if (A_TickCount - AutoPlayLastStartClickTick < 2200)
+        return false
+    if (startFile = "") {
+        startFile := ImagesDir . "\StartGame.bmp"
+        if !FileExist(startFile)
+            startFile := ImagesDir . "\StartGame.png"
+    }
+    ; Сначала определяем наличие кнопки по её шаблону/тексту. Важно: текущий
+    ; StartGame.bmp может содержать заголовок «Start Game?», поэтому сам клик
+    ; выполняем не по найденному заголовку, а по сохранённой точке кнопки.
+    visible := false
+    if (FileExist(startFile) && !IsTemplateTooBig(startFile))
+        visible := FindGameButton(startFile, foundX, foundY)
+    if (!visible && StartGameColor != 0 && StartGameColor != "0x000000" && StartGameColor != "")
+        visible := FindStartGameByColor(StartGameColor, StartGameColorVar, foundX, foundY)
+    if (!visible)
+        return false
+
+    FocusEmbeddedGame()
+    if (StartGameX > 0 && StartGameY > 0) {
+        ToScreen(StartGameX, StartGameY)
+        SmoothClickMulti(TS_X, TS_Y, 2, 200, 400)
+        AddLog("AutoPlay: Start Game нажата по калиброванной точке (" StartGameX "," StartGameY ")")
+    } else if (FileExist(startFile) && GetTemplateSize(startFile, tplW, tplH)) {
+        SmoothClickMulti(foundX + tplW//2, foundY + tplH//2, 2, 200, 400)
+        AddLog("AutoPlay: Start Game нажата по центру шаблона")
+    } else {
+        return false
+    }
+    MoveMouseAway()
+    AutoPlayLastStartClickTick := A_TickCount
+    return true
+}
+
+; ---- Постоянный наблюдатель режима AutoPlay ----
+; В каждом цикле отдельно проверяются OFF, ON и Start Game. Если OFF найден,
+; AutoPlay включается; при совпадении обоих шаблонов приоритет у ON.
+AutoPlayWatch:
+    if (!Running || FarmMode != "autoplay")
+        return
+    if !WinExist(WinTitle)
+        return
+    if (A_TickCount - AutoPlayLastHeartbeatTick >= 10000) {
+        AutoPlayLastHeartbeatTick := A_TickCount
+        AddLog("AutoPlay: постоянная проверка активна")
+    }
+
+    ; В AutoPlay-режиме обычный WatchNextStage не запускается, поэтому
+    ; победу/поражение проверяем здесь же, тем же постоянным таймером.
+    if (A_TickCount - AutoPlayLastStageClickTick >= 2500) {
+        stageEnd := ""
+        if (DetectDefeat())
+            stageEnd := "Defeat"
+        else if (DetectVictory())
+            stageEnd := "Victory"
+        if (stageEnd != "") {
+            FocusEmbeddedGame()
+            AddLog("AutoPlay: обнаружен экран " stageEnd ", нажимаю Repeat Stage")
+            WBH_CallJS("ahkUpdateStatus('" . stageEnd . ", repeating...', 'running')")
+            AutoPlayLastStageClickTick := A_TickCount
+            AutoPlayStartPending := false
+            AutoPlayStartPendingSince := 0
+            ClickRepeatStage()
+            MoveMouseAway()
+            return
+        }
+    }
+    offFile := AutoPlayTemplateFile("off")
+    onFile := AutoPlayTemplateFile("on")
+    if (!FileExist(offFile) || !FileExist(onFile)) {
+        if (!AutoPlayMissingTemplateWarned) {
+            AutoPlayMissingTemplateWarned := true
+            AddLog("AutoPlay: шаблон OFF или ON отсутствует — продолжаю искать Start Game и экран окончания", "warn")
+            WBH_CallJS("ahkUpdateStatus('Watching Start Game / result...', 'running')")
+        }
+    }
+    if ((FileExist(offFile) && IsTemplateTooBig(offFile)) || (FileExist(onFile) && IsTemplateTooBig(onFile))) {
+        if (!AutoPlayMissingTemplateWarned) {
+            AutoPlayMissingTemplateWarned := true
+            AddLog("AutoPlay: шаблон слишком большой — сними только кнопку или её текст", "warn")
+            WBH_CallJS("ahkUpdateStatus('Watching Start Game / result...', 'running')")
+        }
+    }
+    ; Каждый цикл отдельно ищем OFF, ON и Start Game. OFF нельзя проверять
+    ; только в ветке «ON не найден»: после перезапуска состояния могут быстро
+    ; меняться, поэтому все три поиска выполняются постоянно.
+    offFound := FileExist(offFile) && !IsTemplateTooBig(offFile) && FindGameButton(offFile, offX, offY)
+    onFound := FileExist(onFile) && !IsTemplateTooBig(onFile) && FindGameButton(onFile, onX, onY)
+    AutoPlayMissingTemplateWarned := false
+
+    startFile := ImagesDir . "\StartGame.bmp"
+    if !FileExist(startFile)
+        startFile := ImagesDir . "\StartGame.png"
+    startFound := false
+    if (FileExist(startFile) && !IsTemplateTooBig(startFile))
+        startFound := FindGameButton(startFile, startX, startY)
+    if (!startFound && StartGameColor != 0 && StartGameColor != "0x000000" && StartGameColor != "")
+        startFound := FindStartGameByColor(StartGameColor, StartGameColorVar, startX, startY)
+
+    detectionState := (offFound ? "OFF " : "") . (onFound ? "ON " : "") . (startFound ? "START" : "")
+    if (detectionState = "")
+        detectionState := "none"
+    if (detectionState != AutoPlayLastDetectionState) {
+        AutoPlayLastDetectionState := detectionState
+        AddLog("AutoPlay: найдено — " detectionState)
+    }
+
+    ; Если OFF найден, включаем AutoPlay. В следующем цикле Start Game
+    ; проверится независимо от того, совпал ли ON-шаблон.
+    if (offFound && !onFound) {
+        if (A_TickCount - AutoPlayLastClickTick < 1600)
+            return
+        if (ClickAutoPlayTemplate(offFile, offX, offY)) {
+            AutoPlayLastClickTick := A_TickCount
+            AddLog("AutoPlay выключен — нажимаю кнопку включения")
+            ; Убираем курсор с кнопки, иначе hover-состояние может помешать
+            ; проверке нового состояния и поиску Start Game.
+            MoveMouseAway()
+            Sleep, 350
+            WBH_CallJS("ahkUpdateStatus('AutoPlay enabled, checking Start Game...', 'running')")
+        } else {
+            AddLog("AutoPlay: клик по выключенной кнопке не выполнен", "warn")
+        }
+        return
+    }
+    ; Start Game проверяется всегда, даже если шаблон AutoPlay ON не найден.
+    ; Это важно после перезапуска: ON может быть с другой подсветкой, а Start
+    ; уже виден и должен быть нажат.
+    if (AutoPlayClickStartGame(startFile))
+        WBH_CallJS("ahkUpdateStatus('Start Game clicked', 'running')")
+    if (onFound)
+        WBH_CallJS("ahkUpdateStatus('AutoPlay ON, watching Start Game...', 'running')")
+    else if (offFound)
+        WBH_CallJS("ahkUpdateStatus('AutoPlay OFF, enabling...', 'running')")
+    else
+        WBH_CallJS("ahkUpdateStatus('Waiting for AutoPlay / Start Game...', 'running')")
+return
+
 WatchNextStage:
+    if (FarmMode = "autoplay") {
+        Gosub, AutoPlayWatch
+        return
+    }
     ; Диалог Disconnected ловим ОТДЕЛЬНО от WinExist: окно Roblox зачастую
     ; остаётся открытым, просто поверх игры висит попап с ошибкой соединения.
     disconnected := DetectDisconnected()
@@ -2714,8 +3055,8 @@ IsTemplateTooBig(imageFile) {
 
 ; ---- Детект поражения (Defeat) — ищет Defeat.png или Defeat.bmp ----
 DetectDefeat() {
-    global Embedded, ImagesDir
-    if (!Embedded)
+    global Embedded, ImagesDir, WinTitle
+    if (!Embedded && !WinExist(WinTitle))
         return false
     full := ImagesDir . "\Defeat.bmp"
     if !FileExist(full)
@@ -2737,8 +3078,8 @@ DetectDefeat() {
 
 ; ---- Детект победы (Victory) — ищет Victory.png или Victory.bmp ----
 DetectVictory() {
-    global Embedded, ImagesDir
-    if (!Embedded)
+    global Embedded, ImagesDir, WinTitle
+    if (!Embedded && !WinExist(WinTitle))
         return false
     full := ImagesDir . "\Victory.bmp"
     if !FileExist(full)
@@ -2763,8 +3104,8 @@ DetectVictory() {
 ; В отличие от WinExist(WinTitle) это ловит разрыв соединения даже если сам
 ; процесс/окно Roblox остаётся открытым (просто показывает диалог поверх игры).
 DetectDisconnected() {
-    global Embedded, ImagesDir
-    if (!Embedded)
+    global Embedded, ImagesDir, WinTitle
+    if (!Embedded && !WinExist(WinTitle))
         return false
     full := ImagesDir . "\Disconnected.bmp"
     if !FileExist(full)
@@ -2791,6 +3132,7 @@ ClickRepeatStage() {
     global RepeatStageX, RepeatStageY, ImagesDir, ImgVariation, StartGameColor, StartGameColorVar
     global TS_X, TS_Y
     global Running
+    FocusEmbeddedGame()
     attempts := 3
     Loop, %attempts% {
         if (!Running)
@@ -2810,7 +3152,10 @@ ClickRepeatStage() {
                 full := ImagesDir . "\RepeatStage.png"
             if (FileExist(full)) {
                 if (FindGameButton(full, bx, by)) {
-                    SmoothClickMulti(bx, by, 2, 200, 400)
+                    if (GetTemplateSize(full, repeatW, repeatH))
+                        SmoothClickMulti(bx + repeatW//2, by + repeatH//2, 2, 200, 400)
+                    else
+                        SmoothClickMulti(bx, by, 2, 200, 400)
                     AddLog("Repeat Stage нажата по поиску изображения (" bx "," by "), попытка " A_Index)
                     clicked := true
                 }
@@ -3691,7 +4036,7 @@ return
 
 ; ---- Обработка команд, пришедших из HTML ----
 ProcessJSCmd(cmd) {
-    global SelectedMapCtl, AutoUpgradeEnabled, Running, WB
+    global SelectedMapCtl, AutoUpgradeEnabled, Running, WB, FarmMode
     ; Переменные ручного драга окна: без global они стали бы локальными в этой
     ; функции, и ManualDragLoop (метка, глобальная область) читал бы нули →
     ; сайдбар прыгал к курсору, а Roblox уезжал за левый край экрана.
@@ -3713,6 +4058,18 @@ ProcessJSCmd(cmd) {
     }
     if (action = "start-farm") {
         Gosub, BtnStartStop
+        return
+    }
+    if (action = "farm-mode") {
+        if (Running) {
+            WBH_CallJS("ahkSetFarmMode('" . JsEscape(FarmMode) . "')")
+            AddLog("Сначала останови фарм, чтобы сменить режим", "warn")
+            return
+        }
+        FarmMode := (arg = "autoplay") ? "autoplay" : "units"
+        SaveSettings()
+        WBH_CallJS("ahkSetFarmMode('" . JsEscape(FarmMode) . "')")
+        AddLog("Режим фарма: " . (FarmMode = "autoplay" ? "AutoPlay" : "расстановка юнитов"))
         return
     }
     if (action = "bot-start") {
@@ -3860,6 +4217,7 @@ PushStateToHTML:
     WBH_CallJS("ahkUpdateFarm(" . (Running ? "true" : "false") . ")")
     WBH_CallJS("ahkUpdateRunCount(" . FarmRunCount . ")")
     WBH_CallJS("ahkUpdateAutoUpgrade(" . (AutoUpgradeEnabled ? "true" : "false") . ")")
+    WBH_CallJS("ahkSetFarmMode('" . JsEscape(FarmMode) . "')")
     if (Running)
         WBH_CallJS("ahkUpdateStatus('Watching...', 'running')")
     else
@@ -4266,6 +4624,24 @@ PollModalClose:
         ; Проверка детекта AutoUpgrade (модалку не закрываем)
         GoSub, BtnTestAutoUpgrade
     }
+    else if (action = "capture-autoplay-off") {
+        SetTimer, PollModalClose, Off
+        Gui, Modal:Destroy
+        ModalHwnd := 0
+        GoSub, BtnCaptureAutoPlayOff
+    }
+    else if (action = "test-autoplay-off") {
+        GoSub, BtnTestAutoPlayOff
+    }
+    else if (action = "capture-autoplay-on") {
+        SetTimer, PollModalClose, Off
+        Gui, Modal:Destroy
+        ModalHwnd := 0
+        GoSub, BtnCaptureAutoPlayOn
+    }
+    else if (action = "test-autoplay-on") {
+        GoSub, BtnTestAutoPlayOn
+    }
     else if (action = "upgrade-save") {
         GoSub, ModalSaveUpgrade
     }
@@ -4406,6 +4782,7 @@ PushModalData(name) {
             . RejoinMaxAttempts . "," . RejoinWaitTimeout . "," . RejoinPostJoinDelay . ","
             . RejoinPostActionsDelay . "," . (MouseSpeedEnabled ? 1 : 0) . "," . ZoomScrolls . "," . (ZoomEnabled ? 1 : 0) . "," . (TopCameraEnabled ? 1 : 0) . ",'" . AppLanguage . "','" . farmHotkeyJS . "','" . rejoinHotkeyJS . "',"
             . (BotEnabled ? 1 : 0) . "," . (BotAutoStart ? 1 : 0) . ",'" . botTokenJS . "','" . botGuildJS . "','" . botAllowedJS . "','" . mapChangeHotkeyJS . "'," . BotMapPostActionsDelay . ")")
+        ModalCallJS("ahkSetFarmMode('" . JsEscape(FarmMode) . "')")
         AddLog("Settings пушнуты в модалку (Rejoin: " (RejoinEnabled ? "on" : "off") ", link len=" StrLen(RejoinShareLink) ")")
         ; Также пушим количество записанных Post-Rejoin действий
         count := RejoinActions.Length()
@@ -4530,6 +4907,9 @@ ModalSaveSettings:
         if (BotMapPostActionsDelay < 0)
             BotMapPostActionsDelay := 0
     }
+    if (vals0 >= 35)
+        FarmMode := (vals35 = "autoplay") ? "autoplay" : "units"
+    WBH_CallJS("ahkSetFarmMode('" . JsEscape(FarmMode) . "')")
     SaveSettings()
     AddLog("Settings saved from modal")
 return

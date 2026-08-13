@@ -206,6 +206,16 @@ html, body {
     position: absolute; left: 0; right: 0; top: 100%; z-index: 220;
     box-shadow: 0 12px 26px rgba(0,0,0,0.45);
 }
+.farm-mode-select { width: 150px; z-index: 50; }
+.farm-mode-select .custom-select-list {
+    position: absolute; left: 0; right: 0; top: 100%; z-index: 60;
+    box-shadow: 0 12px 26px rgba(0,0,0,0.45);
+}
+.farm-mode-settings-select { width: 100%; z-index: 50; }
+.farm-mode-settings-select .custom-select-list {
+    position: absolute; left: 0; right: 0; top: 100%; z-index: 60;
+    box-shadow: 0 12px 26px rgba(0,0,0,0.45);
+}
 
 /* ---- Button Row ---- */
 .btn-row { display: -ms-flexbox; display: flex; }
@@ -223,8 +233,9 @@ html, body {
 }
 .coord-item:nth-child(even) { margin-right: 0; }
 .coord-key   { font-size: 10px; color: #666; text-transform: uppercase; letter-spacing: 0.5px; }
-.coord-val   { font-family: 'Consolas', monospace; font-size: 11px; color: #999; }
+.coord-val   { font-family: 'Consolas', monospace; font-size: 11px; color: #777; }
 .coord-val.set { color: #3b82f6; }
+.coord-digits { color: inherit; letter-spacing: -0.1px; }
 
 /* ---- Checkbox ---- */
 .check-label {
@@ -911,16 +922,30 @@ body.modal-only .modal-foot {
                     <span class="badge" id="coordBadge" data-i18n="notSet">Not set</span>
                 </div>
                 <div class="coord-grid">
-                    <div class="coord-item"><span class="coord-key" data-i18n="upgrade">Upgrade</span><span class="coord-val">—</span></div>
-                    <div class="coord-item"><span class="coord-key" data-i18n="start">Start</span><span class="coord-val">—</span></div>
-                    <div class="coord-item"><span class="coord-key" data-i18n="repeat">Repeat</span><span class="coord-val">—</span></div>
-                    <div class="coord-item"><span class="coord-key" data-i18n="autoUp">AutoUp</span><span class="coord-val">—</span></div>
+                    <div class="coord-item"><span class="coord-key" data-i18n="upgrade">Upgrade</span><span class="coord-val"><span class="coord-digits">—</span></span></div>
+                    <div class="coord-item"><span class="coord-key" data-i18n="start">Start</span><span class="coord-val"><span class="coord-digits">—</span></span></div>
+                    <div class="coord-item"><span class="coord-key" data-i18n="repeat">Repeat</span><span class="coord-val"><span class="coord-digits">—</span></span></div>
+                    <div class="coord-item"><span class="coord-key" data-i18n="autoUp">AutoUp</span><span class="coord-val"><span class="coord-digits">—</span></span></div>
                 </div>
             </section>
 
             <hr class="sep">
 
             <section class="ctrl">
+                <div class="row between" style="margin-bottom:8px">
+                    <span class="label">Farm mode</span>
+                    <div class="select-wrap custom-select farm-mode-select" id="farmModeCustomSelect">
+                        <button type="button" class="select custom-select-btn" id="farmModeSelectBtn">
+                            <span id="farmModeSelectLabel">Units placement</span>
+                            <svg class="select-chevron" viewBox="0 0 16 16"><path d="m4 6 4 4 4-4" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+                        </button>
+                        <div class="custom-select-list" id="farmModeSelectList"></div>
+                        <select id="farmModeSelect" style="display:none">
+                            <option value="units">Units placement</option>
+                            <option value="autoplay">AutoPlay only</option>
+                        </select>
+                    </div>
+                </div>
                 <button class="btn btn-start" id="btnFarm">
                     <svg viewBox="0 0 16 16" fill="currentColor"><path d="M5 3.5 13 8l-8 4.5v-9Z"/></svg>
                     <span data-i18n="startFarm">Start Farm</span>
@@ -1010,6 +1035,21 @@ body.modal-only .modal-foot {
                         <option value="ru">Русский</option>
                     </select>
                     <div class="field-hint" data-i18n="languageHint">The language is saved for the next launch.</div>
+                </fieldset>
+                <fieldset class="fieldset">
+                    <legend class="fieldset-legend">Farm mode</legend>
+                    <div class="select-wrap custom-select farm-mode-settings-select" id="setFarmModeCustomSelect">
+                        <button type="button" class="select custom-select-btn" id="setFarmModeBtn">
+                            <span id="setFarmModeLabel">Units placement</span>
+                            <svg class="select-chevron" viewBox="0 0 16 16"><path d="m4 6 4 4 4-4" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+                        </button>
+                        <div class="custom-select-list" id="setFarmModeList"></div>
+                        <select id="setFarmMode" style="display:none">
+                            <option value="units">Units placement</option>
+                            <option value="autoplay">AutoPlay only</option>
+                        </select>
+                    </div>
+                    <div class="field-hint">AutoPlay mode ignores map slots and keeps checking the AutoPlay button after each restart.</div>
                 </fieldset>
                 <fieldset class="fieldset">
                     <legend class="fieldset-legend" data-i18n="hotkeys">Hotkeys</legend>
@@ -1259,6 +1299,18 @@ body.modal-only .modal-foot {
                     <div class="btn-row">
                         <button class="btn btn-primary btn-sm" data-action="capture-autoupgrade"><span data-i18n="captureAutoUpgrade">Capture AutoUpgrade</span></button>
                         <button class="btn btn-ghost btn-sm" data-action="test-autoupgrade"><span data-i18n="testAutoUpgrade">Test AutoUpgrade</span></button>
+                    </div>
+                </fieldset>
+                <fieldset class="fieldset">
+                    <legend class="fieldset-legend">AutoPlay templates</legend>
+                    <p class="modal-desc" style="margin:0 0 8px">Capture the same button in both states. Select only the button (or its text), without the background.</p>
+                    <div class="btn-row">
+                        <button class="btn btn-primary btn-sm" data-action="capture-autoplay-off">Capture OFF</button>
+                        <button class="btn btn-ghost btn-sm" data-action="test-autoplay-off">Test OFF</button>
+                    </div>
+                    <div class="btn-row" style="margin-top:6px">
+                        <button class="btn btn-primary btn-sm" data-action="capture-autoplay-on">Capture ON</button>
+                        <button class="btn btn-ghost btn-sm" data-action="test-autoplay-on">Test ON</button>
                     </div>
                 </fieldset>
             </div>
@@ -1536,6 +1588,82 @@ body.modal-only .modal-foot {
         syncMapCustomUI();
         sendCmd('clear-map');
     });
+    var farmModeSelect = $('#farmModeSelect');
+    var farmModeBtn = $('#farmModeSelectBtn');
+    var farmModeLabel = $('#farmModeSelectLabel');
+    var farmModeList = $('#farmModeSelectList');
+    function closeFarmModeList() { if (farmModeList) farmModeList.className = 'custom-select-list'; }
+    function syncFarmModeCustomUI() {
+        if (!farmModeSelect || !farmModeList) return;
+        farmModeList.innerHTML = '';
+        var opts = farmModeSelect.options;
+        for (var i = 0; i < opts.length; i++) {
+            (function (opt) {
+                var div = document.createElement('div');
+                div.className = 'custom-select-item' + (opt.value === farmModeSelect.value ? ' active' : '');
+                div.textContent = opt.text;
+                on(div, 'click', function () {
+                    farmModeSelect.value = opt.value;
+                    fireChange(farmModeSelect);
+                    closeFarmModeList();
+                });
+                farmModeList.appendChild(div);
+            })(opts[i]);
+        }
+        if (farmModeLabel)
+            farmModeLabel.textContent = farmModeSelect.options[farmModeSelect.selectedIndex].text;
+    }
+    if (farmModeSelect) on(farmModeSelect, 'change', function () {
+        syncFarmModeCustomUI();
+        sendCmd('farm-mode/' + (farmModeSelect.value === 'autoplay' ? 'autoplay' : 'units'));
+    });
+    if (farmModeBtn) on(farmModeBtn, 'click', function (e) {
+        e = e || window.event;
+        if (e.stopPropagation) e.stopPropagation();
+        if (farmModeList) farmModeList.className = 'custom-select-list' + (farmModeList.className.indexOf('open') === -1 ? ' open' : '');
+    });
+    if (farmModeList) on(document, 'click', function (e) {
+        var tgt = (e || window.event).target || (e || window.event).srcElement;
+        if (tgt !== farmModeBtn && !farmModeBtn.contains(tgt) && tgt !== farmModeList && !farmModeList.contains(tgt)) closeFarmModeList();
+    });
+    syncFarmModeCustomUI();
+
+    var settingsFarmModeSelect = $('#setFarmMode');
+    var settingsFarmModeBtn = $('#setFarmModeBtn');
+    var settingsFarmModeLabel = $('#setFarmModeLabel');
+    var settingsFarmModeList = $('#setFarmModeList');
+    function closeSettingsFarmModeList() { if (settingsFarmModeList) settingsFarmModeList.className = 'custom-select-list'; }
+    function syncSettingsFarmModeUI() {
+        if (!settingsFarmModeSelect || !settingsFarmModeList) return;
+        settingsFarmModeList.innerHTML = '';
+        var opts = settingsFarmModeSelect.options;
+        for (var i = 0; i < opts.length; i++) {
+            (function (opt) {
+                var div = document.createElement('div');
+                div.className = 'custom-select-item' + (opt.value === settingsFarmModeSelect.value ? ' active' : '');
+                div.textContent = opt.text;
+                on(div, 'click', function () {
+                    settingsFarmModeSelect.value = opt.value;
+                    fireChange(settingsFarmModeSelect);
+                    closeSettingsFarmModeList();
+                });
+                settingsFarmModeList.appendChild(div);
+            })(opts[i]);
+        }
+        if (settingsFarmModeLabel)
+            settingsFarmModeLabel.textContent = settingsFarmModeSelect.options[settingsFarmModeSelect.selectedIndex].text;
+    }
+    if (settingsFarmModeSelect) on(settingsFarmModeSelect, 'change', syncSettingsFarmModeUI);
+    if (settingsFarmModeBtn) on(settingsFarmModeBtn, 'click', function (e) {
+        e = e || window.event;
+        if (e.stopPropagation) e.stopPropagation();
+        if (settingsFarmModeList) settingsFarmModeList.className = 'custom-select-list' + (settingsFarmModeList.className.indexOf('open') === -1 ? ' open' : '');
+    });
+    if (settingsFarmModeList) on(document, 'click', function (e) {
+        var tgt = (e || window.event).target || (e || window.event).srcElement;
+        if (tgt !== settingsFarmModeBtn && !settingsFarmModeBtn.contains(tgt) && tgt !== settingsFarmModeList && !settingsFarmModeList.contains(tgt)) closeSettingsFarmModeList();
+    });
+    syncSettingsFarmModeUI();
 
     // Farm
     var btnFarm   = $('#btnFarm');
@@ -1647,15 +1775,22 @@ body.modal-only .modal-foot {
     window.ahkUpdateCoords = function (up, st, rp, au) {
         currentCoords = [up || '', st || '', rp || '', au || ''];
         var items = $$('.coord-val');
+        var digits = $$('.coord-digits');
         var vals = [up, st, rp, au];
         var allSet = true;
         for (var i = 0; i < 4; i++) {
             if (vals[i]) {
-                items[i].textContent = vals[i];
+                var match = String(vals[i]).match(/\((-?\d+)\s*,\s*(-?\d+)\)/);
+                digits[i].textContent = match ? match[1] + ',' + match[2] : vals[i];
                 items[i].className = 'coord-val set';
             } else {
                 items[i].textContent = '—';
                 items[i].className = 'coord-val';
+                var emptyDigits = document.createElement('span');
+                emptyDigits.className = 'coord-digits';
+                emptyDigits.textContent = '—';
+                items[i].appendChild(emptyDigits);
+                digits[i] = emptyDigits;
                 allSet = false;
             }
         }
@@ -2231,7 +2366,8 @@ function initSettingsModal(m) {
                 encodeURIComponent($('#setBotToken').value || '__EMPTY__'),
                 encodeURIComponent($('#setBotGuildId').value || '__EMPTY__'),
                 encodeURIComponent($('#setBotAllowedUsers').value || '__EMPTY__'),
-                $('#setBotMapPostActionsDelay').value
+                $('#setBotMapPostActionsDelay').value,
+                $('#setFarmMode').value || 'units'
             ];
             window.ahkCmd = 'settings-save/' + vals.join('/');
         });
@@ -2340,7 +2476,7 @@ var btnTestDc = document.getElementById('btnTestDisconnected');
     window.ahkLoadSettings = function(cd, scd, ucd, acd, usd, sgd, hd, ms, iv, sgc, sgcv, sgcx, sgcy, sgr,
                                        rjEnabled, rjLink, rjMaxAttempts, rjWaitTimeout, rjPostJoinDelay, rjPostActionsDelay,
                                        msEnabled, zoomScrolls, zoomEnabled, topCameraEnabled, language, farmHotkey, rejoinHotkey,
-                                       botEnabled, botAutoStart, botToken, botGuildId, botAllowedUsers, mapChangeHotkey, botMapPostActionsDelay) {
+                                       botEnabled, botAutoStart, botToken, botGuildId, botAllowedUsers, mapChangeHotkey, botMapPostActionsDelay, farmMode) {
 	        var set = function(id, v) { var el = $(id); if (el) el.value = v; };
 	        var languageSelect = $('#setLanguage');
 	        if (languageSelect) languageSelect.value = (language === 'ru') ? 'ru' : 'en';
@@ -2381,7 +2517,18 @@ var btnTestDc = document.getElementById('btnTestDisconnected');
         set('#setBotGuildId', botGuildId === '__EMPTY__' ? '' : (botGuildId || ''));
         set('#setBotAllowedUsers', botAllowedUsers === '__EMPTY__' ? '' : (botAllowedUsers || ''));
         set('#setBotMapPostActionsDelay', botMapPostActionsDelay === undefined ? '3' : botMapPostActionsDelay);
+        set('#setFarmMode', farmMode === 'autoplay' ? 'autoplay' : 'units');
+        syncSettingsFarmModeUI();
 	    };
+    window.ahkSetFarmMode = function (mode) {
+        var el = $('#setFarmMode');
+        if (el) {
+            el.value = (mode === 'autoplay') ? 'autoplay' : 'units';
+            syncSettingsFarmModeUI();
+        }
+        var mainEl = $('#farmModeSelect');
+        if (mainEl) mainEl.value = (mode === 'autoplay') ? 'autoplay' : 'units';
+    };
 
     /* ---- Presets Modal Init ---- */
     function initPresetsModal(m) {
