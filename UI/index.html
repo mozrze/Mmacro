@@ -448,6 +448,7 @@ html, body {
     -ms-flex-direction: column; flex-direction: column;
     box-shadow: 0 24px 60px rgba(0,0,0,0.5);
     margin-left: 160px; /* shift right past the game area */
+    position: relative;
 }
 
 .modal-head {
@@ -480,6 +481,7 @@ html, body {
 .modal-body {
     padding: 14px 18px; overflow-y: auto;
     -ms-flex: 1; flex: 1;
+    width: 100%; min-width: 0;
     -ms-overflow-style: scrollbar; /* тонкий скроллбар (цвета — в блоке Scrollbar) */
 }
 .modal-body > * + * { margin-top: 12px; }
@@ -583,13 +585,17 @@ html, body {
 .form-grid-3 .field:nth-child(3n) { margin-right: 0; }
 
 /* ---- Field ---- */
-.field { display: -ms-flexbox; display: flex; -ms-flex-direction: column; flex-direction: column; }
+.field {
+    display: -ms-flexbox; display: flex; -ms-flex-direction: column; flex-direction: column;
+    width: 100%; min-width: 0; -ms-flex-negative: 0; flex-shrink: 0;
+}
 .field-label { font-size: 11px; color: #666; font-weight: 500; margin-bottom: 4px; }
 .field-hint { font-size: 10px; color: #555; line-height: 1.4; margin-top: 8px; }
 .input {
     width: 100%; background: #1e1e1e; border: 1px solid #252525;
     border-radius: 6px; padding: 6px 8px;
     font-family: 'Consolas', monospace; font-size: 12px; color: #e4e4e4;
+    display: block; min-width: 0;
 }
 .input:hover { border-color: #2e2e2e; }
 .input:focus { outline: none; border-color: #3b82f6; }
@@ -644,14 +650,52 @@ html, body {
     border: 1px solid #252525; border-radius: 8px;
     min-height: 70px; max-height: 160px; overflow-y: auto;
     -ms-overflow-style: scrollbar; /* тонкий скроллбар (цвета — в блоке Scrollbar) */
-    display: -ms-flexbox; display: flex;
-    -ms-flex-direction: column; flex-direction: column;
+    display: block; width: 100%; min-width: 0;
 }
 .preset-list:empty { -ms-flex-align: center; align-items: center; -ms-flex-pack: center; justify-content: center; }
-.preset-empty { color: #666; font-size: 12px; padding: 20px; text-align: center; }
-.preset-item { padding: 6px 10px; cursor: pointer; font-size: 12px; color: #ccc; border-bottom: 1px solid #1a1a1a; }
+.preset-empty { display: block; width: 100%; color: #666; font-size: 12px; padding: 20px; text-align: center; }
+.preset-item { display: block; width: 100%; min-height: 30px; padding: 6px 10px; cursor: pointer; font-size: 12px; color: #ccc; border-bottom: 1px solid #1a1a1a; }
 .preset-item:hover { background: #1a1a1a; }
 .preset-item:last-child { border-bottom: none; }
+
+/* ---- Preset delete confirmation ---- */
+.preset-delete-confirm {
+    position: absolute; left: 0; top: 0; right: 0; bottom: 0;
+    z-index: 40; display: none;
+    -ms-flex-align: center; align-items: center;
+    -ms-flex-pack: center; justify-content: center;
+    background: rgba(0,0,0,.72);
+}
+.preset-delete-confirm.show { display: -ms-flexbox; display: flex; }
+.preset-delete-card {
+    width: 300px; max-width: calc(100% - 32px);
+    background: #171717; border: 1px solid #3a3a3a; border-radius: 10px;
+    box-shadow: 0 18px 45px rgba(0,0,0,.65); overflow: hidden;
+}
+.preset-delete-body { padding: 18px 18px 14px; text-align: center; }
+.preset-delete-icon {
+    width: 38px; height: 38px; margin: 0 auto 10px;
+    border-radius: 50%; background: rgba(239,68,68,.13); color: #ef4444;
+    display: -ms-flexbox; display: flex;
+    -ms-flex-align: center; align-items: center;
+    -ms-flex-pack: center; justify-content: center;
+}
+.preset-delete-icon svg { width: 19px; height: 19px; }
+.preset-delete-title { color: #f1f1f1; font-size: 14px; font-weight: 600; margin: 0 0 5px; }
+.preset-delete-text { color: #888; font-size: 11px; line-height: 1.5; margin: 0; }
+.preset-delete-name {
+    display: inline-block; max-width: 100%; margin-top: 10px; padding: 5px 9px;
+    border: 1px solid #303030; border-radius: 5px; background: #101010;
+    color: #ddd; font: 12px 'Consolas', monospace; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap;
+}
+.preset-delete-foot {
+    display: -ms-flexbox; display: flex; -ms-flex-pack: end; justify-content: flex-end;
+    gap: 8px; padding: 10px 14px; border-top: 1px solid #2a2a2a; background: #121212;
+}
+.preset-delete-foot .btn { min-width: 78px; }
+.btn-danger-solid { background: #dc2626; border-color: #dc2626; color: #fff; }
+.btn-danger-solid:hover { background: #ef4444; border-color: #ef4444; }
 
 /* ---- Mark Modal (slot marking + template drag-select) ---- */
 body.modal-only .modal-body { padding: 0; }
@@ -1247,6 +1291,22 @@ body.modal-only .modal-foot {
                 </button>
                 <button class="btn btn-primary btn-sm" id="btnPresetSave" data-i18n="save">Save</button>
                 <button class="btn btn-ghost btn-sm" id="btnPresetLoad" data-i18n="load">Load</button>
+            </div>
+            <div class="preset-delete-confirm" id="presetDeleteConfirm" aria-hidden="true">
+                <div class="preset-delete-card">
+                    <div class="preset-delete-body">
+                        <div class="preset-delete-icon">
+                            <svg viewBox="0 0 20 20" fill="none"><path d="M10 3.5v6.2M10 13.4v.1M4.3 16.5h11.4c.9 0 1.5-.9 1.1-1.7L11.1 3.9c-.5-.9-1.7-.9-2.2 0l-5.7 10.9c-.4.8.2 1.7 1.1 1.7Z" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                        </div>
+                        <h3 class="preset-delete-title" data-i18n="deletePresetTitle">Delete preset?</h3>
+                        <p class="preset-delete-text" data-i18n="deletePresetQuestion">This preset will be permanently deleted.</p>
+                        <div class="preset-delete-name" id="presetDeleteName"></div>
+                    </div>
+                    <div class="preset-delete-foot">
+                        <button class="btn btn-ghost btn-sm" id="btnPresetDeleteCancel" data-i18n="cancel">Cancel</button>
+                        <button class="btn btn-sm btn-danger-solid" id="btnPresetDeleteConfirm" data-i18n="delete">Delete</button>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -1934,6 +1994,7 @@ body.modal-only .modal-foot {
             restartingStage: 'Restarting stage...', selectMapStatus: 'Select a map', mapNotMarked: 'Map not marked',
             gameNotFoundStatus: 'Game not found', stop: 'Stop', recordF1: 'Record F1', loading: 'Loading...', log: 'Log',
             presetsTitle: 'Presets', calibration: 'Calibration', delete: 'Delete', load: 'Load',
+            deletePresetTitle: 'Delete preset?', deletePresetQuestion: 'This preset will be permanently deleted.',
             presetName: 'Preset Name', noSavedPresets: 'No saved presets', buttonPositions: 'Button positions (click a card)',
             clickToSet: 'Click to set', repeatStage: 'Repeat Stage', detectionTemplates: 'Detection templates (Defeat / Victory)',
             detectionDesc: 'Drag-select a SMALL region (e.g. the word "VICTORY"). Large templates won\'t be found by ImageSearch.',
@@ -1989,6 +2050,7 @@ body.modal-only .modal-foot {
             restartingStage: 'Перезапуск этапа...', selectMapStatus: 'Выбери карту', mapNotMarked: 'Карта не размечена',
             gameNotFoundStatus: 'Игра не найдена', stop: 'Стоп', recordF1: 'Записать F1', loading: 'Загрузка...', log: 'Лог',
             presetsTitle: 'Пресеты', calibration: 'Калибровка', delete: 'Удалить', load: 'Загрузить',
+            deletePresetTitle: 'Удалить пресет?', deletePresetQuestion: 'Пресет будет удалён навсегда.',
             presetName: 'Имя пресета', noSavedPresets: 'Нет сохранённых пресетов', buttonPositions: 'Позиции кнопок (нажми на карточку)',
             clickToSet: 'Нажми для задания', repeatStage: 'Повтор этапа', detectionTemplates: 'Шаблоны обнаружения (Defeat / Victory)',
             detectionDesc: 'Выдели небольшую область (например, слово «VICTORY»). Большие шаблоны ImageSearch не найдёт.',
@@ -2531,6 +2593,26 @@ var btnTestDc = document.getElementById('btnTestDisconnected');
     };
 
     /* ---- Presets Modal Init ---- */
+    var pendingPresetDeleteName = '';
+    window.ahkShowPresetDeleteConfirm = function (name) {
+        var modal = $('#presetDeleteConfirm');
+        var nameEl = $('#presetDeleteName');
+        if (!modal) return;
+        pendingPresetDeleteName = String(name || '');
+        if (nameEl) nameEl.textContent = pendingPresetDeleteName;
+        modal.className = 'preset-delete-confirm show';
+        modal.setAttribute('aria-hidden', 'false');
+        var reflow = modal.offsetHeight;
+        setTimeout(function () { var reflowAgain = modal.offsetHeight; }, 0);
+    };
+    window.ahkHidePresetDeleteConfirm = function () {
+        var modal = $('#presetDeleteConfirm');
+        if (modal) {
+            modal.className = 'preset-delete-confirm';
+            modal.setAttribute('aria-hidden', 'true');
+        }
+        pendingPresetDeleteName = '';
+    };
     function initPresetsModal(m) {
         // Select preset from list -> copy to name field
         var list = $('#presetList');
@@ -2544,56 +2626,80 @@ var btnTestDc = document.getElementById('btnTestDisconnected');
         var btnSave = $('#btnPresetSave');
         var btnLoad = $('#btnPresetLoad');
         var btnDel  = $('#btnPresetDelete');
+        var btnDelCancel = $('#btnPresetDeleteCancel');
+        var btnDelConfirm = $('#btnPresetDeleteConfirm');
         var nameInput = $('#presetName');
         function flagEmpty() {
             if (!nameInput) return;
             nameInput.style.borderColor = '#ef4444';
             setTimeout(function () { nameInput.style.borderColor = ''; }, 800);
         }
-        if (btnSave) on(btnSave, 'click', function () {
+        if (btnSave) on(btnSave, 'mousedown', function (e) {
+            e = e || window.event;
             var n = nameInput ? nameInput.value.trim() : '';
             if (!n) { flagEmpty(); return; }
             window.ahkCmd = 'preset-save/' + n;
         });
-        if (btnLoad) on(btnLoad, 'click', function () {
+        if (btnLoad) on(btnLoad, 'mousedown', function (e) {
+            e = e || window.event;
             var n = nameInput ? nameInput.value.trim() : '';
             if (!n) { flagEmpty(); return; }
             window.ahkCmd = 'preset-load/' + n;
         });
-        if (btnDel) on(btnDel, 'click', function () {
+        if (btnDel) on(btnDel, 'mousedown', function (e) {
+            e = e || window.event;
             var n = nameInput ? nameInput.value.trim() : '';
             if (!n) { flagEmpty(); return; }
-            // alert()/confirm() не работают внутри ActiveX WebBrowser при Silent=true,
-            // поэтому подтверждение удаления теперь показывает нативный MsgBox в AHK.
             window.ahkCmd = 'preset-delete-confirm/' + n;
+        });
+        if (btnDelCancel) on(btnDelCancel, 'mousedown', function () {
+            window.ahkHidePresetDeleteConfirm();
+            window.ahkCmd = 'preset-delete-cancel';
+        });
+        if (btnDelConfirm) on(btnDelConfirm, 'mousedown', function () {
+            if (!pendingPresetDeleteName) return;
+            window.ahkHidePresetDeleteConfirm();
+            // Имя уже передано AHK при открытии подтверждения. Повторно
+            // отправляем только действие, чтобы не потерять кириллицу в COM-мосте.
+            window.ahkCmd = 'preset-delete-confirmed';
         });
     }
     window.ahkLoadPresets = function(listStr) {
         var list = $('#presetList');
-        var empty = $('#presetEmpty');
         if (!list) return;
-        if (!listStr || listStr === '') {
-            list.innerHTML = '';
+        var names = listStr ? String(listStr).split('|') : [];
+        var hasPresets = false;
+
+        // Trident иногда меняет DOM, но не перерисовывает его до наведения мыши.
+        // Создаём элементы явно и ниже принудительно переключаем display.
+        list.style.visibility = 'hidden';
+        list.innerHTML = '';
+        for (var i = 0; i < names.length; i++) {
+            var name = names[i].replace(/^\s+|\s+$/g, '');
+            if (!name) continue;
+            hasPresets = true;
             var div = document.createElement('div');
-            div.className = 'preset-empty';
-            div.textContent = uiText('noSavedPresets');
+            div.className = 'preset-item';
+            div.appendChild(document.createTextNode(name));
             list.appendChild(div);
-        } else {
-            list.innerHTML = '';
-            var names = listStr.split('|');
-            for (var i = 0; i < names.length; i++) {
-                if (!names[i]) continue;
-                var div = document.createElement('div');
-                div.className = 'preset-item';
-                div.textContent = names[i];
-                div.style.cssText = 'padding: 6px 10px; cursor: pointer; font-size: 12px; color: #ccc; border-bottom: 1px solid #1a1a1a;';
-                div.onmouseover = function () { this.style.background = '#1a1a1a'; };
-                div.onmouseout  = function () { this.style.background = ''; };
-                list.appendChild(div);
-            }
+        }
+        if (!hasPresets) {
+            var empty = document.createElement('div');
+            empty.className = 'preset-empty';
+            empty.appendChild(document.createTextNode(uiText('noSavedPresets')));
+            list.appendChild(empty);
         }
         // Trident: перестройка innerHTML до показа/после execScript не перерисовывается
-        var _r = list.offsetHeight; /* reflow */
+        function repaintPresetList() {
+            list.style.display = 'none';
+            var hiddenHeight = list.offsetHeight;
+            list.style.display = 'block';
+            var visibleHeight = list.offsetHeight;
+            list.style.visibility = 'visible';
+            return hiddenHeight + visibleHeight;
+        }
+        repaintPresetList();
+        setTimeout(repaintPresetList, 0);
     };
 
     /* ---- Calibration Modal Init ---- */

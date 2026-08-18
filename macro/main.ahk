@@ -100,7 +100,7 @@ IfNotExist, %BotActionsDir%
     FileCreateDir, %BotActionsDir%
 
 ; ---- Автообновление с GitHub ----
-CURRENT_VERSION := "1.0.12"
+CURRENT_VERSION := "1.0.13"
 GH_REPO := "mozrze/Mmacro"           ; пользователь/репозиторий
 GH_TOKEN_FILE := A_ScriptDir . "\ahk\token.ini"
 GH_TOKEN := ""
@@ -1814,8 +1814,10 @@ BtnPresetDelete:
         AddLog("Удаление пресета отменено: имя не указано", "warn")
         return
     }
-    IniDelete, %PresetsIni%, %PresetName%
-    AddLog("Пресет """ PresetName """ удалён")
+    if (DeletePresetSection(PresetName))
+        AddLog("Пресет """ PresetName """ удалён")
+    else
+        AddLog("Не удалось удалить пресет """ PresetName """", "error")
 return
 
 ; ===================== КАЛИБРОВКА (отдельное окно) =====================
@@ -4036,7 +4038,7 @@ return
 
 ; ---- Обработка команд, пришедших из HTML ----
 ProcessJSCmd(cmd) {
-    global SelectedMapCtl, AutoUpgradeEnabled, Running, WB, FarmMode
+    global SelectedMapCtl, AutoUpgradeEnabled, Running, WB, FarmMode, PresetName
     ; Переменные ручного драга окна: без global они стали бы локальными в этой
     ; функции, и ManualDragLoop (метка, глобальная область) читал бы нули →
     ; сайдбар прыгал к курсору, а Roblox уезжал за левый край экрана.
@@ -4522,15 +4524,17 @@ PollModalClose:
         PushModalData("presets")
     }
     else if (action = "preset-delete-confirm") {
-        ; alert()/confirm() внутри ActiveX WebBrowser не работают при Silent=true,
-        ; поэтому подтверждение теперь через нативный MsgBox.
-        MsgBox, 4, Удаление пресета, Удалить пресет "%arg%"?
-        IfMsgBox, Yes
-        {
-            PresetName := arg
-            GoSub, BtnPresetDelete
-            PushModalData("presets")
-        }
+        ; Подтверждение рисуется внутри той же HTML-модалки. Нативный MsgBox
+        ; мог оказаться позади окна ActiveX и не поддерживал дизайн приложения.
+        PresetName := arg
+        ModalCallJS("ahkShowPresetDeleteConfirm('" . JsEscape(arg) . "')")
+    }
+    else if (action = "preset-delete-cancel") {
+        ModalCallJS("ahkHidePresetDeleteConfirm()")
+    }
+    else if (action = "preset-delete-confirmed") {
+        GoSub, BtnPresetDelete
+        PushModalData("presets")
     }
     else if (action = "preset-delete") {
         PresetName := arg
@@ -4795,20 +4799,30 @@ PushModalData(name) {
         ; Собираем список пресетов из presets.ini
         presetsList := ""
         if (FileExist(PresetsIni)) {
-            FileRead, content, %PresetsIni%
+            ; IniWrite/IniDelete в AHK сохраняют имена секций в системной
+            ; кодировке. Читаем исходные байты и декодируем их как CP1251,
+            ; иначе кириллица превращается в "��".
+            FileRead, raw, *c %PresetsIni%
+            content := StrGet(&raw, "CP1251")
             Loop, Parse, content, `n, `r
             {
-                line := Trim(A_LoopField)
+                line := Trim(A_LoopField, " `t`r`n")
                 if (line = "")
                     continue
-                if (SubStr(line, 1, 1) = "[" && SubStr(line, -1) = "]") {
+                sectionMatch := ""
+                if (RegExMatch(line, "^\[([^\]]+)\]$", sectionMatch)) {
+                    presetSection := Trim(sectionMatch1)
+                    if (presetSection = "" || presetSection = "Presets")
+                        continue
                     if (presetsList != "")
                         presetsList .= "|"
-                    presetsList .= Trim(SubStr(line, 2, -1))
+                    presetsList .= presetSection
                 }
             }
         }
-        ModalCallJS("ahkLoadPresets('" . presetsList . "')")
+        ; Имя может содержать апостроф или обратный слеш — экранируем его
+        ; перед передачей в JS, иначе список перестанет обновляться после сохранения.
+        ModalCallJS("ahkLoadPresets('" . JsEscape(presetsList) . "')")
     }
     else if (name = "calibrate") {
         ModalCallJS("ahkUpdateCalibCoords("
@@ -4993,6 +5007,46 @@ DoNativeDragModal(startMX, startMY) {
     DllCall("ReleaseCapture")
     SendMessage, 0xA1, 2, 0,, ahk_id %wid%
     DllCall("ReleaseCapture")
+}
+
+; ---- Удаление секции пресета с поддержкой кириллицы ----
+; IniDelete не всегда находит секции, которые были записаны AHK
+; в системной кодировке внутри UTF-8 файла. Переписываем только список
+; строк, удаляя нужную секцию, и сохраняем байты через CP1251.
+DeletePresetSection(sectionName) {
+    global PresetsIni
+    if (!FileExist(PresetsIni))
+        return false
+
+    FileRead, raw, *c %PresetsIni%
+    content := StrGet(&raw, "CP1251")
+    result := ""
+    skip := false
+    found := false
+    Loop, Parse, content, `n, `r
+    {
+        line := A_LoopField
+        trimmed := Trim(line, " `t`r`n")
+        sectionMatch := ""
+        if (RegExMatch(trimmed, "^\[([^\]]+)\]$", sectionMatch)) {
+            skip := (Trim(sectionMatch1) = sectionName)
+            if (skip)
+                found := true
+        }
+        if (!skip)
+            result .= line . "`r`n"
+    }
+    if (!found)
+        return false
+
+    tempFile := PresetsIni . ".tmp"
+    outFile := FileOpen(tempFile, "w", "CP1251")
+    if (!IsObject(outFile))
+        return false
+    outFile.Write(result)
+    outFile.Close()
+    FileMove, %tempFile%, %PresetsIni%, 1
+    return !ErrorLevel
 }
 
 ; ---- Экранирование значения для JavaScript-строки ----

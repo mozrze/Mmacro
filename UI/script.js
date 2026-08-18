@@ -447,17 +447,20 @@
             nameInput.style.borderColor = '#ef4444';
             setTimeout(function () { nameInput.style.borderColor = ''; }, 800);
         }
-        if (btnSave) on(btnSave, 'click', function () {
+        if (btnSave) on(btnSave, 'mousedown', function (e) {
+            e = e || window.event;
             var n = nameInput ? nameInput.value.trim() : '';
             if (!n) { flagEmpty(); return; }
             window.ahkCmd = 'preset-save/' + n;
         });
-        if (btnLoad) on(btnLoad, 'click', function () {
+        if (btnLoad) on(btnLoad, 'mousedown', function (e) {
+            e = e || window.event;
             var n = nameInput ? nameInput.value.trim() : '';
             if (!n) { flagEmpty(); return; }
             window.ahkCmd = 'preset-load/' + n;
         });
-        if (btnDel) on(btnDel, 'click', function () {
+        if (btnDel) on(btnDel, 'mousedown', function (e) {
+            e = e || window.event;
             var n = nameInput ? nameInput.value.trim() : '';
             if (!n) { flagEmpty(); return; }
             // alert()/confirm() не работают внутри ActiveX WebBrowser при Silent=true,
